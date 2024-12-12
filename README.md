@@ -1,7 +1,7 @@
 # NEBULA - Network of Enzymatic Biochemical Units, Links, and Associations
 
 ## Overview
-NEBULAU is a comprehensive platform designed for large-scale metabolic network expansion and analysis. This project integrates enzymatic reactions, metabolic pathways, and their associated components to create a detailed map of cellular metabolism.
+NEBULA is a comprehensive platform designed for large-scale metabolic network expansion and analysis. This project integrates enzymatic reactions, metabolic pathways, and their associated components to create a detailed map of cellular metabolism.
 
 ## Features
 - Metabolic network expansion and visualization
