@@ -1,0 +1,175 @@
+/* ---------------- Animations ---------------- */
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(2deg); }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-subtle {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(0.98); }
+}
+
+@keyframes dash {
+    to { stroke-dashoffset: 0; }
+}
+
+/* ---------------- Theme Toggle ---------------- */
+.theme-toggle {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 50;
+    transition: transform 0.2s ease;
+}
+
+.theme-toggle:hover {
+    transform: scale(1.1);
+}
+
+/* ---------------- Icon and Network Elements ---------------- */
+.outer-circle {
+    transform-origin: center;
+    animation: spin-slow 20s linear infinite;
+}
+
+.central-connection {
+    stroke-dasharray: 4 4;
+    animation: dash 15s linear infinite;
+}
+
+.nodes {
+    animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+.node-group-1, .node-group-2 {
+    animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+.node-group-2 {
+    animation-delay: 1.5s;
+}
+
+/* ---------------- Loading States ---------------- */
+.spinner {
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* ---------------- Input and Button Styles ---------------- */
+input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.button-primary {
+    transition: all 0.2s ease;
+}
+
+.button-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+/* ---------------- Table Styles ---------------- */
+.table-container {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+/* ---------------- Glass and Background Effects ---------------- */
+.glass-effect {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    background-color: rgba(255, 255, 255, 0.9);
+}
+
+.bg-mesh {
+    background-image: radial-gradient(circle at 1px 1px, rgba(59, 130, 246, 0.1) 1px, transparent 0);
+    background-size: 40px 40px;
+}
+
+/* ---------------- Enhanced Text ---------------- */
+.text-enhanced {
+    text-shadow: 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+/* ---------------- Transitions ---------------- */
+.transition-colors {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+}
+
+/* ---------------- Dark Mode Styles ---------------- */
+.dark body {
+    background-color: #0f172a;
+    color: #f3f4f6;
+}
+
+.dark .glass-effect {
+    background-color: rgba(17, 24, 39, 0.9);
+}
+
+.dark .bg-mesh {
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
+}
+
+.dark .text-enhanced {
+    text-shadow: 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.dark input:focus {
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+}
+
+.dark .button-primary:hover {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.dark .table-container {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.dark .central-connection {
+    stroke: #818CF8;
+}
+
+.dark .outer-circle {
+    stroke: #818CF8;
+}
+
+.dark .nodes,
+.dark .node-group-1,
+.dark .node-group-2 {
+    filter: brightness(1.2);
+}
+
+/* ---------------- Input Field Enhancements ---------------- */
+.enhanced-input {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(209, 213, 219, 0.5);
+}
+
+.dark .enhanced-input {
+    background-color: rgba(17, 24, 39, 0.9);
+    border-color: rgba(75, 85, 99, 0.5);
+}
