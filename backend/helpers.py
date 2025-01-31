@@ -5,7 +5,7 @@ from typing import Set, Dict
 
 def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
     target_df = df[df.products.str.contains(target)]
-    target_df = target_df[target_df.generation <= target_df.generation.min()]
+    target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
     target_df.loc[:, "target"] = target_df.shape[0] * [target]
     return target_df
 

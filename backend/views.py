@@ -138,7 +138,7 @@ class MetabolicViewer:
         self.generation_df = pd.read_csv("./data/generations.csv")
         self.domain_df = pd.read_csv("./data/domains.csv")
         self.generation_df.set_index("compound_id", inplace=True)
-        self.gen_mapper = self.generation_df["generation"].dropna().to_dict()
+        self.gen_mapper = self.generation_df["modified_generation"].dropna().to_dict()
         self.current_df: Optional[pd.DataFrame] = None
         self.current_target: Optional[str] = None
 
