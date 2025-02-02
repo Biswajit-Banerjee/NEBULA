@@ -1,117 +1,362 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NEBULA - Metabolic Network Explorer</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <link href="/static/style.css" rel="stylesheet">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
+    />
+    <link href="/static/style.css" rel="stylesheet" />
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+    
+    <!-- React and Babel Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
-</head>
-<body class="bg-gradient-to-br from-gray-50 to-blue-50">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    
+    <!-- Component Scripts -->
+    <script type="text/babel" src="/static/components/CompoundTooltip.jsx"></script>
+    <script type="text/babel" src="/static/components/ReactionTooltip.jsx"></script>
+  </head>
+  <body class="bg-gradient-to-br from-gray-50 to-blue-50">
     <!-- Main Content -->
     <div class="relative min-h-screen">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <!-- Header -->
-            <div class="text-center mb-16 animate__animated animate__fadeInDown">
-                <div class="flex items-center justify-center gap-4 mb-4">
-                    <div class="w-20 h-20 rounded-2xl flex items-center justify-center">
-                        <img src="/static/nebula.svg" alt="Nebula Logo" class="w-16 h-16">
-                    </div>
-                    <h1 class="text-6xl font-bold tracking-tight">
-                        <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
-                            NEBULA
-                        </span>
-                    </h1>
-                </div>
-                <p class="text-xl text-gray-600 font-medium">
-                    Explore the Universe of Metabolic Networks
-                </p>
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <!-- Header -->
+        <div class="text-center mb-16 animate__animated animate__fadeInDown">
+          <div class="flex items-center justify-center gap-4 mb-4">
+            <div class="w-20 h-20 rounded-2xl flex items-center justify-center">
+              <img
+                src="/static/nebula.svg"
+                alt="Nebula Logo"
+                class="w-16 h-16"
+              />
             </div>
-
-            <!-- Search Container -->
-            <div class="mb-12 animate__animated animate__fadeInUp">
-                <div class="bg-white rounded-3xl shadow-2xl p-8 transition-all duration-300 hover:shadow-3xl backdrop-blur-sm bg-opacity-90">
-                    <div class="flex flex-col md:flex-row gap-6">
-                        <!-- Input Field -->
-                        <div class="flex-1">
-                            <label for="backtraceInput" class="block text-sm font-medium text-gray-700 mb-2">
-                                Compound ID
-                            </label>
-                            <input type="text" 
-                                   id="backtraceInput"
-                                   class="w-full px-6 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:ring-4 focus:ring-blue-200 focus:border-transparent transition-all duration-200"
-                                   placeholder="Enter compound ID to explore metabolic network...">
-                        </div>
-                        
-                        <!-- Action Buttons -->
-                        <div class="flex items-end gap-4">
-                            <button onclick="performBacktrace()" class="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-lg hover:shadow-xl transition duration-200 flex items-center gap-2">
-                                <i class="fas fa-project-diagram"></i>
-                                Explore
-                            </button>
-                            <button onclick="downloadCSV()" id="downloadBtn" disabled class="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl shadow-lg hover:shadow-xl transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                                <i class="fas fa-download"></i>
-                                Export
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Loading State -->
-            <div id="loadingState" class="hidden">
-                <div class="flex flex-col items-center justify-center py-12 space-y-4">
-                    <div class="animate-bounce w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
-                        <i class="fas fa-dna text-2xl text-white animate-pulse"></i>
-                    </div>
-                    <p class="text-gray-600 font-medium animate-pulse">Doing something, not sure what, but still doing it...</p>
-                </div>
-            </div>
-
-            <!-- Error Message -->
-            <div id="errorMessage" class="hidden mb-8 p-6 bg-red-50 border-2 border-red-100 rounded-2xl text-red-700 flex items-center gap-4">
-                <i class="fas fa-exclamation-triangle text-xl"></i>
-                <div class="flex-1"></div>
-            </div>
-
-            <!-- Results Table -->
-            <div id="resultsSection" class="hidden animate__animated animate__fadeIn">
-                <div class="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-gray-100">
-                    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-blue-200 scrollbar-track-gray-50">
-                        <table class="w-full">
-                            <thead class="bg-gradient-to-r from-blue-50 to-indigo-50 sticky top-0">
-                                <tr>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Reaction</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Source</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Coenzyme</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Equation</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Transition</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Target</th>
-                                    <th class="px-6 py-4 text-right text-sm font-semibold text-blue-800 uppercase tracking-wider">EC</th>
-                                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Link</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody" class="divide-y divide-gray-100">
-                                <!-- Results will be dynamically inserted here -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            <h1 class="text-6xl font-bold tracking-tight">
+              <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+                NEBULA
+              </span>
+            </h1>
+          </div>
+          <p class="text-xl text-gray-600 font-medium">
+            Explore the Universe of Metabolic Networks
+          </p>
         </div>
+
+        <!-- Search Container -->
+        <div class="mb-12 animate__animated animate__fadeInUp">
+          <div class="bg-white rounded-3xl shadow-2xl p-8 transition-all duration-300 hover:shadow-3xl backdrop-blur-sm bg-opacity-90">
+            <div class="flex flex-col md:flex-row gap-6">
+              <!-- Input Field -->
+              <div class="flex-1">
+                <label for="backtraceInput" class="block text-sm font-medium text-gray-700 mb-2">
+                  Compound ID
+                </label>
+                <input
+                  type="text"
+                  id="backtraceInput"
+                  class="w-full px-6 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:ring-4 focus:ring-blue-200 focus:border-transparent transition-all duration-200"
+                  placeholder="Enter compound ID to explore metabolic network..."
+                />
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex items-end gap-4">
+                <button
+                  onclick="performBacktrace()"
+                  class="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-lg hover:shadow-xl transition duration-200 flex items-center gap-2"
+                >
+                  <i class="fas fa-project-diagram"></i>
+                  Explore
+                </button>
+                <button
+                  onclick="downloadCSV()"
+                  id="downloadBtn"
+                  disabled
+                  class="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl shadow-lg hover:shadow-xl transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <i class="fas fa-download"></i>
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden">
+          <div class="flex flex-col items-center justify-center py-12 space-y-4">
+            <div class="animate-bounce w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <i class="fas fa-dna text-2xl text-white animate-pulse"></i>
+            </div>
+            <p class="text-gray-600 font-medium animate-pulse">
+              Processing your request...
+            </p>
+          </div>
+        </div>
+
+        <!-- Error Message -->
+        <div
+          id="errorMessage"
+          class="hidden mb-8 p-6 bg-red-50 border-2 border-red-100 rounded-2xl text-red-700 flex items-center gap-4"
+        >
+          <i class="fas fa-exclamation-triangle text-xl"></i>
+          <div class="flex-1"></div>
+        </div>
+
+        <!-- Results Table -->
+        <div id="resultsSection" class="hidden animate__animated animate__fadeIn">
+          <div class="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-gray-100">
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gradient-to-r from-blue-50 to-indigo-50 sticky top-0">
+                  <tr>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Reaction</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Source</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Coenzyme</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Equation</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Transition</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Target</th>
+                    <th class="px-6 py-4 text-right text-sm font-semibold text-blue-800 uppercase tracking-wider">EC</th>
+                    <th class="px-6 py-4 text-left text-sm font-semibold text-blue-800 uppercase tracking-wider">Link</th>
+                  </tr>
+                </thead>
+                <tbody id="tableBody" class="divide-y divide-gray-100">
+                  <!-- Results will be dynamically inserted here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Floating Footer -->
     <div class="fixed bottom-4 right-4 text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-        <i class="fas fa-star text-yellow-300"></i>
-        <span>v1.1.0</span>
+      <i class="fas fa-star text-yellow-300"></i>
+      <span>v1.1.0</span>
     </div>
 
+    <!-- Main Application Script -->
     <script src="/static/nebula.js"></script>
-</body>
+
+    <!-- Component Initialization -->
+    <script type="text/babel">
+        const compoundCache = new Map();
+  
+        const CompoundTooltip = ({ compoundId }) => {
+          const [showTooltip, setShowTooltip] = React.useState(false);
+          const [data, setData] = React.useState(null);
+          const [loading, setLoading] = React.useState(false);
+          const [error, setError] = React.useState(null);
+  
+          React.useEffect(() => {
+            if (!compoundId) return;
+  
+            const fetchData = async () => {
+              if (compoundCache.has(compoundId)) {
+                setData(compoundCache.get(compoundId));
+                return;
+              }
+  
+              setLoading(true);
+              setError(null);
+  
+              try {
+                const response = await fetch(`/api/compound/${compoundId}`);
+                if (!response.ok) {
+                  throw new Error(response.statusText);
+                }
+                const result = await response.json();
+                compoundCache.set(compoundId, result.data);
+                setData(result.data);
+              } catch (err) {
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            };
+  
+            if (showTooltip && !data && !error) {
+              fetchData();
+            }
+          }, [compoundId, showTooltip]);
+  
+          const isValidKeggId = /^C\d{5}$/.test(compoundId);
+  
+          return React.createElement(
+            "div",
+            { className: "relative inline-block" },
+            React.createElement(
+              "a",
+              {
+                href: `https://www.genome.jp/entry/${compoundId}`,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className: `text-sm ${isValidKeggId ? "text-blue-600 hover:text-blue-800" : "text-gray-600 cursor-not-allowed"}`,
+                onMouseEnter: () => setShowTooltip(true),
+                onMouseLeave: () => setShowTooltip(false),
+                onClick: (e) => !isValidKeggId && e.preventDefault(),
+              },
+              compoundId
+            ),
+            showTooltip &&
+              React.createElement(
+                "div",
+                {
+                  className: "absolute z-50 w-64 p-4 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 transform -translate-x-1/2 left-1/2",
+                },
+                !isValidKeggId
+                  ? React.createElement("div", { className: "text-gray-600" }, "Compound not available in KEGG database")
+                  : loading
+                  ? React.createElement(
+                      "div",
+                      { className: "flex items-center justify-center py-2" },
+                      React.createElement("div", {
+                        className: "animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent",
+                      })
+                    )
+                  : error
+                  ? React.createElement("div", { className: "text-red-500" }, "Error loading compound data")
+                  : data
+                  ? React.createElement("div", { className: "space-y-2" }, [
+                      React.createElement("div", { className: "font-medium", key: "name" }, data.name),
+                      React.createElement(
+                        "div",
+                        { className: "text-sm text-gray-600", key: "details" },
+                        [
+                          React.createElement("div", { key: "formula" }, `Formula: ${data.formula}`),
+                          React.createElement("div", { key: "mass" }, `Exact Mass: ${data.exact_mass}`),
+                          React.createElement("div", { key: "weight" }, `Molecular Weight: ${data.mol_weight}`),
+                        ]
+                      ),
+                    ])
+                  : null
+              )
+          );
+        };
+  
+        window.CompoundTooltip = CompoundTooltip;
+      </script>
+  
+      <!-- ReactionTooltip Component -->
+      <script type="text/babel">
+        const reactionCache = new Map();
+  
+        const ReactionTooltip = ({ equation }) => {
+          const [showTooltip, setShowTooltip] = React.useState(false);
+          const [data, setData] = React.useState(null);
+          const [loading, setLoading] = React.useState(false);
+          const [error, setError] = React.useState(null);
+  
+          const match = equation ? equation.match(/R\d{5}/) : null;
+          const reactionId = match ? match[0] : null;
+          const isValidReactionId = Boolean(reactionId);
+  
+          React.useEffect(() => {
+            if (!reactionId || !showTooltip) return;
+  
+            const fetchData = async () => {
+              if (reactionCache.has(reactionId)) {
+                setData(reactionCache.get(reactionId));
+                return;
+              }
+  
+              setLoading(true);
+              setError(null);
+  
+              try {
+                
+                const response = await fetch(`/api/reaction/${reactionId}`);
+                const result = await response.json();
+                console.log(`Reaction ID:${reactionId}`, JSON.stringify(result));
+  
+                if (result.error) {
+                  throw new Error(result.error);
+                }
+  
+                reactionCache.set(reactionId, result.data);
+                setData(result.data);
+              } catch (err) {
+                console.error('Error fetching reaction data:', err);
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            };
+  
+            fetchData();
+          }, [reactionId, showTooltip]);
+  
+          return React.createElement(
+            "div",
+            { className: "relative inline-block" },
+            React.createElement(
+              "div",
+              {
+                className: "text-sm text-gray-700 cursor-help",
+                onMouseEnter: () => setShowTooltip(true),
+                onMouseLeave: () => setShowTooltip(false),
+              },
+              equation || 'No equation available'
+            ),
+            showTooltip &&
+              React.createElement(
+                "div",
+                {
+                  className: "absolute z-50 w-96 p-4 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 -translate-x-1/2 left-1/2",
+                },
+                !isValidReactionId
+                  ? React.createElement("div", { className: "text-gray-600" }, "No KEGG reaction ID found in equation")
+                  : loading
+                  ? React.createElement(
+                      "div",
+                      { className: "flex items-center justify-center py-2" },
+                      React.createElement("div", {
+                        className: "animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent",
+                      })
+                    )
+                  : error
+                  ? React.createElement("div", { className: "text-red-500" }, "Error loading reaction data")
+                  : data
+                  ? React.createElement(
+                      "div",
+                      { className: "space-y-3" },
+                      [
+                        React.createElement(
+                          "div",
+                          { className: "font-medium border-b pb-2" },
+                          [
+                            React.createElement("span", { className: "text-gray-500 text-sm" }, "Definition: "),
+                            React.createElement("span", null, data.definition),
+                          ]
+                        ),
+                        React.createElement(
+                          "div",
+                          { className: "text-sm" },
+                          [
+                            React.createElement("span", { className: "text-gray-500" }, "Equation: "),
+                            React.createElement("span", { className: "font-mono" }, data.equation),
+                          ]
+                        ),
+                      ]
+                    )
+                  : null
+              )
+          );
+        };
+  
+        window.ReactionTooltip = ReactionTooltip;
+      </script>
+  </body>
 </html>

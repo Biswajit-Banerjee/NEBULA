@@ -3,6 +3,19 @@ function showLoading(show) {
     document.getElementById('loadingState').classList.toggle('hidden', !show);
 }
 
+function renderCompoundCell(compoundId) {
+    const root = document.createElement('div');
+    const CompoundTooltip = window.CompoundTooltip;
+    if (!CompoundTooltip) {
+        console.error('CompoundTooltip component not found');
+        return document.createTextNode(compoundId);
+    }
+    ReactDOM.createRoot(root).render(
+        React.createElement(CompoundTooltip, { compoundId })
+    );
+    return root;
+}
+
 function showResults(show) {
     document.getElementById('resultsSection').classList.toggle('hidden', !show);
     document.getElementById('downloadBtn').disabled = !show;
@@ -187,6 +200,7 @@ function renderResults(data) {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-gray-50 transition duration-150';
         
+        // First create all cells except the target and equation cells
         tr.innerHTML = `
             <td class="px-6 py-4">
                 <div class="text-sm font-medium text-gray-900">
@@ -195,9 +209,9 @@ function renderResults(data) {
             </td>
             <td class="px-6 py-4 text-sm text-gray-700">${row.source}</td>
             <td class="px-6 py-4 text-sm text-gray-700">${row.coenzyme}</td>
-            <td class="px-6 py-4 text-sm text-gray-700">${row.equation}</td>
+            <td class="px-6 py-4 text-sm text-gray-700"></td>
             <td class="px-6 py-4 text-sm text-gray-700">${row.transition}</td>
-            <td class="px-6 py-4 text-sm text-gray-700">${row.target}</td>
+            <td class="px-6 py-4 text-sm text-gray-700"></td>
             <td class="px-6 py-4">
                 ${createECListElement(row.ec_list)}
             </td>
@@ -210,9 +224,17 @@ function renderResults(data) {
                 </a>
             </td>
         `;
+
+        // Render the target cell with CompoundTooltip
+        const targetCell = tr.querySelector('td:nth-child(6)');
+        targetCell.appendChild(renderCompoundCell(row.target));
+
+        // Render the equation cell with ReactionTooltip
+        const equationCell = tr.querySelector('td:nth-child(4)');
+        equationCell.appendChild(renderEquationCell(row.equation));
         
         // Add click handlers for EC items
-         tr.querySelectorAll('.ec-item').forEach(ecItem => {
+        tr.querySelectorAll('.ec-item').forEach(ecItem => {
             const chevron = ecItem.querySelector('.fa-chevron-down');
             let detailRow = null;
             let isExpanded = false;
@@ -357,6 +379,15 @@ function createDomainTable(data) {
         </div>
     `;
 }
+
+function renderEquationCell(equation) {
+    const root = document.createElement('div');
+    ReactDOM.createRoot(root).render(
+        React.createElement(ReactionTooltip, { equation })
+    );
+    return root;
+}
+
 
 // Find and replace the EC click handler in the renderResults function
 tr.querySelectorAll('.ec-item').forEach(ecItem => {
