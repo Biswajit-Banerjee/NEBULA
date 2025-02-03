@@ -1,101 +1,14 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, List
-from helpers import create_backtrack_df
 import tempfile
 import os
 import requests
-from time import sleep
+from pathlib import Path
 
-# def get_uniprot_from_ec(ec_number: str, organism_id: Optional[str] = "83333") -> List[Dict[str, str]]:
-#     """
-#     Query UniProt API for proteins based on organism and EC number.
-    
-#     Args:
-#         organism (str): Organism name or taxonomy ID
-#         ec_number (str, optional): EC number to filter by
-        
-#     Returns:
-#         List[Dict]: List of protein entries matching the query criteria
-#     """
-#     base_url = "https://rest.uniprot.org/uniprotkb/search"
-    
-#     query = f"((organism_id:83333) OR (organism_id:9606) OR (organism_id:266)) AND (ec:{ec_number})" 
-
-#     # Parameters
-#     params = {
-#         "query": query,
-#         "format": "json",
-#         "fields": "accession,gene_names,ec,protein_name,organism_name,length",
-#         # "fields": "accession,id,protein_name,gene_names,organism_name,ec,length",
-#         "size": 500
-#     }
-    
-#     all_results = []
-    
-#     while True:
-#         # Make request
-#         response = requests.get(base_url, params=params)
-#         response.raise_for_status()  # Raise exception for bad status codes
-        
-#         # Parse response
-#         data = response.json()
-        
-#         # Add results
-#         if "results" in data:
-#             for entry in data["results"]:
-#                 protein_name = ""
-#                 if "proteinDescription" in entry:
-#                     if "recommendedName" in entry["proteinDescription"]:
-#                         protein_name = entry["proteinDescription"]["recommendedName"]["fullName"]["value"]
-#                     elif "submissionNames" in entry["proteinDescription"] and entry["proteinDescription"]["submissionNames"]:
-#                         protein_name = entry["proteinDescription"]["submissionNames"][0]["fullName"]["value"]
-
-#                 gene_names = []
-#                 if "genes" in entry and entry["genes"]:
-#                     for gene in entry["genes"]:
-#                         if "geneName" in gene and "value" in gene["geneName"]:
-#                             gene_names.append(gene["geneName"]["value"])
-
-#                 organism = ""
-#                 if "organism" in entry:
-#                     organism = entry['organism']['scientificName']
-
-#                 length = ""
-#                 if "sequence" in entry:
-#                     length = entry['sequence']['length'] 
-
-#                 all_results.append({
-#                     "primary_accession": entry["primaryAccession"],
-#                     'organism': organism,
-#                     "protein_name": protein_name,
-#                     "gene_names": " ".join(gene_names),
-#                     "length": int(length)
-#                 })
-        
-#         # Check for next page
-#         if "link" not in response.headers:
-#             break
-            
-#         # Get cursor for next page
-#         links = response.headers["link"].split(",")
-#         next_link = None
-#         for link in links:
-#             if 'rel="next"' in link:
-#                 next_link = link
-#                 break
-                
-#         if not next_link:
-#             break
-            
-#         # Extract cursor from next link
-#         cursor = next_link.split("cursor=")[1].split("&")[0]
-#         params["cursor"] = cursor
-
-#     return all_results
+from app.utils.helpers import create_backtrack_df, parse_ec_list
 
 def get_uniprot_from_ec(ec_number, domains_df):
     """
@@ -134,9 +47,12 @@ def parse_ec_list(ec_string: str) -> List[str]:
 class MetabolicViewer:
     def __init__(self):
         """Initialize the MetabolicViewer with required data files"""
-        self.df = pd.read_csv("./data/simulations.csv")
-        self.generation_df = pd.read_csv("./data/generations.csv")
-        self.domain_df = pd.read_csv("./data/domains.csv")
+        BASE_DIR = Path(__file__).parent.parent.parent
+        DATA_DIR = BASE_DIR / "data"
+        
+        self.df = pd.read_csv(DATA_DIR / "simulations.csv")
+        self.generation_df = pd.read_csv(DATA_DIR / "generations.csv")
+        self.domain_df = pd.read_csv(DATA_DIR / "domains.csv")
         self.generation_df.set_index("compound_id", inplace=True)
         self.gen_mapper = self.generation_df["modified_generation"].dropna().to_dict()
         self.current_df: Optional[pd.DataFrame] = None

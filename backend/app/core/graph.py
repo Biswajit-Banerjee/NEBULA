@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 import json
 from collections import deque
+from typing import Dict, List, Set
 
 def create_metabolic_network(df):
     G = nx.DiGraph()

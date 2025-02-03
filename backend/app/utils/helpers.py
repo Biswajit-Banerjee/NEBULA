@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
 import re
-from typing import Set, Dict
+from typing import Set, Dict, List
 
-def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
-    target_df = df[df.products.str.contains(target)]
-    target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
-    target_df.loc[:, "target"] = target_df.shape[0] * [target]
-    return target_df
+def parse_ec_list(ec_string: str) -> List[str]:
+    """Parse EC list string into a list of EC numbers"""
+    if pd.isna(ec_string):
+        return []
+    return [ec.strip() for ec in str(ec_string).split(',') if ec.strip()]
 
 def create_backtrack_df(df, target_compound, gen_mapper):
     # Initialize result dataframe
@@ -25,9 +25,6 @@ def create_backtrack_df(df, target_compound, gen_mapper):
         relevant_reactions = get_first_occurance(df, current_compound)
         pdf = relevant_reactions[relevant_reactions.reactant_gen > 0]
         
-        # if not pdf.empty:
-        #     print(current_compound, "\n---", pdf.to_string())
-        
         if not relevant_reactions.empty:
             result = pd.concat([result, relevant_reactions])
             
@@ -42,3 +39,9 @@ def create_backtrack_df(df, target_compound, gen_mapper):
         result = result.sort_values('generation').reset_index(drop=True)
     
     return result
+
+def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    target_df = df[df.products.str.contains(target)]
+    target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
+    target_df.loc[:, "target"] = target_df.shape[0] * [target]
+    return target_df
