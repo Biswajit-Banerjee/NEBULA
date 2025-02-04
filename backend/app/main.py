@@ -297,6 +297,62 @@ async def download_csv():
             status_code=500,
             detail="Failed to generate CSV"
         )
+        
+@app.get("/api/ec/{ec_number}/uniprot")
+async def get_ec_uniprot_data(ec_number: str):
+    """
+    Get UniProt entries for an EC number
+    
+    Args:
+        ec_number (str): Enzyme Commission number
+        
+    Returns:
+        dict: UniProt entries with their features
+    """
+    try:
+        result = await viewer.get_ec_uniprot_data(ec_number)
+        if result.get('error'):
+            raise HTTPException(
+                status_code=404,
+                detail=result['error']
+            )
+        return result
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in EC UniProt API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch UniProt data"
+        )
+
+@app.get("/api/ec/{ec_number}/domains")
+async def get_ec_domains(ec_number: str):
+    """
+    Get integrated domain data for an EC number
+    
+    Args:
+        ec_number (str): Enzyme Commission number
+        
+    Returns:
+        dict: EC domain information including UniProt and ECOD data
+    """
+    try:
+        result = await viewer.get_ec_domains(ec_number)
+        if result.get('error'):
+            raise HTTPException(
+                status_code=404,
+                detail=result['error']
+            )
+        return result
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in EC domains API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch domain data"
+        )
 
 # Startup Event
 @app.on_event("startup")
@@ -308,7 +364,8 @@ async def startup_event():
         required_files = [
             "simulations.csv",
             "generations.csv",
-            "domains.csv"
+            "domains.csv",
+            "ecod_domains.csv",
         ]
         
         base_dir = Path(__file__).parent.parent
@@ -325,6 +382,7 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Startup error: {e}")
         raise
+    
 
 if __name__ == "__main__":
     import uvicorn

@@ -9,6 +9,7 @@ import requests
 from pathlib import Path
 
 from app.utils.helpers import create_backtrack_df, parse_ec_list
+from app.core.uniprot import get_uniprot_entries, integrate_ecod_data, filter_important_features
 
 def get_uniprot_from_ec(ec_number, domains_df):
     """
@@ -50,9 +51,13 @@ class MetabolicViewer:
         BASE_DIR = Path(__file__).parent.parent.parent
         DATA_DIR = BASE_DIR / "data"
         
+        # data file
         self.df = pd.read_csv(DATA_DIR / "simulations.csv")
         self.generation_df = pd.read_csv(DATA_DIR / "generations.csv")
         self.domain_df = pd.read_csv(DATA_DIR / "domains.csv")
+        self.ecod_df = pd.read_csv(DATA_DIR / "ecod_domains.csv")
+        
+        # processing the data
         self.generation_df.set_index("compound_id", inplace=True)
         self.gen_mapper = self.generation_df["modified_generation"].dropna().to_dict()
         self.current_df: Optional[pd.DataFrame] = None
@@ -63,6 +68,25 @@ class MetabolicViewer:
         try:
             uniprot_data = get_uniprot_from_ec(ec_number, self.domain_df)
             return {"data": uniprot_data}
+        except Exception as e:
+            return {"error": str(e)}
+        
+    async def get_ec_uniprot_data(self, ec_number: str) -> Dict:
+        """Get UniProt data for an EC number"""
+        try:
+            entries = get_uniprot_entries(ec_number)
+            entries = [filter_important_features(entry) for entry in entries]
+            return {"data": entries}
+        except Exception as e:
+            return {"error": str(e)}
+        
+    async def get_ec_domains(self, ec_number: str) -> Dict:
+        """Get integrated domain data for an EC number"""
+        try:
+            entries = get_uniprot_entries(ec_number)
+            entries = [filter_important_features(entry) for entry in entries]
+            entries = integrate_ecod_data(entries, self.ecod_df)
+            return {"data": entries}
         except Exception as e:
             return {"error": str(e)}
 
