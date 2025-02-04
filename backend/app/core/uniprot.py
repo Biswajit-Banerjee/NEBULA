@@ -85,7 +85,7 @@ def get_uniprot_entries(ec_id: str) -> List[UniProtEntry]:
 
 def filter_important_features(entry: UniProtEntry) -> UniProtEntry:
     """Filter only Active site and Binding site features"""
-    important_types = {'Active site', 'Binding site'}
+    important_types = {'Active site', 'Binding site', 'Site'}
     entry.features = [f for f in entry.features if f.type in important_types]
     return entry
 
