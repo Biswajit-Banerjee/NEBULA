@@ -76,7 +76,7 @@ def get_uniprot_entries(ec_id: str) -> List[UniProtEntry]:
     """
     Fetch and parse UniProt entries for given EC number
     """
-    url = f"https://rest.uniprot.org/uniprotkb/search?query=ec:{ec_id}"
+    url = f"https://rest.uniprot.org/uniprotkb/search?query=ec:{ec_id}&size=50"
     response = requests.get(url)
     response.raise_for_status()
     
@@ -85,7 +85,7 @@ def get_uniprot_entries(ec_id: str) -> List[UniProtEntry]:
 
 def filter_important_features(entry: UniProtEntry) -> UniProtEntry:
     """Filter only Active site and Binding site features"""
-    important_types = {'Active site', 'Binding site', 'Site'}
+    important_types = {'Active site', 'Binding site'}
     entry.features = [f for f in entry.features if f.type in important_types]
     return entry
 

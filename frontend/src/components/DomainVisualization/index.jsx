@@ -21,14 +21,33 @@ const DomainVisualization = ({
     return '#' + Math.floor(Math.random()*16777215).toString(16);
   };
 
+  const findSequenceBounds = () => {
+    if (!proteinData?.domains) return { min: 0, max: 1000 };
+
+    let min = Number.MAX_SAFE_INTEGER;
+    let max = 0;
+
+    proteinData.domains.forEach(domain => {
+      domain.ranges.forEach(range => {
+        min = Math.min(min, range.start);
+        max = Math.max(max, range.end);
+      });
+    });
+
+    min = Math.max(0, min - 10);
+    max = max + 10;
+
+    return { min, max };
+  };
+
   useEffect(() => {
     const updateScale = () => {
       if (containerRef.current) {
-        const maxLength = Math.max(
-          ...proteinData.domains.flatMap(d => d.ranges.map(r => r.end))
-        );
-        const containerWidth = containerRef.current.offsetWidth - 32;
-        setScale(containerWidth / maxLength);
+        const { min, max } = findSequenceBounds();
+        const sequenceLength = max - min;
+        const containerWidth = containerRef.current.offsetWidth - 48;
+        const newScale = containerWidth / sequenceLength;
+        setScale(newScale);
       }
     };
 
@@ -37,18 +56,24 @@ const DomainVisualization = ({
     return () => window.removeEventListener('resize', updateScale);
   }, [proteinData, containerRef, setScale]);
 
+  const { min: minPosition, max: maxPosition } = findSequenceBounds();
+
+  const getPositionOnScale = (position) => {
+    return (position - minPosition) * scale + 24;
+  };
+
   return (
-    <div className="mt-4" ref={containerRef}>
-      <div className="relative h-48 bg-gray-100 rounded p-4">
+    <div className="mt-2" ref={containerRef}>
+      <div className="relative h-32 bg-gray-100 rounded p-4">
         {/* Base protein line */}
-        <div className="absolute top-12 left-4 h-1 bg-gray-300" style={{ width: '100%' }} />
+        <div className="absolute top-8 left-4 h-1 bg-gray-300" style={{ width: 'calc(100% - 2rem)' }} />
 
         {/* Domains */}
-        {proteinData.domains.map((domain, idx) => (
+        {proteinData?.domains?.map((domain, idx) => (
           <React.Fragment key={`domain-${idx}`}>
             {domain.ranges.map((range, rangeIdx) => {
               const width = (range.end - range.start) * scale;
-              const left = range.start * scale + 16;
+              const left = getPositionOnScale(range.start);
               const color = getDomainColor(domain.domain_id);
               const isSelected = selectedDomain?.domain_id === domain.domain_id && 
                                selectedRange?.start === range.start;
@@ -61,8 +86,8 @@ const DomainVisualization = ({
                     style={{
                       left: `${left}px`,
                       width: `${width}px`,
-                      top: '10px',
-                      height: '24px',
+                      top: '6px',
+                      height: '20px',
                       backgroundColor: color,
                     }}
                     onClick={() => {
@@ -75,7 +100,7 @@ const DomainVisualization = ({
                     className="absolute text-xs font-medium"
                     style={{
                       left: `${left}px`,
-                      top: '38px',
+                      top: '28px',
                       width: `${width}px`,
                     }}
                   >
@@ -89,9 +114,9 @@ const DomainVisualization = ({
         ))}
 
         {/* Binding sites */}
-        {proteinData.features?.map((feature, idx) => {
+        {proteinData?.features?.map((feature, idx) => {
           const width = Math.max(4, (feature.location.end - feature.location.start) * scale);
-          const left = feature.location.start * scale + 16;
+          const left = getPositionOnScale(feature.location.start);
           return (
             <div
               key={`feature-${idx}`}
@@ -99,27 +124,33 @@ const DomainVisualization = ({
               style={{
                 left: `${left}px`,
                 width: `${width}px`,
-                top: '4px',
+                top: '0px',
               }}
               title={`${feature.type}: ${feature.location.start}-${feature.location.end}`}
             />
           );
         })}
+
+        {/* Domain range scale */}
+        <div className="absolute bottom-0 left-4 right-4 text-xs text-gray-500">
+          <div className="absolute -bottom-4 left-0">{minPosition}</div>
+          <div className="absolute -bottom-4 right-0">{maxPosition}</div>
+        </div>
       </div>
       
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-4 text-sm">
-        {proteinData.domains.map((domain, idx) => (
+      <div className="flex flex-wrap gap-4 mt-6 text-xs">
+        {proteinData?.domains?.map((domain, idx) => (
           <div key={`legend-${idx}`} className="flex items-center">
             <div 
-              className="w-4 h-4 mr-2 rounded" 
+              className="w-3 h-3 mr-1.5 rounded" 
               style={{ backgroundColor: getDomainColor(domain.domain_id) }}
             />
             <span>{domain.domain_id}</span>
           </div>
         ))}
         <div className="flex items-center">
-          <div className="w-4 h-4 bg-red-500 mr-2" />
+          <div className="w-3 h-3 bg-red-500 mr-1.5" />
           <span>Binding Sites</span>
         </div>
       </div>
