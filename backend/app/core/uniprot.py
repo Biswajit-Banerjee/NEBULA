@@ -74,22 +74,63 @@ def parse_uniprot_entry(entry_data: Dict) -> UniProtEntry:
     if not name:
         name = entry_data["organism"]["scientificName"]
     
+    if 'features' not in entry_data:
+        raise KeyError("Features not present in this entry")
+    
     return UniProtEntry(
         primary_accession=entry_data['primaryAccession'],
         uniprot_kb_id=f"{name} ({entry_data['uniProtkbId']})",
         features=[parse_feature(f) for f in entry_data['features']]
     )
-
-def get_uniprot_entries(ec_id: str) -> List[UniProtEntry]:
-    """
-    Fetch and parse UniProt entries for given EC number
-    """
-    url = f"https://rest.uniprot.org/uniprotkb/search?query=ec:{ec_id}&size=25"
-    response = requests.get(url)
-    response.raise_for_status()
     
-    data = response.json()
-    return [parse_uniprot_entry(entry) for entry in data['results']]
+def get_uniprot_entries(ec_id: str, min_results:int = 10) -> List[UniProtEntry]:
+    """
+    Fetch and parse UniProt entries for given EC number using cursor-based pagination
+    to ensure at least 10 results when available
+    """
+    base_url = "https://rest.uniprot.org/uniprotkb/search"
+    params = {
+        "query": f"ec:{ec_id}",
+        "size": 25
+    }
+    result = []
+    
+    while True:
+        # Make request
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        
+        # Parse current page of results
+        data = response.json()
+        for entry in data['results']:
+            try:
+                result.append(parse_uniprot_entry(entry))
+            except KeyError:
+                continue
+                
+        # Check if we have enough results
+        if len(result) >= min_results:
+            break
+            
+        # Check for next page
+        if "link" not in response.headers:
+            break
+            
+        # Parse next page cursor from Link header
+        next_link = None
+        for link in response.headers["link"].split(","):
+            if 'rel="next"' in link:
+                next_link = link
+                break
+                
+        if not next_link:
+            break
+            
+        # Extract cursor and update params for next request
+        cursor = next_link.split("cursor=")[1].split("&")[0]
+        params["cursor"] = cursor
+        
+    return result
 
 def filter_important_features(entry: UniProtEntry) -> UniProtEntry:
     """Filter only Active site and Binding site features"""
