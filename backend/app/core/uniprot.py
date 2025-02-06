@@ -76,7 +76,7 @@ def parse_uniprot_entry(entry_data: Dict) -> UniProtEntry:
     
     return UniProtEntry(
         primary_accession=entry_data['primaryAccession'],
-        uniprot_kb_id=name,#entry_data['uniProtkbId'],
+        uniprot_kb_id=f"{name} ({entry_data['uniProtkbId']})",
         features=[parse_feature(f) for f in entry_data['features']]
     )
 
