@@ -66,9 +66,17 @@ def parse_feature(feature_data: Dict) -> Feature:
 
 def parse_uniprot_entry(entry_data: Dict) -> UniProtEntry:
     """Parse single UniProt entry from API response"""
+    name = ""
+    
+    if "commonName" in entry_data["organism"]:
+        name = entry_data["organism"]["commonName"].strip()
+    
+    if not name:
+        name = entry_data["organism"]["scientificName"]
+    
     return UniProtEntry(
         primary_accession=entry_data['primaryAccession'],
-        uniprot_kb_id=entry_data['uniProtkbId'],
+        uniprot_kb_id=name,#entry_data['uniProtkbId'],
         features=[parse_feature(f) for f in entry_data['features']]
     )
 
@@ -76,7 +84,7 @@ def get_uniprot_entries(ec_id: str) -> List[UniProtEntry]:
     """
     Fetch and parse UniProt entries for given EC number
     """
-    url = f"https://rest.uniprot.org/uniprotkb/search?query=ec:{ec_id}&size=50"
+    url = f"https://rest.uniprot.org/uniprotkb/search?query=ec:{ec_id}&size=25"
     response = requests.get(url)
     response.raise_for_status()
     
@@ -100,6 +108,7 @@ def integrate_ecod_data(entries: List[UniProtEntry], ecod_df: pd.DataFrame) -> L
     Returns:
         Updated list of UniProt entries with domain information
     """
+    modified_entries = []
     
     # Process each entry
     for entry in entries:
@@ -129,8 +138,10 @@ def integrate_ecod_data(entries: List[UniProtEntry], ecod_df: pd.DataFrame) -> L
                         break
                 if feature.domain_id:  # Stop checking other domains if we found a match
                     break
+        
+        modified_entries.append(entry)
     
-    return entries
+    return modified_entries
 
 def print_integrated_results(entries: List[UniProtEntry]):
     """Print results in a readable format"""
@@ -147,40 +158,3 @@ def print_integrated_results(entries: List[UniProtEntry]):
             domain_info = f" [Domain: {feature.domain_id}, Family: {feature.f_id}]" if feature.domain_id else " [No matching domain]"
             print(f"  - {feature.type} at positions {feature.location.start}-{feature.location.end}: "
                   f"{feature.description}{domain_info}")
-
-# Example usage
-if __name__ == "__main__":
-    # Example with sample data
-    sample_data = {
-        "results": [{
-            "primaryAccession": "A0A044QLM8",
-            "uniProtkbId": "EXAMPLE_ID",
-            "features": [
-                {
-                    "type": "Active site",
-                    "location": {
-                        "start": {"value": 50},
-                        "end": {"value": 50}
-                    },
-                    "description": "Proton acceptor"
-                }
-            ]
-        }]
-    }
-    
-    # Parse sample data
-    entries = [parse_uniprot_entry(entry) for entry in sample_data['results']]
-    for entry in entries:
-        entry = filter_important_features(entry)
-    
-    # Integrate with ECOD data
-    entries = integrate_ecod_data(entries, "ecod_domains.csv")
-    
-    # Print results
-    print_integrated_results(entries)
-
-    # To fetch from API and process:
-    # entries = get_uniprot_entries("3.1.3.11")
-    # entries = [filter_important_features(entry) for entry in entries]
-    # entries = integrate_ecod_data(entries, "ecod_domains.csv")
-    # print_integrated_results(entries)
