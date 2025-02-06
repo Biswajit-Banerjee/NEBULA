@@ -73,6 +73,40 @@ async def get_backtrace(target: str):
             status_code=500,
             detail="Failed to process backtrace request"
         )
+        
+@app.get("/api/search")
+async def search(type: str, query: str):
+    """
+    Perform backtrace analysis for a target compound
+    
+    Args:
+        target (str): Target compound ID
+        
+    Returns:
+        dict: Backtrace analysis results
+    """
+    try:
+        if not re.match(r'^C\d{5}$', query):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid compound ID format. Must start with 'C' followed by 5 digits."
+            )
+            
+        result = await viewer.get_backtrace(query)
+        
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+            
+        return result
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in backtrace API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process backtrace request"
+        )
 
 @app.get("/api/compound/{compound_id}")
 async def get_compound_data(compound_id: str):
@@ -233,12 +267,18 @@ async def get_reaction_data(reaction_id: str):
                 enzymes = line.replace('ENZYME', '').strip()
                 result['enzymes'] = [e.strip() for e in enzymes.split()]
                 current_section = 'enzyme'
+            elif line.startswith('BRITE'):
+                brite = line.replace('BRITE', '').strip()
+                result['brite'] = brite.strip()
+                current_section = 'brite'
             elif line.startswith(' ') and current_section:
                 # Handle multi-line content
                 if current_section == 'definition':
                     result['definition'] += ' ' + line.strip()
                 elif current_section == 'equation':
                     result['equation'] += ' ' + line.strip()
+                elif current_section == 'brite':
+                    result['brite'] += '\n' + line.strip()
                 elif current_section == 'enzyme':
                     enzymes = line.strip()
                     result['enzymes'].extend([e.strip() for e in enzymes.split()])
