@@ -1,13 +1,13 @@
 import React, { useState } from "react";
-import CompoundTooltip from "./components/CompoundTooltip";
-import ReactionTooltip from "./components/ReactionTooltip";
+import { Filter } from "lucide-react";
 import Logo from "./components/Logo";
-import ECDetails from "./components/ECDetails";
+import FilterMenu from "./components/FilterMenu";
 
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const handleBacktrace = async (target) => {
     if (!target) {
@@ -78,15 +78,37 @@ function App() {
               >
                 Compound ID
               </label>
-              <input
-                type="text"
-                id="backtraceInput"
-                className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:ring-4 focus:ring-blue-200 focus:border-transparent transition-all duration-200"
-                placeholder="Enter compound ID to explore metabolic network..."
-                onKeyPress={(e) =>
-                  e.key === "Enter" && handleBacktrace(e.target.value)
-                }
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  id="backtraceInput"
+                  className="w-full px-6 pr-16 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:ring-4 focus:ring-blue-200 focus:border-transparent transition-all duration-200"
+                  placeholder="Enter compound ID to explore metabolic network..."
+                  onKeyPress={(e) =>
+                    e.key === "Enter" && handleBacktrace(e.target.value)
+                  }
+                />
+                {results && (
+                  <div className="absolute right-0 top-0 h-full">
+                    <button
+                      onClick={() => setIsFilterOpen(!isFilterOpen)}
+                      className="h-full px-6 text-gray-400 hover:text-blue-600 transition-colors"
+                      title="Toggle filters"
+                    >
+                      <Filter className="w-5 h-5" />
+                    </button>
+                    {isFilterOpen && (
+                      <div className="absolute top-full right-0 mt-2">
+                        <FilterMenu
+                          results={results}
+                          setResults={setResults}
+                          onClose={() => setIsFilterOpen(false)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex items-end gap-4">
@@ -141,77 +163,52 @@ function App() {
             <table className="w-full">
               <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
                 <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Reaction
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Source
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Coenzyme
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Equation
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Transition
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Target
-                  </th>
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-blue-800">
-                    EC
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">
-                    Link
-                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Reaction</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Source</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Coenzyme</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Equation</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Transition</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Target</th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-blue-800">EC</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Link</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {results.map((row, index) => (
-                  <React.Fragment key={index}>
-                    <tr className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {row.reaction}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        {row.source}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        {row.coenzyme}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        <ReactionTooltip equation={row.equation} />
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        {row.transition}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        <CompoundTooltip compoundId={row.target} />
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="space-y-2">
-                          {row.ec_list.map((ec, i) => (
-                            <ECDetails key={i} ec={ec} />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        <a
-                          href={row.reaction_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-500 transition duration-150 flex items-center gap-2"
-                        >
-                          <i className="fas fa-external-link-alt"></i>
-                          View
-                        </a>
-                      </td>
-                    </tr>
-                    {/* EC details will be rendered here by the ECDetails component */}
-                  </React.Fragment>
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{row.reaction}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-700">{row.source}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700">{row.coenzyme}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700">
+                      {row.equation}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-700">{row.transition}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700">
+                      {row.target}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="space-y-2">
+                        {row.ec_list?.map((ec, i) => (
+                          <span key={i} className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                            {ec}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <a
+                        href={row.reaction_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-500 transition duration-150 flex items-center gap-2"
+                      >
+                        <i className="fas fa-external-link-alt"></i>
+                        View
+                      </a>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
