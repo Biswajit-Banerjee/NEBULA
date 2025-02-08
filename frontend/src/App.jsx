@@ -2,12 +2,14 @@ import React, { useState } from "react";
 import { Filter } from "lucide-react";
 import Logo from "./components/Logo";
 import FilterMenu from "./components/FilterMenu";
+import ResultTable from "./components/ResultTable";
 
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState(new Set());
 
   const handleBacktrace = async (target) => {
     if (!target) {
@@ -18,6 +20,7 @@ function App() {
     try {
       setLoading(true);
       setError(null);
+      setSelectedRows(new Set()); // Clear selections when new search starts
       const response = await fetch(
         `/api/backtrace?target=${encodeURIComponent(target)}`
       );
@@ -97,15 +100,6 @@ function App() {
                     >
                       <Filter className="w-5 h-5" />
                     </button>
-                    {isFilterOpen && (
-                      <div className="absolute top-full right-0 mt-2">
-                        <FilterMenu
-                          results={results}
-                          setResults={setResults}
-                          onClose={() => setIsFilterOpen(false)}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -156,63 +150,28 @@ function App() {
         </div>
       )}
 
-      {/* Results Table */}
+      {/* Results Section */}
       {results && (
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-gray-100">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Reaction</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Source</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Coenzyme</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Equation</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Transition</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Target</th>
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-blue-800">EC</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-blue-800">Link</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {results.map((row, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{row.reaction}</div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{row.source}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{row.coenzyme}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {row.equation}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{row.transition}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {row.target}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="space-y-2">
-                        {row.ec_list?.map((ec, i) => (
-                          <span key={i} className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
-                            {ec}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <a
-                        href={row.reaction_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-500 transition duration-150 flex items-center gap-2"
-                      >
-                        <i className="fas fa-external-link-alt"></i>
-                        View
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="relative animate__animated animate__fadeIn">
+          {/* Filter Menu */}
+          {isFilterOpen && (
+            <div className="absolute right-0 top-0 mt-2 z-50">
+              <FilterMenu
+                results={results}
+                selectedRows={selectedRows}
+                setSelectedRows={setSelectedRows}
+                onClose={() => setIsFilterOpen(false)}
+              />
+            </div>
+          )}
+
+          {/* Results Table */}
+          <ResultTable
+            results={results}
+            setResults={setResults}
+            selectedRows={selectedRows}
+            setSelectedRows={setSelectedRows}
+          />
         </div>
       )}
     </div>
