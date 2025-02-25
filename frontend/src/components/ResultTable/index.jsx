@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Settings2, CheckCircle2, XCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings2, CheckCircle2, XCircle, Filter, LayoutGrid } from 'lucide-react';
 import CompoundTooltip from '../CompoundTooltip';
 import ReactionTooltip from '../ReactionTooltip';
 import ECDetails from '../ECDetails';
@@ -83,75 +83,92 @@ const ResultTable = ({
   };
 
   const ColumnManager = () => (
-    <div className="absolute right-0 top-12 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 min-w-[200px]">
-      <h3 className="font-semibold text-gray-700 mb-3">Show/Hide Columns</h3>
+    <div className="absolute right-0 top-12 bg-white rounded-xl shadow-lg border border-emerald-100 p-4 z-50 min-w-[200px] animate-fade-in">
+      <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2 text-sm">
+        <LayoutGrid className="w-4 h-4 text-emerald-600" />
+        Column Visibility
+      </h3>
       <div className="space-y-2">
         {Object.entries(columnVisibility).map(([key, isVisible]) => (
-          <label key={key} className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isVisible}
-              onChange={() => toggleColumnVisibility(key)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm capitalize">{key}</span>
+          <label key={key} className="flex items-center gap-2 cursor-pointer group">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={isVisible}
+                onChange={() => toggleColumnVisibility(key)}
+                className="opacity-0 absolute"
+              />
+              <div className={`w-5 h-5 rounded-md flex items-center justify-center 
+                ${isVisible ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-2 border-slate-200'}`}>
+                {isVisible && <CheckCircle2 className="w-3 h-3 text-white" />}
+              </div>
+            </div>
+            <span className="text-sm text-slate-600 group-hover:text-emerald-700 transition-colors">
+              {key.replace(/_/g, ' ')}
+            </span>
           </label>
         ))}
       </div>
     </div>
   );
 
-  // Floating Action Menu for Selected Rows
   const SelectionActions = () => {
     if (selectedRows.size === 0) return null;
 
     return (
-      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-lg border border-gray-200 px-6 py-3 flex items-center gap-4 z-50">
-        <span className="text-sm font-medium text-gray-600">
-          {selectedRows.size} row{selectedRows.size !== 1 ? 's' : ''} selected
+      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white rounded-xl shadow-md border border-slate-100 px-6 py-3 flex items-center gap-4 z-50 animate-slide-up">
+        <span className="text-sm font-medium text-slate-600">
+          {selectedRows.size} selected item{selectedRows.size !== 1 ? 's' : ''}
         </span>
-        <div className="h-4 w-px bg-gray-300"></div>
+        <div className="h-4 w-px bg-slate-200"></div>
         <button
           onClick={handleKeepSelected}
-          className="flex items-center gap-2 px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors text-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-all text-sm font-medium border border-emerald-100"
         >
           <CheckCircle2 className="w-4 h-4" />
-          Keep Selected
+          Keep Selection
         </button>
         <button
           onClick={handleRemoveSelected}
-          className="flex items-center gap-2 px-4 py-1.5 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors text-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-all text-sm font-medium border border-blue-100"
         >
           <XCircle className="w-4 h-4" />
-          Remove Selected
+          Remove
         </button>
       </div>
     );
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-      {/* Table Controls */}
-      <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
         <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-700">
-            {selectedRows.size} selected
-          </span>
-          {selectedRows.size > 0 && (
-            <button
-              onClick={() => setSelectedRows(new Set())}
-              className="text-sm text-blue-600 hover:text-blue-700"
-            >
-              Clear selection
-            </button>
+          {selectedRows.size > 0 ? (
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-100">
+                {selectedRows.size} selected
+              </span>
+              <button
+                onClick={() => setSelectedRows(new Set())}
+                className="text-sm text-slate-500 hover:text-slate-700 transition-colors flex items-center gap-1"
+              >
+                Clear
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Filter className="w-4 h-4" />
+              <span className="text-sm font-medium">Ready to analyze</span>
+            </div>
           )}
         </div>
         <div className="relative">
           <button
             onClick={() => setShowColumnManager(!showColumnManager)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-600 hover:text-emerald-700"
           >
-            <Settings2 className="w-5 h-5 text-gray-600" />
+            <Settings2 className="w-5 h-5" />
           </button>
           {showColumnManager && <ColumnManager />}
         </div>
@@ -160,114 +177,93 @@ const ResultTable = ({
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
               <th className="w-8 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={selectedRows.size === results.length && results.length > 0}
-                  onChange={toggleSelectAll}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
+                <div className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedRows.size === results.length && results.length > 0}
+                    onChange={toggleSelectAll}
+                    className="opacity-0 absolute"
+                  />
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center 
+                    ${selectedRows.size === results.length ? 'bg-emerald-500' : 'bg-white border-2 border-slate-200'}`}>
+                    {selectedRows.size === results.length && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                </div>
               </th>
               <th className="w-8 px-2"></th>
               {visibleColumns.map(column => (
                 <th
                   key={column}
-                  className="px-4 py-3 text-left text-sm font-semibold text-gray-700 capitalize"
+                  className="px-4 py-3 text-left text-sm font-semibold text-slate-700 capitalize"
                 >
-                  {column}
+                  {column.replace(/_/g, ' ')}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-slate-100">
             {results.map((row, index) => (
               <React.Fragment key={index}>
                 <tr className={`
-                  hover:bg-gray-50 transition-colors
+                  hover:bg-slate-50 transition-all
                   ${selectedRows.has(index) ? 'bg-blue-50' : ''}
+                  ${expandedRows.has(index) ? '!bg-indigo-50' : ''}
                 `}>
                   <td className="w-8 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedRows.has(index)}
-                      onChange={() => toggleRowSelection(index)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedRows.has(index)}
+                        onChange={() => toggleRowSelection(index)}
+                        className="opacity-0 absolute"
+                      />
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center 
+                        ${selectedRows.has(index) ? 'bg-emerald-500' : 'bg-white border-2 border-slate-200'}`}>
+                        {selectedRows.has(index) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </div>
+                    </div>
                   </td>
                   <td className="w-8 px-2">
                     <button
                       onClick={() => toggleRowExpansion(index)}
-                      className="p-1 hover:bg-gray-100 rounded transition-colors"
+                      className="p-1 hover:bg-slate-100 rounded-md transition-all text-slate-500 hover:text-emerald-700"
                     >
                       {expandedRows.has(index) ? (
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                        <ChevronDown className="w-4 h-4" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                        <ChevronRight className="w-4 h-4" />
                       )}
                     </button>
                   </td>
-                  {columnVisibility.reaction && (
-                    <td className="px-4 py-3 text-sm">{row.reaction}</td>
-                  )}
-                  {columnVisibility.source && (
-                    <td className="px-4 py-3 text-sm">{row.source}</td>
-                  )}
-                  {columnVisibility.coenzyme && (
-                    <td className="px-4 py-3 text-sm">{row.coenzyme}</td>
-                  )}
-                  {columnVisibility.equation && (
-                    <td className="px-4 py-3 text-sm">
-                      <ReactionTooltip equation={row.equation} />
-                    </td>
-                  )}
-                  {columnVisibility.transition && (
-                    <td className="px-4 py-3 text-sm">{row.transition}</td>
-                  )}
-                  {columnVisibility.target && (
-                    <td className="px-4 py-3 text-sm">
-                      <CompoundTooltip compoundId={row.target} />
-                    </td>
-                  )}
-                  {columnVisibility.ec && (
-                    <td className="px-4 py-3 text-sm">
-                      <div className="space-y-1">
-                        {row.ec_list?.map((ec, i) => (
-                          <ECDetails key={i} ec={ec} />
-                        ))}
-                      </div>
-                    </td>
-                  )}
-                  {columnVisibility.link && (
-                    <td className="px-4 py-3 text-sm">
-                      <a
-                        href={row.reaction_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-700 transition-colors inline-flex items-center gap-1"
-                      >
-                        View
-                        <ChevronRight className="w-4 h-4" />
-                      </a>
-                    </td>
-                  )}
+                  {visibleColumns.map(col => (
+                    <TableCell key={col} column={col} row={row} />
+                  ))}
                 </tr>
                 {expandedRows.has(index) && (
-                  <tr className="bg-gray-50">
+                  <tr className="bg-indigo-50">
                     <td colSpan={visibleColumns.length + 2} className="px-6 py-4">
                       <div className="text-sm space-y-2">
-                        <h4 className="font-medium text-gray-700">Additional Details</h4>
+                        <div className="flex items-center gap-2 text-slate-700 mb-2">
+                          <span className="font-medium">Detailed View</span>
+                          <div className="flex-1 h-px bg-slate-200"></div>
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <span className="text-gray-500">Full Equation:</span>
-                            <p className="mt-1 font-mono text-xs">{row.equation}</p>
+                          <div className="bg-white p-3 rounded-lg border border-slate-100">
+                            <span className="text-slate-600 text-xs font-medium">Full Equation</span>
+                            <p className="mt-1 font-mono text-xs text-slate-500">
+                              {row.equation}
+                            </p>
                           </div>
-                          <div>
-                            <span className="text-gray-500">EC Numbers:</span>
+                          <div className="bg-white p-3 rounded-lg border border-slate-100">
+                            <span className="text-slate-600 text-xs font-medium">EC Numbers</span>
                             <div className="mt-1 space-y-1">
                               {row.ec_list?.map((ec, i) => (
-                                <div key={i} className="text-xs">{ec}</div>
+                                <div key={i} className="text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded-md">
+                                  {ec}
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -282,9 +278,39 @@ const ResultTable = ({
         </table>
       </div>
 
-      {/* Floating Selection Actions */}
       <SelectionActions />
     </div>
+  );
+};
+
+const TableCell = ({ column, row }) => {
+  const content = {
+    reaction: row.reaction,
+    source: row.source,
+    coenzyme: row.coenzyme,
+    equation: <ReactionTooltip equation={row.equation} />,
+    transition: row.transition,
+    target: <CompoundTooltip compoundId={row.target} />,
+    ec: row.ec_list?.map((ec, i) => <ECDetails key={i} ec={ec} />),
+    link: (
+      <a
+        href={row.reaction_link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-emerald-700 hover:text-emerald-900 transition-colors inline-flex items-center gap-1"
+      >
+        View Details
+        <ChevronRight className="w-4 h-4" />
+      </a>
+    )
+  };
+
+  return (
+    <td className="px-4 py-3 text-sm text-slate-600">
+      <div className="max-w-[200px] truncate hover:text-clip transition-all">
+        {content[column] || '-'}
+      </div>
+    </td>
   );
 };
 
