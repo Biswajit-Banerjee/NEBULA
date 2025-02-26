@@ -45,3 +45,10 @@ def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
     target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
     target_df.loc[:, "target"] = target_df.shape[0] * [target]
     return target_df
+
+def add_compound_generation(eqn, gen_mapper):
+    compound_list = re.findall("([CZ][0-9]{5})", eqn)
+    
+    gen_dict = {c : gen_mapper.get(c, -1) for c in compound_list}
+    
+    return gen_dict

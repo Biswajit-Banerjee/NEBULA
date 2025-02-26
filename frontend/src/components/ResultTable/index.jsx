@@ -7,6 +7,8 @@ import ECDetails from '../ECDetails';
 const ResultTable = ({ 
   results, 
   setResults, 
+  filteredResults, 
+  setFilteredResults, 
   selectedRows: externalSelectedRows = null, 
   setSelectedRows: setExternalSelectedRows = null 
 }) => {
@@ -36,10 +38,10 @@ const ResultTable = ({
   }, [columnVisibility]);
 
   const toggleSelectAll = () => {
-    if (selectedRows.size === results.length) {
+    if (selectedRows.size === filteredResults.length) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(results.map((_, index) => index)));
+      setSelectedRows(new Set(filteredResults.map((_, index) => index)));
     }
   };
 
@@ -54,14 +56,16 @@ const ResultTable = ({
   };
 
   const handleKeepSelected = () => {
-    const newResults = results.filter((_, index) => selectedRows.has(index));
+    const newResults = filteredResults.filter((_, index) => selectedRows.has(index));
     setResults(newResults);
+    setFilteredResults(newResults);
     setSelectedRows(new Set());
   };
 
   const handleRemoveSelected = () => {
-    const newResults = results.filter((_, index) => !selectedRows.has(index));
+    const newResults = filteredResults.filter((_, index) => !selectedRows.has(index));
     setResults(newResults);
+    setFilteredResults(newResults);
     setSelectedRows(new Set());
   };
 

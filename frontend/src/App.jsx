@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Filter } from "lucide-react";
 import Logo from "./components/Logo";
 import FilterMenu from "./components/FilterMenu";
-import ResultTable from "./components/ResultTable";
+import TabView from "./components/TabView";
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -165,8 +165,8 @@ function App() {
             </div>
           )}
 
-          {/* Results Table */}
-          <ResultTable
+          {/* Tab View with Table and Network visualization */}
+          <TabView
             results={results}
             setResults={setResults}
             selectedRows={selectedRows}

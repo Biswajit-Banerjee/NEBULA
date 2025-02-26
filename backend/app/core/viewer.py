@@ -8,7 +8,7 @@ import os
 import requests
 from pathlib import Path
 
-from app.utils.helpers import create_backtrack_df, parse_ec_list
+from app.utils.helpers import create_backtrack_df, parse_ec_list, add_compound_generation
 from app.core.uniprot import get_uniprot_entries, integrate_ecod_data, filter_important_features
 
 def get_uniprot_from_ec(ec_number, domains_df):
@@ -131,6 +131,12 @@ class MetabolicViewer:
             display_df['reaction_link'] = display_df['reaction'].apply(
                 lambda x: f"https://www.genome.jp/entry/{x.split('_')[0]}" if '_' in x else f"https://www.genome.jp/entry/{x}"
             )
+            
+            # drop duplicate reaction entry
+            display_df.drop_duplicates(["equation"], inplace=True)
+            
+            # add product generation
+            display_df.loc[:, "compound_generation"] = display_df.equation.apply(lambda x: add_compound_generation(x, self.gen_mapper))
             
             return {"data": display_df.to_dict('records')}
         except Exception as e:
