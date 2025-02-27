@@ -3,19 +3,17 @@ import {
   Download,
   ZoomIn,
   ZoomOut,
-  RotateCcw,
+  RefreshCcw,
   Maximize,
   Minimize,
 } from "lucide-react";
 
 const ActionButtons = ({
-  containerRef,
-  wrapperRef,
-  isFullscreen,
-  toggleFullscreen,
   handleZoomIn,
   handleZoomOut,
-  handleReset,
+  resetSpiral,
+  isFullscreen,
+  toggleFullscreen,
   handleDownloadSVG,
 }) => {
   return (
@@ -35,9 +33,9 @@ const ActionButtons = ({
         <ZoomOut className="w-5 h-5 text-gray-700" />
       </button>
       <button
-        onClick={() => graphRendererRef.current?.resetSpiral()}
+        onClick={resetSpiral}
         className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
-        title="Reset Layout"
+        title="Reset Current Generation Layout"
       >
         <RefreshCcw className="w-5 h-5 text-gray-700" />
       </button>
