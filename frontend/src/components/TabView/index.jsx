@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Table2, Network, Layers } from 'lucide-react';
 import ResultTable from '../ResultTable';
 import NetworkViewer from '../NetworkViewer';
@@ -7,6 +7,11 @@ import NetworkViewer2D from '../NetworkViewer2D';
 const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
   const [activeTab, setActiveTab] = useState('table');
   const [filteredResults, setFilteredResults] = useState(results);
+
+  // This useEffect ensures filteredResults stays in sync with results
+  useEffect(() => {
+    setFilteredResults(results);
+  }, [results]);
 
   return (
     <div className="space-y-4">
@@ -23,7 +28,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
           <Table2 className="w-4 h-4" />
           Tabular View
         </button>
-        <button
+        {/* <button
           onClick={() => setActiveTab('network')}
           className={`px-4 py-2 font-medium text-sm flex items-center gap-2 ${
             activeTab === 'network'
@@ -33,7 +38,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
         >
           <Network className="w-4 h-4" />
           3D Network
-        </button>
+        </button> */}
         <button
           onClick={() => setActiveTab('network2d')}
           className={`px-4 py-2 font-medium text-sm flex items-center gap-2 ${
@@ -53,6 +58,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
           <ResultTable
             results={results}
             setResults={setResults}
+            filteredResults={filteredResults}
+            setFilteredResults={setFilteredResults}
             selectedRows={selectedRows}
             setSelectedRows={setSelectedRows}
           />
