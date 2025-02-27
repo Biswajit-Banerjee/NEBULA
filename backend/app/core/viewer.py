@@ -90,14 +90,14 @@ class MetabolicViewer:
         except Exception as e:
             return {"error": str(e)}
 
-    async def get_backtrace(self, target: str) -> Dict:
+    async def get_backtrace(self, target: str, skip_cofactor=True) -> Dict:
         """
         Perform backtrace analysis for a target compound
         Returns reaction pathway data including EC numbers
         """
         try:
             self.current_target = target
-            backtrack_df = create_backtrack_df(self.df, target, self.gen_mapper)
+            backtrack_df = create_backtrack_df(self.df, target, self.gen_mapper, skip_cofactor)
             
             if backtrack_df.empty:
                 return {"data": []}
