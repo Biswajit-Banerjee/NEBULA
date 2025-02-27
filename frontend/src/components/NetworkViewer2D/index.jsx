@@ -1,24 +1,28 @@
-import React, { useEffect, useRef, useState } from "react";
-import * as d3 from "d3";
-import {
-  Download,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Maximize,
-  Minimize,
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
+// Import React and hooks explicitly
+import React from "react";
+import { useRef, useState, useEffect } from "react";
+import GraphRenderer from "./GraphRenderer";
+import { 
+  Download, 
+  ZoomIn, 
+  ZoomOut, 
+  RotateCcw, 
+  Maximize, 
+  Minimize, 
+  Play, 
+  Pause, 
+  SkipForward, 
+  SkipBack, 
+  RefreshCcw, 
+  Lock, 
+  Unlock 
 } from "lucide-react";
 
 const NetworkViewer2D = ({ results, height = "600px" }) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
-  const zoomRef = useRef(null);
-  const simulationRef = useRef(null);
+  const graphRendererRef = useRef(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentGeneration, setCurrentGeneration] = useState(0);
@@ -26,11 +30,14 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const playIntervalRef = useRef(null);
 
-  console.log(JSON.stringify(results));
+  console.log("Results in NetworkViewer2D:", results);
 
   // Extract max generation from the data
   useEffect(() => {
-    if (!results || results.length === 0) return;
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      setMaxGeneration(0);
+      return;
+    }
 
     let highestGen = 0;
 
@@ -38,7 +45,10 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
     results.forEach((item) => {
       if (item.compound_generation) {
         Object.values(item.compound_generation).forEach((gen) => {
-          highestGen = Math.max(highestGen, parseInt(gen));
+          const genValue = parseInt(gen);
+          if (!isNaN(genValue)) {
+            highestGen = Math.max(highestGen, genValue);
+          }
         });
       }
     });
@@ -47,501 +57,27 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
     setMaxGeneration(highestGen);
   }, [results]);
 
-  // Process data for visualization based on current generation
-  const processData = (data, currentGen) => {
-    if (!data || data.length === 0) return { nodes: [], links: [] };
-
-    const nodes = [];
-    const links = [];
-    const uniqueNodes = new Map();
-
-    // Helper function to add node if it doesn't exist yet
-    const addUniqueNode = (id, type, generation, props = {}) => {
-      if (!uniqueNodes.has(id)) {
-        const node = {
-          id,
-          type,
-          generation,
-          ...props,
-        };
-        nodes.push(node);
-        uniqueNodes.set(id, node);
-        return node;
-      }
-      return uniqueNodes.get(id);
-    };
-
-    // First pass: Add all compounds for the current generation
-    data.forEach((reaction) => {
-      if (reaction.compound_generation) {
-        Object.entries(reaction.compound_generation).forEach(
-          ([compound, gen]) => {
-            // Only add if the generation is <= current selected generation
-            if (parseInt(gen) <= currentGen) {
-              addUniqueNode(compound, "compound", parseInt(gen), {
-                label: compound,
-                isVisible: true,
-              });
-            }
-          }
-        );
-      }
-    });
-
-    // Second pass: Process reactions and their connections
-    data.forEach((reaction, index) => {
-      try {
-        // Parse the transition to get source and target generations
-        const transition = reaction.transition;
-        let sourceGen = 0;
-        let targetGen = 0;
-
-        if (transition) {
-          const match = transition.match(/(\d+)\s*->\s*(\d+)/);
-          if (match) {
-            sourceGen = parseInt(match[1]);
-            targetGen = parseInt(match[2]);
-          }
-        }
-
-        // Skip reactions where target generation is higher than current
-        if (targetGen > currentGen) return;
-
-        // Parse equation to get reactants and products
-        const parts = reaction.equation.split("=>").map((s) => s.trim());
-        if (parts.length !== 2) return;
-
-        const [reactantsStr, productsStr] = parts;
-
-        const reactants = reactantsStr.split("+").map((s) => {
-          const parts = s.trim().match(/^(\d*\.?\d*)\s*(.+)$/);
-          return {
-            id: parts ? parts[2].trim() : s.trim(),
-            stoichiometry: parts && parts[1] ? parseFloat(parts[1]) : 1,
-          };
-        });
-
-        const products = productsStr.split("+").map((s) => {
-          const parts = s.trim().match(/^(\d*\.?\d*)\s*(.+)$/);
-          return {
-            id: parts ? parts[2].trim() : s.trim(),
-            stoichiometry: parts && parts[1] ? parseFloat(parts[1]) : 1,
-          };
-        });
-
-        // Create reaction nodes - reactant node
-        const reactantNodeId = `${reaction.reaction}_r`;
-        const reactantNode = addUniqueNode(
-          reactantNodeId,
-          "reaction-in",
-          sourceGen,
-          {
-            label: reaction.reaction,
-            reaction: reaction,
-          }
-        );
-
-        // Only add product nodes if we're at the target generation or higher
-        if (currentGen >= targetGen) {
-          // Create product node
-          const productNodeId = `${reaction.reaction}_p`;
-          const productNode = addUniqueNode(
-            productNodeId,
-            "reaction-out",
-            targetGen,
-            {
-              label: reaction.reaction,
-              reaction: reaction,
-            }
-          );
-
-          // Add link between reaction nodes
-          links.push({
-            source: reactantNodeId,
-            target: productNodeId,
-            type: "reaction",
-            generation: targetGen,
-          });
-
-          // Add EC nodes if present and we're at target generation
-          if (
-            reaction.ec_list &&
-            reaction.ec_list.length > 0 &&
-            currentGen >= targetGen
-          ) {
-            reaction.ec_list.forEach((ec) => {
-              if (ec && ec !== "N/A") {
-                // Create consistent node ID using EC number and target generation
-                const ecNodeId = `ec_${ec}_${targetGen}`;
-
-                // Add EC node if it doesn't exist yet
-                const ecNode = addUniqueNode(ecNodeId, "ec", targetGen, {
-                  label: ec,
-                  ec: ec,
-                  generation: targetGen,
-                });
-
-                // Create connections only if they don't already exist
-                const existingInLink = links.find(
-                  (l) => l.source === reactantNodeId && l.target === ecNodeId
-                );
-                const existingOutLink = links.find(
-                  (l) => l.source === ecNodeId && l.target === productNodeId
-                );
-
-                if (!existingInLink) {
-                  links.push({
-                    source: reactantNodeId,
-                    target: ecNodeId,
-                    type: "ec-in",
-                    generation: targetGen,
-                  });
-                }
-
-                if (!existingOutLink) {
-                  links.push({
-                    source: ecNodeId,
-                    target: productNodeId,
-                    type: "ec-out",
-                    generation: targetGen,
-                  });
-                }
-              }
-            });
-          }
-
-          // Connect products to reaction product node
-          products.forEach((product) => {
-            const productCompound = uniqueNodes.get(product.id);
-            if (productCompound) {
-              links.push({
-                source: productNodeId,
-                target: product.id,
-                type: "product",
-                stoichiometry: product.stoichiometry,
-                generation: targetGen,
-              });
-            }
-          });
-        }
-
-        // Always connect reactants to reaction reactant node if the compound is visible
-        reactants.forEach((reactant) => {
-          const reactantCompound = uniqueNodes.get(reactant.id);
-          if (reactantCompound) {
-            links.push({
-              source: reactant.id,
-              target: reactantNodeId,
-              type: "substrate",
-              stoichiometry: reactant.stoichiometry,
-              generation: sourceGen,
-            });
-          }
-        });
-      } catch (err) {
-        console.error("Error processing reaction:", err);
-      }
-    });
-
-    // Remove any nodes that don't have any connections
-    const connectedNodeIds = new Set();
-    links.forEach((link) => {
-      connectedNodeIds.add(link.source);
-      connectedNodeIds.add(link.target);
-    });
-
-    const connectedNodes = nodes.filter((node) => {
-      // Always keep compounds, filter reactions and EC nodes with no connections
-      if (node.type === "compound") return true;
-      return connectedNodeIds.has(node.id);
-    });
-
-    return { nodes: connectedNodes, links };
-  };
-
-  // Render D3 visualization
+  // Don't automatically lock nodes when changing generations
+  // We'll leave this commented out as per user's request
+  /*
   useEffect(() => {
-    if (
-      !svgRef.current ||
-      !containerRef.current ||
-      !results ||
-      results.length === 0
-    )
-      return;
-
-    // Clean up previous simulation
-    if (simulationRef.current) {
-      simulationRef.current.stop();
+    if (graphRendererRef.current && !graphRendererRef.current.isLocked) {
+      // When changing generations, it's often helpful to lock nodes temporarily
+      // This stabilizes the view as new nodes appear
+      graphRendererRef.current.toggleLock();
+      
+      // Set a timeout to unlock after the new generation has settled
+      const timer = setTimeout(() => {
+        if (graphRendererRef.current) {
+          // Uncomment this to auto-unlock after a delay
+          // graphRendererRef.current.toggleLock();
+        }
+      }, 2000);
+      
+      return () => clearTimeout(timer);
     }
-
-    // Clear existing content
-    d3.select(svgRef.current).selectAll("*").remove();
-
-    // Process data
-    const { nodes, links } = processData(results, currentGeneration);
-    if (nodes.length === 0) return;
-
-    // Create SVG
-    const width = containerRef.current.clientWidth;
-    const containerHeight = parseInt(height);
-
-    const svg = d3
-      .select(svgRef.current)
-      .attr("width", width)
-      .attr("height", containerHeight);
-
-    // Add defs for markers
-    const defs = svg.append("defs");
-
-    // Add arrowhead marker
-    defs
-      .append("marker")
-      .attr("id", "arrowhead")
-      .attr("viewBox", "-5 -5 10 10") // Centered viewBox
-      .attr("refX", 0) // Tip at center point
-      .attr("refY", 0)
-      .attr("markerWidth", 8)
-      .attr("markerHeight", 8)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M-5,-5 L0,0 L-5,5") // Arrow shape pointing right
-      .attr("fill", "currentColor");
-
-    // Create container for zoom
-    const g = svg.append("g");
-
-    // Add zoom behavior
-    const zoom = d3
-      .zoom()
-      .scaleExtent([0.2, 4])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform);
-      });
-
-    svg.call(zoom);
-    zoomRef.current = zoom;
-
-    // Create force simulation
-    const simulation = d3
-      .forceSimulation(nodes)
-      .force(
-        "link",
-        d3
-          .forceLink(links)
-          .id((d) => d.id)
-          .distance(100)
-      )
-      .force("charge", d3.forceManyBody().strength(-500))
-      .force("center", d3.forceCenter(width / 2, containerHeight / 2))
-      .force("x", d3.forceX(width / 2).strength(0.1))
-      .force("y", d3.forceY(containerHeight / 2).strength(0.1))
-      .force("collision", d3.forceCollide().radius(30));
-
-    simulationRef.current = simulation;
-
-    const getNodeColor = (node) => {
-      const generation = node.generation || 0;
-      const maxGen = Math.max(maxGeneration, 1); // Ensure we don't divide by zero
-      const hue = (generation / (maxGen + 1)) * 360; // Distribute hues evenly up to maxGen
-      const saturation = 40; // Keep colors vibrant
-      return {
-        fill: `hsl(${hue}, ${saturation}%, 90%)`, // Light pastel fill
-        stroke: `hsl(${hue}, ${saturation}%, 50%)`, // Darker stroke
-      };
-    };
-
-    const linkGroups = g.append("g")
-      .selectAll("g")
-      .data(links)
-      .enter()
-      .append("g")
-      .attr("class", "link-group");
-
-    // Add the main edge lines
-    linkGroups.append("line")
-      .attr("stroke", d => {
-        if (d.type === "reaction") return "#9CA3AF";
-        if (d.type === "ec-in" || d.type === "ec-out") return "#8B5CF6";
-        
-        const generation = d.generation || 0;
-        const maxGen = Math.max(maxGeneration, 1);
-        const hue = (generation / (maxGen + 1)) * 360;
-        return `hsl(${hue}, 70%, 50%)`;
-      })
-      .attr("stroke-width", 1.5)
-      .attr("marker-mid", d => {
-        if (d.type === "substrate" || d.type === "product") return "url(#arrowhead)";
-        return null;
-      })
-      .attr("stroke-dasharray", d => {
-        if (d.type === "reaction") return "5,5";
-        if (d.type === "ec-in" || d.type === "ec-out") return "3,3";
-        return null;
-      });
-
-    // Add edge weight labels
-    const edgeLabels = linkGroups.filter(d => d.stoichiometry && d.stoichiometry !== 1)
-      .append("g")
-      .attr("class", "edge-label");
-
-    edgeLabels.append("rect")
-      .attr("rx", 4)
-      .attr("width", 16)
-      .attr("height", 16)
-      .attr("x", -8)
-      .attr("y", -12)
-      .attr("fill", "white")
-      .attr("opacity", 0.35);
-
-    edgeLabels.append("text")
-      .text(d => d.stoichiometry)
-      .attr("text-anchor", "middle")
-      .attr("dy", -2)
-      .attr("font-size", 10)
-      .attr("fill", "#4B5563")
-      .attr("font-weight", 500);
-
-    // Create nodes
-    const node = g
-      .append("g")
-      .selectAll(".node")
-      .data(nodes)
-      .enter()
-      .append("g")
-      .attr("class", "node")
-      .call(
-        d3
-          .drag()
-          .on("start", dragstarted)
-          .on("drag", dragged)
-          .on("end", dragended)
-      );
-
-    // Add different shapes based on node type
-    // Compound nodes (circles)
-    node
-      .filter((d) => d.type === "compound")
-      .append("circle")
-      .attr("r", 20)
-      .attr("fill", (d) => getNodeColor(d).fill)
-      .attr("stroke", (d) => getNodeColor(d).stroke)
-      .attr("stroke-width", 2);
-
-    // Reaction nodes (rectangles)
-    node
-      .filter((d) => d.type === "reaction-in")
-      .append("rect")
-      .attr("width", 50)
-      .attr("height", 25)
-      .attr("x", -25)
-      .attr("y", -12.5)
-      .attr("rx", 5)
-      .attr("fill", (d) => getNodeColor(d).fill)
-      .attr("stroke", (d) => getNodeColor(d).stroke)
-      .attr("stroke-width", 2);
-
-    node
-      .filter((d) => d.type === "reaction-out")
-      .append("rect")
-      .attr("width", 50)
-      .attr("height", 25)
-      .attr("x", -25)
-      .attr("y", -12.5)
-      .attr("rx", 5)
-      .attr("fill", (d) => getNodeColor(d).fill)
-      .attr("stroke", (d) => getNodeColor(d).stroke)
-      .attr("stroke-width", 2);
-
-    // EC nodes (rounded rectangles)
-    node
-      .filter((d) => d.type === "ec")
-      .append("rect")
-      .attr("width", 60)
-      .attr("height", 20)
-      .attr("x", -30)
-      .attr("y", -10)
-      .attr("rx", 10)
-      .attr("fill", "white")
-      .attr("stroke", (d) => getNodeColor(d).stroke)
-      .attr("stroke-width", 2);
-
-    // Add labels
-    node
-      .append("text")
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
-      .attr("font-size", (d) => (d.type === "compound" ? 10 : 8))
-      .attr("fill", "#1F2937")
-      .text((d) => {
-        if (d.type === "compound") return d.label;
-        if (d.type === "ec") return d.label;
-        return d.label.split("_")[0]; // Truncate reaction IDs
-      });
-
-    // Add generation indicators
-    node
-      .filter((d) => d.generation > 0)
-      .append("text")
-      .attr("x", (d) =>
-        d.type === "compound" ? 0 : d.type === "ec" ? -20 : -15
-      )
-      .attr("y", (d) =>
-        d.type === "compound" ? -25 : d.type === "ec" ? -15 : -20
-      )
-      .attr("text-anchor", "middle")
-      .attr("font-size", 8)
-      .attr("fill", (d) => getNodeColor(d).stroke)
-      .text((d) => `G${d.generation}`);
-
-    // Handle drag events
-    function dragstarted(event, d) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-      if (!event.active) simulation.alphaTarget(0);
-      // Keep nodes fixed at their dragged position
-    }
-
-    // Update position on tick
-    simulation.on("tick", () => {
-      linkGroups.select("line")
-        .attr("x1", d => d.source.x)
-        .attr("y1", d => d.source.y)
-        .attr("x2", d => d.target.x)
-        .attr("y2", d => d.target.y);
-
-      linkGroups.select(".edge-label")
-        .attr("transform", d => {
-          const x = (d.source.x + d.target.x) / 2;
-          const y = (d.source.y + d.target.y) / 2;
-          return `translate(${x},${y})`;
-        });
-
-      node.attr("transform", d => `translate(${d.x},${d.y})`);
-    });
-
-    // Run simulation for a bit
-    for (let i = 0; i < 300; i++) simulation.tick();
-
-    // Set initial transform
-    svg.call(
-      zoom.transform,
-      d3.zoomIdentity.scale(0.8).translate(width / 4, containerHeight / 4)
-    );
-
-    // Clean up on unmount
-    return () => {
-      simulation.stop();
-    };
-  }, [results, height, currentGeneration]);
+  }, [currentGeneration]);
+  */
 
   // Handle animation playback
   useEffect(() => {
@@ -591,30 +127,20 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
 
   // Handle zoom controls
   const handleZoomIn = () => {
-    if (zoomRef.current && svgRef.current) {
-      d3.select(svgRef.current).transition().call(zoomRef.current.scaleBy, 1.5);
+    if (graphRendererRef.current) {
+      graphRendererRef.current.zoomIn();
     }
   };
 
   const handleZoomOut = () => {
-    if (zoomRef.current && svgRef.current) {
-      d3.select(svgRef.current)
-        .transition()
-        .call(zoomRef.current.scaleBy, 0.75);
+    if (graphRendererRef.current) {
+      graphRendererRef.current.zoomOut();
     }
   };
 
   const handleReset = () => {
-    if (zoomRef.current && svgRef.current && containerRef.current) {
-      const width = containerRef.current.clientWidth;
-      const containerHeight = parseInt(height);
-
-      d3.select(svgRef.current)
-        .transition()
-        .call(
-          zoomRef.current.transform,
-          d3.zoomIdentity.scale(0.8).translate(width / 4, containerHeight / 4)
-        );
+    if (graphRendererRef.current) {
+      graphRendererRef.current.resetView();
     }
   };
 
@@ -663,40 +189,21 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
 
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener(
-        "mozfullscreenchange",
-        handleFullscreenChange
-      );
-      document.removeEventListener(
-        "webkitfullscreenchange",
-        handleFullscreenChange
-      );
-      document.removeEventListener(
-        "msfullscreenchange",
-        handleFullscreenChange
-      );
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("msfullscreenchange", handleFullscreenChange);
     };
   }, []);
 
   // Handle SVG download
   const handleDownloadSVG = () => {
-    const svgElement = svgRef.current;
-    if (!svgElement) return;
-
-    const svgData = new XMLSerializer().serializeToString(svgElement);
-    const svgBlob = new Blob([svgData], {
-      type: "image/svg+xml;charset=utf-8",
-    });
-    const url = URL.createObjectURL(svgBlob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "metabolic-network.svg";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (graphRendererRef.current) {
+      graphRendererRef.current.downloadSVG();
+    }
   };
+
+  // Make sure we have array data to pass to the GraphRenderer
+  const safeResults = Array.isArray(results) ? results : [];
 
   return (
     <div className="relative rounded-xl border border-gray-200 shadow" ref={containerRef}>
@@ -724,13 +231,25 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
           >
             <ZoomOut className="w-5 h-5 text-gray-700" />
           </button>
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleReset}
+            onClick={() => graphRendererRef.current?.resetSpiral()}
             className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
-            title="Reset View"
+            title="Reset Current Generation Layout"
+          >
+            <RefreshCcw className="w-5 h-5 text-gray-700" />
+          </button>
+          <button
+            onClick={() => {
+              setCurrentGeneration(0);
+              setTimeout(() => graphRendererRef.current?.resetToGenZero(), 100);
+            }}
+            className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
+            title="Reset to Generation Zero"
           >
             <RotateCcw className="w-5 h-5 text-gray-700" />
           </button>
+        </div>
           <button
             onClick={toggleFullscreen}
             className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
@@ -752,7 +271,15 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
 
         {/* Main Visualization Area */}
         <div className="flex-1 relative">
-          <svg ref={svgRef} className="w-full h-full"></svg>
+          <GraphRenderer
+            ref={graphRendererRef}
+            data={safeResults}
+            currentGeneration={currentGeneration}
+            maxGeneration={maxGeneration}
+            containerRef={containerRef}
+            height={height}
+            isFullscreen={isFullscreen}
+          />
         </div>
 
         {/* Generation Controls and Slider */}
@@ -765,14 +292,14 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
               </span>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setCurrentGeneration(Math.max(0, currentGeneration - 1))}
+                  onClick={stepBackward}
                   disabled={currentGeneration === 0}
                   className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-100 disabled:opacity-50"
                 >
                   <SkipBack className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={togglePlay}
                   className={`p-1.5 rounded-md ${
                     isPlaying ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
                   }`}
@@ -780,7 +307,7 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
                   {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
                 <button
-                  onClick={() => setCurrentGeneration(Math.min(maxGeneration, currentGeneration + 1))}
+                  onClick={stepForward}
                   disabled={currentGeneration === maxGeneration}
                   className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-100 disabled:opacity-50"
                 >
@@ -851,9 +378,16 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
                 <div className="w-4 h-3 rounded-md bg-white border border-purple-500 mr-1"></div>
                 <span>EC Number</span>
               </div>
+              <div className="border-l border-gray-300 h-4 mx-1"></div>
+              <div className="flex items-center">
+                <div className="w-5 h-5 flex items-center justify-center bg-blue-600 rounded-full mr-1 text-white">
+                  <Lock className="w-3 h-3" />
+                </div>
+                <span>Locked Nodes</span>
+              </div>
             </div>
             <div className="italic">
-              Drag to move nodes • Scroll to zoom • Slider to change generations
+              Drag to move nodes • Scroll to zoom • Use lock button to fix positions
             </div>
           </div>
         </div>
