@@ -128,12 +128,18 @@ class MetabolicViewer:
             self.current_df = display_df.copy()
             
             # Add reaction links for KEGG database
-            display_df['reaction_link'] = display_df['reaction'].apply(
-                lambda x: f"https://www.genome.jp/entry/{x.split('_')[0]}" if '_' in x else f"https://www.genome.jp/entry/{x}"
-            )
+            # display_df['reaction_link'] = display_df['reaction'].apply(
+            #     lambda x: f"https://www.genome.jp/entry/{x.split('_')[0]}" if '_' in x else f"https://www.genome.jp/entry/{x}"
+            # )
             
             # drop duplicate reaction entry
             display_df.drop_duplicates(["equation"], inplace=True)
+            
+            # aggrigate data
+            agg_df = {col: 'first' for col in display_df.columns if col != "reaction"}
+            agg_df['target'] = lambda x: ', '.join(x)
+            # agg_df['ec_list'] = set
+            display_df = display_df.groupby("reaction").agg(agg_df).reset_index()
             
             # add product generation
             display_df.loc[:, "compound_generation"] = display_df.equation.apply(lambda x: add_compound_generation(x, self.gen_mapper))
