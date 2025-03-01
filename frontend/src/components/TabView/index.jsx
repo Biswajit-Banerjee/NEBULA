@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table2, Network, Layers } from 'lucide-react';
 import ResultTable from '../ResultTable';
-import NetworkViewer from '../NetworkViewer';
+import NetworkViewerContainer from '../NetworkViewer';
 import NetworkViewer2D from '../NetworkViewer2D';
 
 const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
@@ -14,41 +14,58 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
   }, [results]);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col">
       {/* Tab Navigation */}
       <div className="flex border-b border-slate-200">
         <button
           onClick={() => setActiveTab('table')}
-          className={`px-4 py-2 font-medium text-sm flex items-center gap-2 ${
+          className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'table'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              ? 'text-blue-600'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Table2 className="w-4 h-4" />
-          Tabular View
+          <div className="flex items-center gap-2">
+            <Table2 className="w-4 h-4" />
+            <span>Tabular View</span>
+          </div>
+          {activeTab === 'table' && (
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+          )}
         </button>
-        {/* <button
-          onClick={() => setActiveTab('network')}
-          className={`px-4 py-2 font-medium text-sm flex items-center gap-2 ${
-            activeTab === 'network'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Network className="w-4 h-4" />
-          3D Network
-        </button> */}
+
         <button
           onClick={() => setActiveTab('network2d')}
-          className={`px-4 py-2 font-medium text-sm flex items-center gap-2 ${
+          className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'network2d'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              ? 'text-blue-600'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Layers className="w-4 h-4" />
-          2D Network
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            <span>2D Network</span>
+          </div>
+          {activeTab === 'network2d' && (
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('network3d')}
+          className={`px-6 py-4 font-medium transition-colors relative ${
+            activeTab === 'network2d'
+              ? 'text-blue-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Network className="w-4 h-4" />
+            <span>3D Network</span>
+          </div>
+          {activeTab === 'network3d' && (
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+          )}
         </button>
       </div>
 
@@ -64,8 +81,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
             setSelectedRows={setSelectedRows}
           />
         )}
-        {activeTab === 'network' && (
-          <NetworkViewer 
+        {activeTab === 'network3d' && (
+          <NetworkViewerContainer 
             results={filteredResults} 
             height="600px" 
           />

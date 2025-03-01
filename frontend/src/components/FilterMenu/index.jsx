@@ -37,9 +37,6 @@ const FilterMenu = ({ results, setSelectedRows, onClose }) => {
 
       // Directly update the selected rows in the parent
       setSelectedRows(matchingIndices);
-      
-      // Optional: close the filter menu after selection
-      // onClose();
     } catch (e) {
       console.error('Invalid search pattern:', e);
     }
@@ -56,13 +53,13 @@ const FilterMenu = ({ results, setSelectedRows, onClose }) => {
   ];
 
   return (
-    <div className="w-80 bg-white shadow-lg rounded-lg border">
+    <div className="w-80 bg-white shadow-xl rounded-xl border border-slate-200 overflow-hidden">
       <div className="p-4">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">Filter & Select</h3>
+          <h3 className="text-lg font-semibold text-slate-800">Filter & Select</h3>
           <button 
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
+            className="p-2 hover:bg-slate-100 rounded-full text-slate-500 hover:text-slate-700 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -72,7 +69,7 @@ const FilterMenu = ({ results, setSelectedRows, onClose }) => {
           <select
             value={searchColumn}
             onChange={(e) => setSearchColumn(e.target.value)}
-            className="block w-full rounded-md border border-gray-300 text-sm p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="block w-full rounded-lg border border-slate-200 text-sm p-2.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           >
             {columns.map(column => (
               <option key={column.value} value={column.value}>
@@ -87,13 +84,13 @@ const FilterMenu = ({ results, setSelectedRows, onClose }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search..."
-              className="block w-full rounded-md border border-gray-300 pl-10 pr-12 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full rounded-lg border border-slate-200 pl-10 pr-12 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <button
               onClick={() => setIsRegexMode(!isRegexMode)}
               className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${
-                isRegexMode ? 'text-blue-600' : 'text-gray-400'
+                isRegexMode ? 'text-indigo-600' : 'text-slate-400'
               }`}
               title={isRegexMode ? 'Regex mode active' : 'Toggle regex mode'}
             >
@@ -102,9 +99,9 @@ const FilterMenu = ({ results, setSelectedRows, onClose }) => {
           </div>
           <button
             onClick={handleSearch}
-            className="w-full px-4 py-2 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors text-sm font-medium"
+            className="w-full px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
           >
-            Select
+            Search & Select
           </button>
         </div>
       </div>

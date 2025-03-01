@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Settings2, CheckCircle2, XCircle, Filter, LayoutGrid } from 'lucide-react';
 import CompoundTooltip from '../CompoundTooltip';
 import ReactionTooltip from '../ReactionTooltip';
@@ -22,10 +22,12 @@ const ResultTable = ({
     equation: true,
     transition: true,
     target: true,
-    ec: true,
-    link: true
+    ec: true
   });
   const [showColumnManager, setShowColumnManager] = useState(false);
+  const [reactionDetails, setReactionDetails] = useState({});
+  const [reactionImages, setReactionImages] = useState({});
+  const [loadingDetails, setLoadingDetails] = useState({});
 
   // Use either external or internal state
   const selectedRows = externalSelectedRows || internalSelectedRows;
@@ -36,6 +38,12 @@ const ResultTable = ({
       .filter(([_, isVisible]) => isVisible)
       .map(([key]) => key);
   }, [columnVisibility]);
+
+  // Helper function to extract KEGG reaction ID (R#####)
+  const extractReactionId = (reaction) => {
+    const match = reaction.match(/R\d{5}/);
+    return match ? match[0] : null;
+  };
 
   const toggleSelectAll = () => {
     if (selectedRows.size === filteredResults.length) {
@@ -69,13 +77,52 @@ const ResultTable = ({
     setSelectedRows(new Set());
   };
 
-  const toggleRowExpansion = (index) => {
+  const toggleRowExpansion = (index, row) => {
     const newExpanded = new Set(expandedRows);
+    
     if (newExpanded.has(index)) {
       newExpanded.delete(index);
     } else {
       newExpanded.add(index);
+      
+      // Get the reaction ID
+      const reaction = row.reaction;
+      const reactionId = extractReactionId(reaction);
+      
+      // Check if we already have details for this reaction
+      if (!reactionDetails[reaction] && reactionId) {
+        setLoadingDetails(prev => ({ ...prev, [reaction]: true }));
+        
+        // Fetch reaction details from local API
+        fetch(`http://127.0.0.1:8000/api/reaction/${reaction}`)
+          .then(response => response.json())
+          .then(data => {
+            setReactionDetails(prev => ({
+              ...prev,
+              [reaction]: data.data?.definition || "No definition available"
+            }));
+          })
+          .catch(error => {
+            console.error("Error fetching reaction details:", error);
+            setReactionDetails(prev => ({
+              ...prev,
+              [reaction]: "Failed to load definition"
+            }));
+          })
+          .finally(() => {
+            setLoadingDetails(prev => ({ ...prev, [reaction]: false }));
+          });
+        
+        // Set image URL if we have a valid reaction ID
+        if (reactionId) {
+          setReactionImages(prev => ({
+            ...prev,
+            [reaction]: `https://www.genome.jp/Fig/reaction/${reactionId}.gif`
+          }));
+        }
+      }
     }
+    
     setExpandedRows(newExpanded);
   };
 
@@ -87,7 +134,7 @@ const ResultTable = ({
   };
 
   const ColumnManager = () => (
-    <div className="absolute right-0 top-12 bg-white rounded-xl shadow-lg border border-emerald-100 p-4 z-50 min-w-[200px] animate-fade-in">
+    <div className="absolute right-0 top-12 bg-white rounded-xl shadow-lg border border-gray-200 p-4 z-50 min-w-[200px] animate-fade-in">
       <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2 text-sm">
         <LayoutGrid className="w-4 h-4 text-emerald-600" />
         Column Visibility
@@ -107,7 +154,7 @@ const ResultTable = ({
                 {isVisible && <CheckCircle2 className="w-3 h-3 text-white" />}
               </div>
             </div>
-            <span className="text-sm text-slate-600 group-hover:text-emerald-700 transition-colors">
+            <span className="text-sm text-slate-600 group-hover:text-emerald-700 transition-colors capitalize">
               {key.replace(/_/g, ' ')}
             </span>
           </label>
@@ -232,7 +279,7 @@ const ResultTable = ({
                   </td>
                   <td className="w-8 px-2">
                     <button
-                      onClick={() => toggleRowExpansion(index)}
+                      onClick={() => toggleRowExpansion(index, row)}
                       className="p-1 hover:bg-slate-100 rounded-md transition-all text-slate-500 hover:text-emerald-700"
                     >
                       {expandedRows.has(index) ? (
@@ -249,30 +296,59 @@ const ResultTable = ({
                 {expandedRows.has(index) && (
                   <tr className="bg-indigo-50">
                     <td colSpan={visibleColumns.length + 2} className="px-6 py-4">
-                      <div className="text-sm space-y-2">
-                        <div className="flex items-center gap-2 text-slate-700 mb-2">
-                          <span className="font-medium">Detailed View</span>
-                          <div className="flex-1 h-px bg-slate-200"></div>
+                      {loadingDetails[row.reaction] ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-500 border-t-transparent"></div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-white p-3 rounded-lg border border-slate-100">
-                            <span className="text-slate-600 text-xs font-medium">Full Equation</span>
-                            <p className="mt-1 font-mono text-xs text-slate-500">
-                              {row.equation}
+                      ) : (
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-2 text-slate-700">
+                            <span className="font-medium">Reaction Details</span>
+                            <div className="flex-1 h-px bg-indigo-200"></div>
+                          </div>
+                          
+                          {/* Definition */}
+                          <div className="bg-white p-5 rounded-lg border border-indigo-100 shadow-sm">
+                            <span className="text-slate-600 text-sm font-medium">KEGG Definition</span>
+                            <p className="mt-2 text-slate-700 font-medium">
+                              {reactionDetails[row.reaction] || "No definition available"}
                             </p>
                           </div>
-                          <div className="bg-white p-3 rounded-lg border border-slate-100">
-                            <span className="text-slate-600 text-xs font-medium">EC Numbers</span>
-                            <div className="mt-1 space-y-1">
-                              {row.ec_list?.map((ec, i) => (
-                                <div key={i} className="text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded-md">
-                                  {ec}
-                                </div>
-                              ))}
+                          
+                          {/* Reaction Image */}
+                          {reactionImages[row.reaction] && (
+                            <div className="bg-white p-5 rounded-lg border border-indigo-100 shadow-sm">
+                              <span className="text-slate-600 text-sm font-medium">KEGG Reaction Diagram</span>
+                              <div className="mt-3 flex justify-center bg-gray-50 p-4 rounded-lg">
+                                <img 
+                                  src={reactionImages[row.reaction]} 
+                                  alt={`Reaction diagram for ${row.reaction}`}
+                                  className="max-w-full"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB4PSIwIiB5PSIwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YxZjVmOSIvPjx0ZXh0IHg9IjIwMCIgeT0iNTAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgYWxpZ25tZW50LWJhc2VsaW5lPSJtaWRkbGUiIGZpbGw9IiM2NDc0OGIiPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+';
+                                    console.log(`Failed to load image for ${row.reaction}`);
+                                  }}
+                                />
+                              </div>
                             </div>
-                          </div>
+                          )}
+                          
+                          {/* EC Numbers */}
+                          {/* {row.ec_list && row.ec_list.length > 0 && (
+                            <div className="bg-white p-5 rounded-lg border border-indigo-100 shadow-sm">
+                              <span className="text-slate-600 text-sm font-medium">EC Numbers</span>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {row.ec_list.map((ec, i) => (
+                                  <div key={i} className="inline-flex px-3 py-1.5 rounded-md text-blue-700 bg-blue-50 border border-blue-100 text-sm">
+                                    {ec}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )} */}
                         </div>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -292,26 +368,17 @@ const TableCell = ({ column, row }) => {
     reaction: row.reaction,
     source: row.source,
     coenzyme: row.coenzyme,
-    equation: <ReactionTooltip equation={row.equation} />,
+    equation: row.equation,//<ReactionTooltip equation={row.equation} />,
     transition: row.transition,
-    target: <CompoundTooltip compoundId={row.target} />,
-    ec: row.ec_list?.map((ec, i) => <ECDetails key={i} ec={ec} />),
-    link: (
-      <a
-        href={row.reaction_link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-emerald-700 hover:text-emerald-900 transition-colors inline-flex items-center gap-1"
-      >
-        View Details
-        <ChevronRight className="w-4 h-4" />
-      </a>
-    )
+    target: row.target,//<CompoundTooltip compoundId={row.target} />,
+    ec: row.ec_list?.map((ec, i) => (
+      <ECDetails key={i} ec={ec} />
+    ))
   };
 
   return (
     <td className="px-4 py-3 text-sm text-slate-600">
-      <div className="max-w-[200px] truncate hover:text-clip transition-all">
+      <div className="max-w-full">
         {content[column] || '-'}
       </div>
     </td>

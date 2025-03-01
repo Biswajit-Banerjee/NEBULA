@@ -1,1362 +1,1753 @@
-import React, { useRef, useEffect, useState } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import {
-  CSS2DRenderer,
-  CSS2DObject,
-} from "three/examples/jsm/renderers/CSS2DRenderer";
-import * as d3 from "d3";
-import {
-  Play,
-  Pause,
-  RotateCcw,
-  Eye,
-  EyeOff,
-  Maximize,
-  Minimize,
-  ZoomIn,
-  ZoomOut,
-} from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import ForceGraph3D from 'react-force-graph-3d';
+import * as THREE from 'three';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import styled from 'styled-components';
+import * as d3 from 'd3';
 
-const NetworkViewer = ({ results, width = "100%", height = "100%" }) => {
-  // Refs
-  const containerRef = useRef(null);
-  const rendererRef = useRef(null);
-  const labelRendererRef = useRef(null);
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
-  const controlsRef = useRef(null);
-  const nodesRef = useRef([]);
-  const edgesRef = useRef([]);
-  const simulationRef = useRef(null);
-  const lightsRef = useRef([]);
+// =============================================================================
+// Styled Components
+// =============================================================================
 
-  // State
-  const [isPlaying, setIsPlaying] = useState(false);
+// API fetch function
+const fetchNodeData = async (nodeType, nodeId) => {
+  try {
+    const response = await fetch(`/api/${nodeType}/${nodeId}`);
+    if (!response.ok) {
+      throw new Error(`Error fetching ${nodeType} data: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching ${nodeType} data:`, error);
+    return null;
+  }
+};
+
+const Container = styled.div`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, #1a2130 0%, #090a0f 100%);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  
+  &:fullscreen {
+    border-radius: 0;
+  }
+`;
+
+const ControlPanel = styled.div`
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  z-index: 10;
+  background: rgba(30, 39, 51, 0.85);
+  backdrop-filter: blur(6px);
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 300px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  &:hover {
+    background: rgba(40, 49, 61, 0.9);
+  }
+`;
+
+const SliderContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+`;
+
+const SliderLabel = styled.div`
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #abb4c5;
+`;
+
+const Slider = styled.input`
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  background: rgba(80, 100, 130, 0.3);
+  border-radius: 3px;
+  outline: none;
+  
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #4a9fff;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+  }
+  
+  &::-webkit-slider-thumb:hover {
+    background: #65aeff;
+    transform: scale(1.1);
+  }
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const Button = styled.button`
+  background: ${props => props.$active ? 'rgba(74, 159, 255, 0.2)' : 'rgba(60, 70, 90, 0.5)'};
+  color: ${props => props.$active ? '#4a9fff' : '#d0d0d0'};
+  border: 1px solid ${props => props.$active ? 'rgba(74, 159, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    background: rgba(80, 100, 130, 0.7);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  &:active {
+    transform: translateY(1px);
+  }
+
+  svg {
+    margin-right: ${props => props.$iconOnly ? '0' : '5px'};
+  }
+`;
+
+const OptionsPanel = styled.div`
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  background: rgba(30, 39, 51, 0.85);
+  backdrop-filter: blur(6px);
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 240px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const Option = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const OptionLabel = styled.label`
+  font-size: 13px;
+  color: #abb4c5;
+  cursor: pointer;
+`;
+
+const Toggle = styled.div`
+  position: relative;
+  width: 40px;
+  height: 20px;
+`;
+
+const ToggleInput = styled.input`
+  opacity: 0;
+  width: 0;
+  height: 0;
+  
+  &:checked + span {
+    background-color: #4a9fff;
+  }
+  
+  &:checked + span:before {
+    transform: translateX(20px);
+  }
+`;
+
+const ToggleSlider = styled.span`
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(80, 100, 130, 0.3);
+  transition: 0.4s;
+  border-radius: 34px;
+  
+  &:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+  }
+`;
+
+const Select = styled.select`
+  background: rgba(60, 70, 90, 0.5);
+  color: #d0d0d0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  width: 120px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(80, 100, 130, 0.7);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  option {
+    background: #1e2733;
+  }
+`;
+
+const LoadingOverlay = styled.div`
+  position: absolute;
+  display: ${props => props.$loading ? 'flex' : 'none'};
+  justify-content: center;
+  align-items: center;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 15, 25, 0.8);
+  z-index: 20;
+  color: white;
+  font-size: 18px;
+  flex-direction: column;
+`;
+
+const Spinner = styled.div`
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top: 4px solid #4a9fff;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
+const TopLeftButtonGroup = styled.div`
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 20;
+  display: flex;
+  gap: 10px;
+`;
+
+const ControlButton = styled.button`
+  background: ${props => props.$active ? 'rgba(74, 159, 255, 0.3)' : 'rgba(30, 39, 51, 0.85)'};
+  backdrop-filter: blur(6px);
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: ${props => props.$active ? '#fff' : '#e0e0e0'};
+  border: 1px solid ${props => props.$active ? 'rgba(74, 159, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  
+  &:hover {
+    background: ${props => props.$active ? 'rgba(74, 159, 255, 0.4)' : 'rgba(40, 49, 61, 0.9)'};
+  }
+  
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+`;
+
+const AxisControls = styled.div`
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 20;
+  background: rgba(30, 39, 51, 0.85);
+  backdrop-filter: blur(6px);
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: #e0e0e0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const AxisButton = styled.button`
+  background: rgba(60, 70, 90, 0.5);
+  color: #d0d0d0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+  font-weight: ${props => props.$center ? 'bold' : 'normal'};
+  cursor: pointer;
+  transition: all 0.2s ease;
+  touch-action: none; /* Prevent scrolling when holding button on touchscreens */
+  
+  &:hover {
+    background: rgba(80, 100, 130, 0.7);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  &:active {
+    background: rgba(100, 120, 150, 0.8);
+  }
+  
+  &.x-axis {
+    color: #ff6b6b;
+  }
+  
+  &.y-axis {
+    color: #59d4a0;
+  }
+  
+  &.z-axis {
+    color: #4a9fff;
+  }
+`;
+
+const NodeInfoPanel = styled.div`
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  bottom: 20px;
+  width: 300px;
+  z-index: 30;
+  background: rgba(20, 29, 41, 0.9);
+  backdrop-filter: blur(10px);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  color: #e0e0e0;
+  overflow-y: auto;
+  transform: ${props => props.$visible ? 'translateX(0)' : 'translateX(320px)'};
+  transition: transform 0.3s ease-in-out;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  color: #abb4c5;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+  
+  &:hover {
+    color: white;
+  }
+`;
+
+const NodeInfoTitle = styled.h3`
+  margin-top: 0;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  font-size: 18px;
+  color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const NodeInfoSection = styled.div`
+  margin-bottom: 16px;
+`;
+
+const NodeInfoSectionTitle = styled.h4`
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #abb4c5;
+`;
+
+const NodeInfoTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  
+  td {
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  tr:last-child td {
+    border-bottom: none;
+  }
+  
+  td:first-child {
+    color: #abb4c5;
+    width: 40%;
+  }
+  
+  td:last-child {
+    color: white;
+    width: 60%;
+  }
+`;
+
+const NodeInfoPre = styled.pre`
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+`;
+
+// =============================================================================
+// Main Component
+// =============================================================================
+
+const NetworkViewer3D = ({ results, height }) => {
+  // State variables
+  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [currentGeneration, setCurrentGeneration] = useState(0);
   const [maxGeneration, setMaxGeneration] = useState(0);
-  const [showLabels, setShowLabels] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [graphData, setGraphData] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playInterval, setPlayInterval] = useState(null);
+  const [hideLabels, setHideLabels] = useState(false);
+  const [hideEC, setHideEC] = useState(false);
+  const [layoutMode, setLayoutMode] = useState('force'); // 'force', 'tornado', 'globe'
   const [loading, setLoading] = useState(true);
-  const [nodeCount, setNodeCount] = useState({
-    compounds: 0,
-    reactions: 0,
-    ecs: 0,
-  });
-  const [hoveredNode, setHoveredNode] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [nodesLocked, setNodesLocked] = useState(false);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [nodeApiData, setNodeApiData] = useState(null);
+  const [nodeInfoVisible, setNodeInfoVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const fgRef = useRef();
+  const containerRef = useRef();
 
-  // Visual configuration
-  const theme = {
-    background: new THREE.Color("#f8fafc"),
-    compound: {
-      color: new THREE.Color("#00CCBF"),
-      highlightColor: new THREE.Color("#00FFEF"),
-      emissive: new THREE.Color("#72F2EB").multiplyScalar(0.2),
-    },
-    reaction: {
-      color: new THREE.Color("#FF5F5D"),
-      highlightColor: new THREE.Color("#FF2D2A"),
-      emissive: new THREE.Color("#FF2D2A").multiplyScalar(0.15),
-    },
-    ec: {
-      color: new THREE.Color("#B7D66C"),
-      highlightColor: new THREE.Color("#A4CB44"),
-      emissive: new THREE.Color("#A4CB44").multiplyScalar(0.15),
-    },
-    edge: {
-      color: new THREE.Color("#545B5B"),
-      highlightColor: new THREE.Color("#545B5B"),
-      dashed: new THREE.Color("#929B9B"),
-    },
+  // =============================================================================
+  // Data Processing Functions
+  // =============================================================================
+
+  // Process graph data from reaction results
+  const processGraphData = (reactions) => {
+    const nodes = new Map();
+    const links = [];
+    let nodeIndex = 0;
+    
+    // First pass: create all compound nodes with generation 0
+    reactions.forEach(reaction => {
+      const { compound_generation } = reaction;
+      
+      // Create compound nodes
+      Object.entries(compound_generation).forEach(([compoundId, generation]) => {
+        if (!nodes.has(compoundId)) {
+          nodes.set(compoundId, {
+            id: compoundId,
+            label: compoundId,
+            type: 'compound',
+            generation,
+            val: 1.5, // Node size
+            x: (Math.random() * 200 - 100) * (generation + 1), // More spread for higher generations
+            y: (Math.random() * 200 - 100) * (generation + 1),
+            z: (Math.random() * 200 - 100) * (generation + 1),
+            index: nodeIndex++
+          });
+        }
+      });
+    });
+    
+    // Second pass: create reaction nodes and links for each generation transition
+    reactions.forEach(reaction => {
+      const { reaction: reactionId, equation, transition, ec_list, coenzyme } = reaction;
+      
+      // Extract generation transition
+      const [fromGen, toGen] = transition.split('->').map(gen => parseInt(gen.trim()));
+      
+      // Parse equation to extract compounds and coefficients
+      const [reactantsStr, productsStr] = equation.split('=>').map(side => side.trim());
+      
+      // Process reactants (left side)
+      const reactantItems = reactantsStr.split('+').map(item => {
+        const trimmed = item.trim();
+        // Match coefficient and compound ID
+        const matches = trimmed.match(/^(\d*)([A-Za-z0-9]+)$/);
+        if (matches) {
+          return {
+            id: matches[2],
+            coefficient: matches[1] ? parseInt(matches[1]) : 1
+          };
+        }
+        // Handle edge cases
+        return { id: trimmed, coefficient: 1 };
+      });
+      
+      // Process products (right side)
+      const productItems = productsStr.split('+').map(item => {
+        const trimmed = item.trim();
+        // Match coefficient and compound ID
+        const matches = trimmed.match(/^(\d*)([A-Za-z0-9]+)$/);
+        if (matches) {
+          return {
+            id: matches[2],
+            coefficient: matches[1] ? parseInt(matches[1]) : 1
+          };
+        }
+        // Handle edge cases
+        return { id: trimmed, coefficient: 1 };
+      });
+      
+      // Create reactant and product nodes for the reaction
+      const reactantNodeId = `${reactionId}_reactant`;
+      const productNodeId = `${reactionId}_product`;
+      
+      // Add reactant node (for transition fromGen -> toGen)
+      nodes.set(reactantNodeId, {
+        id: reactantNodeId,
+        label: reactionId,
+        type: 'reaction',
+        subtype: 'reactant',
+        generation: fromGen,
+        transitionTo: toGen,
+        val: 1.2,
+        coenzyme,
+        x: (Math.random() * 150 - 75) * (fromGen + 1),
+        y: (Math.random() * 150 - 75) * (fromGen + 1),
+        z: (Math.random() * 150 - 75) * (fromGen + 1),
+        index: nodeIndex++
+      });
+      
+      // Add product node (for transition fromGen -> toGen)
+      nodes.set(productNodeId, {
+        id: productNodeId,
+        label: reactionId,
+        type: 'reaction',
+        subtype: 'product',
+        generation: toGen,
+        transitionFrom: fromGen,
+        val: 1.2,
+        coenzyme,
+        x: (Math.random() * 150 - 75) * (toGen + 1),
+        y: (Math.random() * 150 - 75) * (toGen + 1),
+        z: (Math.random() * 150 - 75) * (toGen + 1),
+        index: nodeIndex++
+      });
+      
+      // Add dashed line between reactant and product nodes
+      links.push({
+        source: reactantNodeId,
+        target: productNodeId,
+        type: 'dashed',
+        color: '#b4b4b4',
+        opacity: 0.6,
+        generation: Math.max(fromGen, toGen),
+        transition: `${fromGen}->${toGen}`
+      });
+      
+      // Connect reactant compounds to the reactant node - with color based on generation
+      reactantItems.forEach(item => {
+        if (nodes.has(item.id)) {
+          // We'll set the color when rendering, store the fromGen for coloring
+          links.push({
+            source: item.id,
+            target: reactantNodeId,
+            type: 'solid',
+            weight: item.coefficient,
+            arrows: true,
+            // Store generations for coloring instead of fixed color
+            sourceGeneration: nodes.get(item.id).generation,
+            targetGeneration: fromGen,
+            opacity: 0.85,
+            generation: fromGen,
+            transition: `${fromGen}->${toGen}`
+          });
+        }
+      });
+      
+      // Connect product node to product compounds - with color based on generation
+      productItems.forEach(item => {
+        if (nodes.has(item.id)) {
+          links.push({
+            source: productNodeId,
+            target: item.id,
+            type: 'solid',
+            weight: item.coefficient,
+            arrows: true,
+            // Store generations for coloring instead of fixed color
+            sourceGeneration: toGen,
+            targetGeneration: nodes.get(item.id).generation,
+            opacity: 0.85,
+            generation: toGen,
+            transition: `${fromGen}->${toGen}`
+          });
+        }
+      });
+      
+      // Add EC nodes connected to the reaction
+      if (ec_list && ec_list.length > 0) {
+        ec_list.forEach(ec => {
+          const ecNodeId = `EC_${ec}`;
+          
+          // Create EC node if it doesn't exist yet
+          if (!nodes.has(ecNodeId)) {
+            nodes.set(ecNodeId, {
+              id: ecNodeId,
+              label: ec,
+              type: 'ec',
+              generation: Math.max(fromGen, toGen),
+              val: 1,
+              x: (Math.random() * 120 - 60) * Math.max(fromGen, toGen),
+              y: (Math.random() * 120 - 60) * Math.max(fromGen, toGen),
+              z: (Math.random() * 120 - 60) * Math.max(fromGen, toGen),
+              index: nodeIndex++
+            });
+          }
+          
+          // Connect EC to reactant node
+          links.push({
+            source: ecNodeId,
+            target: reactantNodeId,
+            type: 'dotted',
+            color: '#82c8ff',
+            opacity: 0.5,
+            generation: Math.max(fromGen, toGen),
+            transition: `${fromGen}->${toGen}`
+          });
+          
+          // Connect EC to product node
+          links.push({
+            source: ecNodeId,
+            target: productNodeId,
+            type: 'dotted',
+            color: '#82c8ff',
+            opacity: 0.5,
+            generation: Math.max(fromGen, toGen),
+            transition: `${fromGen}->${toGen}`
+          });
+        });
+      }
+    });
+    
+    return {
+      nodes: Array.from(nodes.values()),
+      links
+    };
   };
 
-  // Initialize Three.js scene
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    // Create scene
-    const scene = new THREE.Scene();
-    scene.background = theme.background;
-    scene.fog = new THREE.FogExp2(theme.background, 0.0015);
-    sceneRef.current = scene;
-
-    // Create camera
-    const camera = new THREE.PerspectiveCamera(
-      55,
-      containerRef.current.clientWidth / containerRef.current.clientHeight,
-      1,
-      2000
-    );
-    camera.position.set(250, 150, 250);
-    camera.lookAt(0, 0, 0);
-    cameraRef.current = camera;
-
-    // Create renderers
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-    });
-    renderer.setSize(
-      containerRef.current.clientWidth,
-      containerRef.current.clientHeight
-    );
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
-    containerRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    // Label renderer
-    const labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(
-      containerRef.current.clientWidth,
-      containerRef.current.clientHeight
-    );
-    labelRenderer.domElement.style.position = "absolute";
-    labelRenderer.domElement.style.top = "0";
-    labelRenderer.domElement.style.pointerEvents = "none";
-    containerRef.current.appendChild(labelRenderer.domElement);
-    labelRendererRef.current = labelRenderer;
-
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
-    controls.rotateSpeed = 0.5;
-    controls.zoomSpeed = 0.8;
-    controls.panSpeed = 0.5;
-    controls.screenSpacePanning = false;
-    controls.maxDistance = 800;
-    controls.minDistance = 50;
-    controlsRef.current = controls;
-
-    // Lighting setup
-    // Ambient light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
-    scene.add(ambientLight);
-    lightsRef.current.push(ambientLight);
-
-    // Directional light (main)
-    const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    mainLight.position.set(200, 400, 200);
-    mainLight.castShadow = true;
-    mainLight.shadow.mapSize.width = 1024;
-    mainLight.shadow.mapSize.height = 1024;
-    mainLight.shadow.camera.near = 0.5;
-    mainLight.shadow.camera.far = 1000;
-    mainLight.shadow.camera.left = -500;
-    mainLight.shadow.camera.right = 500;
-    mainLight.shadow.camera.top = 500;
-    mainLight.shadow.camera.bottom = -500;
-    scene.add(mainLight);
-    lightsRef.current.push(mainLight);
-
-    // Hemispheric light
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xc7e7ff, 0.4);
-    scene.add(hemiLight);
-    lightsRef.current.push(hemiLight);
-
-    // Accent lights for ambiance
-    const accentLight1 = new THREE.PointLight(0x4f46e5, 0.6, 1000);
-    accentLight1.position.set(-300, 200, 300);
-    scene.add(accentLight1);
-    lightsRef.current.push(accentLight1);
-
-    const accentLight2 = new THREE.PointLight(0x06b6d4, 0.5, 800);
-    accentLight2.position.set(300, -200, -200);
-    scene.add(accentLight2);
-    lightsRef.current.push(accentLight2);
-
-    // Add a subtle ground plane with grid for better spatial reference
-    const groundGeometry = new THREE.PlaneGeometry(2000, 2000);
-    const groundMaterial = new THREE.MeshBasicMaterial({
-      color: 0xf1f5f9,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.DoubleSide,
-    });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = Math.PI / 2;
-    ground.position.y = -100;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // Add grid helper
-    const gridHelper = new THREE.GridHelper(2000, 100, 0x94a3b8, 0xdde5f2);
-    gridHelper.position.y = -100;
-    gridHelper.material.transparent = true;
-    gridHelper.material.opacity = 0.15;
-    scene.add(gridHelper);
-
-    // Add raycaster for interaction
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    const onMouseMove = (event) => {
-      // Calculate mouse position in normalized device coordinates
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Update the raycaster with the camera and mouse position
-      raycaster.setFromCamera(mouse, camera);
-
-      // Check for intersections with nodes
-      const intersects = raycaster.intersectObjects(nodesRef.current);
-
-      if (intersects.length > 0) {
-        const firstIntersect = intersects[0].object;
-        if (firstIntersect.userData && firstIntersect.userData.nodeData) {
-          // If we're hovering over a node, highlight it
-          if (hoveredNode !== firstIntersect) {
-            // Reset previous hovered node
-            if (hoveredNode) {
-              resetNodeAppearance(hoveredNode);
-            }
-
-            // Set new hovered node
-            setHoveredNode(firstIntersect);
-            highlightNode(firstIntersect);
-
-            // Change cursor
-            renderer.domElement.style.cursor = "pointer";
-          }
-        }
-      } else if (hoveredNode) {
-        // If we're not hovering over any node, reset the previously hovered node
-        resetNodeAppearance(hoveredNode);
-        setHoveredNode(null);
-        renderer.domElement.style.cursor = "default";
-      }
-    };
-
-    // Highlight node on hover
-    function highlightNode(node) {
-      const nodeData = node.userData.nodeData;
-      if (nodeData) {
-        const material = node.material;
-
-        if (nodeData.type === "compound") {
-          material.color.copy(theme.compound.highlightColor);
-          material.emissive.copy(theme.compound.emissive).multiplyScalar(1.5);
-        } else if (nodeData.type === "reaction") {
-          material.color.copy(theme.reaction.highlightColor);
-          material.emissive.copy(theme.reaction.emissive).multiplyScalar(1.5);
-        } else {
-          material.color.copy(theme.ec.highlightColor);
-          material.emissive.copy(theme.ec.emissive).multiplyScalar(1.5);
-        }
-
-        // Increase the scale of the node
-        node.scale.set(1.15, 1.15, 1.15);
-
-        // Make label more visible
-        if (node.children[0] && node.children[0].element) {
-          node.children[0].element.style.backgroundColor =
-            "rgba(255, 255, 255, 0.95)";
-          node.children[0].element.style.fontWeight = "bold";
-          node.children[0].element.style.boxShadow =
-            "0 2px 8px rgba(0, 0, 0, 0.15)";
-        }
-      }
+  // Filter graph data based on current generation
+  const filteredData = useMemo(() => {
+    if (!graphData.nodes || !graphData.links) {
+      return { nodes: [], links: [] };
     }
 
-    // Reset node appearance
-    function resetNodeAppearance(node) {
-      const nodeData = node.userData.nodeData;
-      if (nodeData) {
-        const material = node.material;
-
-        if (nodeData.type === "compound") {
-          material.color.copy(theme.compound.color);
-          material.emissive.copy(theme.compound.emissive);
-        } else if (nodeData.type === "reaction") {
-          material.color.copy(theme.reaction.color);
-          material.emissive.copy(theme.reaction.emissive);
-        } else {
-          material.color.copy(theme.ec.color);
-          material.emissive.copy(theme.ec.emissive);
-        }
-
-        // Reset scale
-        node.scale.set(1, 1, 1);
-
-        // Reset label
-        if (node.children[0] && node.children[0].element) {
-          node.children[0].element.style.backgroundColor =
-            "rgba(255, 255, 255, 0.8)";
-          node.children[0].element.style.fontWeight = "";
-          node.children[0].element.style.boxShadow =
-            "0 2px 4px rgba(0, 0, 0, 0.1)";
-        }
-      }
+    // For generation 0, show only compound nodes with generation 0
+    if (currentGeneration === 0) {
+      const filteredNodes = graphData.nodes.filter(
+        node => node.type === 'compound' && node.generation === 0
+      );
+      
+      return {
+        nodes: filteredNodes,
+        links: []
+      };
     }
-
-    // Add event listeners
-    renderer.domElement.addEventListener("mousemove", onMouseMove);
-
-    // Animation loop
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-
-      // Animate accent lights
-      const time = Date.now() * 0.001;
-      accentLight1.position.x = Math.sin(time * 0.3) * 300;
-      accentLight1.position.z = Math.cos(time * 0.2) * 300;
-      accentLight2.position.x = Math.sin(time * 0.2) * 300;
-      accentLight2.position.z = Math.cos(time * 0.3) * 300;
-
-      renderer.render(scene, camera);
-      labelRenderer.render(scene, camera);
-    };
-
-    animate();
-
-    // Resize handler
-    const handleResize = () => {
-      if (!containerRef.current) return;
-
-      const width = containerRef.current.clientWidth;
-      const height = containerRef.current.clientHeight;
-
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-
-      renderer.setSize(width, height);
-      labelRenderer.setSize(width, height);
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    // Clean up
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      renderer.domElement.removeEventListener("mousemove", onMouseMove);
-
-      if (containerRef.current) {
-        if (renderer.domElement) {
-          containerRef.current.removeChild(renderer.domElement);
-        }
-        if (labelRenderer.domElement) {
-          containerRef.current.removeChild(labelRenderer.domElement);
-        }
+    
+    // For other generations, apply specific filtering based on current generation
+    // First, get nodes up to current generation
+    let nodesForGeneration = graphData.nodes.filter(node => {
+      if (node.type === 'compound') return node.generation <= currentGeneration;
+      if (node.type === 'reaction') {
+        if (node.subtype === 'reactant') return node.generation <= currentGeneration;
+        if (node.subtype === 'product') return node.generation <= currentGeneration;
       }
-
-      // Dispose geometries, materials, and textures
-      nodesRef.current.forEach((node) => {
-        if (node.geometry) node.geometry.dispose();
-        if (node.material) {
-          if (Array.isArray(node.material)) {
-            node.material.forEach((m) => m.dispose());
-          } else {
-            node.material.dispose();
-          }
-        }
-      });
-
-      edgesRef.current.forEach((edge) => {
-        if (edge.geometry) edge.geometry.dispose();
-        if (edge.material) {
-          if (Array.isArray(edge.material)) {
-            edge.material.forEach((m) => m.dispose());
-          } else {
-            edge.material.dispose();
-          }
-        }
-      });
-
-      // Remove lights
-      lightsRef.current.forEach((light) => {
-        scene.remove(light);
-      });
-
-      scene.clear();
+      if (node.type === 'ec') return node.generation <= currentGeneration;
+      return false;
+    });
+    
+    // If hideEC is enabled, filter out EC nodes
+    if (hideEC) {
+      nodesForGeneration = nodesForGeneration.filter(node => node.type !== 'ec');
+    }
+    
+    // Get IDs of all nodes for this generation
+    const nodeIds = new Set(nodesForGeneration.map(node => node.id));
+    
+    // Filter links that connect nodes in this generation
+    const linksForGeneration = graphData.links.filter(link => {
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+      
+      return (
+        link.generation <= currentGeneration && 
+        nodeIds.has(sourceId) && 
+        nodeIds.has(targetId)
+      );
+    });
+    
+    return {
+      nodes: nodesForGeneration,
+      links: linksForGeneration
     };
+  }, [graphData, currentGeneration, hideEC]);
+
+  // =============================================================================
+  // Graph Rendering Callbacks
+  // =============================================================================
+
+  // Generate node colors based on generation (up to 100 generations)
+  const getNodeColor = useCallback((node) => {
+    if (node.type === 'ec') return '#92d3ff';
+    
+    // Define color ranges for generations
+    const colors = [
+      '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
+      '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
+      '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
+    ];
+    
+    const generationIndex = node.generation % colors.length;
+    return colors[generationIndex];
   }, []);
 
-  // Process data into graph structure
+  // Generate node geometries based on node type
+  const getNodeGeometry = useCallback((node) => {
+    if (node.type === 'compound') {
+      return new THREE.SphereGeometry(node.val);
+    } 
+    else if (node.type === 'reaction') {
+      // Create rounded box for reaction nodes
+      const boxGeometry = new THREE.BoxGeometry(node.val * 1.2, node.val * 1.2, node.val * 0.8);
+      return boxGeometry;
+    } 
+    else if (node.type === 'ec') {
+      // Create octahedron for EC nodes
+      return new THREE.OctahedronGeometry(node.val * 0.8);
+    }
+    
+    return new THREE.SphereGeometry(1);
+  }, []);
+
+  // Custom node rendering
+  const nodeThreeObject = useCallback((node) => {
+    const color = getNodeColor(node);
+    const geometry = getNodeGeometry(node);
+    
+    // Create material based on node type
+    let material;
+    
+    if (node.type === 'compound') {
+      material = new THREE.MeshPhongMaterial({ 
+        color, 
+        transparent: true,
+        opacity: 0.85,
+        shininess: 90
+      });
+    } 
+    else if (node.type === 'reaction') {
+      material = new THREE.MeshPhongMaterial({ 
+        color, 
+        transparent: true,
+        opacity: 0.8,
+        shininess: 80
+      });
+    } 
+    else if (node.type === 'ec') {
+      material = new THREE.MeshPhongMaterial({ 
+        color, 
+        transparent: true,
+        opacity: 0.7,
+        wireframe: true
+      });
+    }
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    // Add glowing effect
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.15
+    });
+    
+    const glowGeometry = node.type === 'compound' 
+      ? new THREE.SphereGeometry(node.val * 1.5)
+      : node.type === 'reaction'
+        ? new THREE.BoxGeometry(node.val * 1.8, node.val * 1.8, node.val * 1.2)
+        : new THREE.OctahedronGeometry(node.val * 1.3);
+    
+    const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+    mesh.add(glowMesh);
+    
+    return mesh;
+  }, [getNodeColor, getNodeGeometry]);
+
+  // Custom node label rendering
+  const nodeThreeObjectExtend = useCallback(() => true, []);
+
+  // Custom node label rendering
+  const nodeLabel = useCallback((node) => {
+    if (hideLabels) return null; // Return null instead of empty string
+    
+    if (node.type === 'compound') {
+      return `${node.label} (${node.generation})`;
+    } else if (node.type === 'reaction') {
+      const subtype = node.subtype === 'reactant' ? 'R' : 'P';
+      return `${node.label} (${subtype})`;
+    } else if (node.type === 'ec') {
+      return `EC ${node.label}`;
+    }
+    
+    return node.label;
+  }, [hideLabels]);
+
+  // Custom link object for arrows
+  const linkThreeObject = useCallback((link) => {
+    if (!link.arrows) return null;
+    
+    const size = link.weight || 1;
+    const arrowGeometry = new THREE.ConeGeometry(0.5 * size, 1.5 * size, 8);
+    
+    // Get color based on node generation
+    let arrowColor;
+    
+    // For solid links, generate a gradient color based on source node generation
+    if (link.sourceGeneration !== undefined) {
+      // Get colors for source generation
+      const colors = [
+        '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
+        '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
+        '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
+      ];
+      
+      const sourceIndex = link.sourceGeneration % colors.length;
+      arrowColor = colors[sourceIndex];
+    } else {
+      arrowColor = link.color || '#ffffff';
+    }
+    
+    const arrowMaterial = new THREE.MeshBasicMaterial({ 
+      color: arrowColor,
+      transparent: true,
+      opacity: link.opacity || 0.8
+    });
+    
+    const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+    arrow.rotation.x = Math.PI / 2;
+    
+    return arrow;
+  }, []);
+
+  // Position the arrow at the middle of the link
+  const linkPositionAttribute = useCallback(() => 'center', []);
+
+  // Custom link styling
+  const linkDirectionalArrowLength = useCallback((link) => {
+    return link.arrows ? 3.5 * (link.weight || 1) : 0;
+  }, []);
+
+  const linkWidth = useCallback((link) => {
+    return link.weight ? Math.min(link.weight, 4) : 1;
+  }, []);
+
+  const linkDirectionalParticles = useCallback((link) => {
+    return link.type === 'solid' ? 2 : 0;
+  }, []);
+
+  const linkDirectionalParticleWidth = useCallback((link) => {
+    return link.weight ? Math.min(link.weight, 3) : 1;
+  }, []);
+
+  const linkColor = useCallback((link) => {
+    // For dashed and dotted links, use the provided color
+    if (link.type === 'dashed' || link.type === 'dotted') {
+      return link.color;
+    }
+    
+    // For solid links, generate a gradient color based on source and target generations
+    if (link.sourceGeneration !== undefined && link.targetGeneration !== undefined) {
+      // Get colors for both generations
+      const colors = [
+        '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
+        '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
+        '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
+      ];
+      
+      const sourceIndex = link.sourceGeneration % colors.length;
+      return colors[sourceIndex]; // Using source node color for simplicity
+    }
+    
+    // Fallback to provided color or default
+    return link.color || '#ffffff';
+  }, []);
+
+  // =============================================================================
+  // Effect Hooks
+  // =============================================================================
+
+  // Effect to process results and generate graph data
   useEffect(() => {
     if (!results || results.length === 0) return;
-
+    
     setLoading(true);
-
-    // Extract unique compounds, reactions, and ECs
-    const compounds = new Map();
-    const reactions = new Map();
-    const ecs = new Map();
-    const edges = [];
-
+    
+    // Find maximum generation from compound_generation values
     let maxGen = 0;
-
-    results.forEach((row) => {
-      const { reaction, equation, ec_list = [], transition } = row;
-
-      // Parse the generation transition (e.g., "0 -> 1")
-      const [reactantGen, productGen] = transition
-        .split(" -> ")
-        .map((g) => parseInt(g.trim()));
-      maxGen = Math.max(maxGen, productGen);
-
-      // Parse equation to extract compounds
-      const parts = equation.split("=>");
-      const reactantsStr = parts[0].trim();
-      const productsStr = parts.length > 1 ? parts[1].trim() : "";
-
-      // Parse reactants with stoichiometry
-      const reactants = [];
-      reactantsStr.split("+").forEach((r) => {
-        const trimmed = r.trim();
-        const match = trimmed.match(/^(\d*)(.+)$/);
-        if (match) {
-          const stoichiometry = match[1] ? parseInt(match[1]) : 1;
-          const compoundId = match[2].trim();
-
-          // Add compound if not exists
-          if (!compounds.has(compoundId)) {
-            compounds.set(compoundId, {
-              id: compoundId,
-              type: "compound",
-              generation: reactantGen,
-            });
-          }
-
-          reactants.push({ compoundId, stoichiometry });
-        }
-      });
-
-      // Parse products with stoichiometry
-      const products = [];
-      productsStr.split("+").forEach((p) => {
-        const trimmed = p.trim();
-        const match = trimmed.match(/^(\d*)(.+)$/);
-        if (match) {
-          const stoichiometry = match[1] ? parseInt(match[1]) : 1;
-          const compoundId = match[2].trim();
-
-          // Add compound if not exists
-          if (!compounds.has(compoundId)) {
-            compounds.set(compoundId, {
-              id: compoundId,
-              type: "compound",
-              generation: productGen,
-            });
-          }
-
-          products.push({ compoundId, stoichiometry });
-        }
-      });
-
-      // Create reaction nodes (left and right)
-      const reactionLeftId = `${reaction}_r`;
-      const reactionRightId = `${reaction}_p`;
-
-      if (!reactions.has(reactionLeftId)) {
-        reactions.set(reactionLeftId, {
-          id: reactionLeftId,
-          type: "reaction",
-          baseId: reaction,
-          side: "left",
-          generation: reactantGen,
-        });
-      }
-
-      if (!reactions.has(reactionRightId)) {
-        reactions.set(reactionRightId, {
-          id: reactionRightId,
-          type: "reaction",
-          baseId: reaction,
-          side: "right",
-          generation: productGen,
-        });
-      }
-
-      // Add EC nodes
-      ec_list.forEach((ecNumber) => {
-        if (!ecs.has(ecNumber)) {
-          ecs.set(ecNumber, {
-            id: ecNumber,
-            type: "ec",
-            generation: Math.max(reactantGen, productGen),
-            relatedReactions: new Set([reaction]),
-          });
-        } else {
-          // Add related reaction to the existing EC
-          ecs.get(ecNumber).relatedReactions.add(reaction);
-        }
-
-        // Connect EC to reaction nodes
-        edges.push({
-          source: reactionLeftId,
-          target: ecNumber,
-          type: "dashed",
-          generation: Math.max(reactantGen, productGen),
-          genDifference: 0, // Same generation
-        });
-
-        edges.push({
-          source: ecNumber,
-          target: reactionRightId,
-          type: "dashed",
-          generation: Math.max(reactantGen, productGen),
-          genDifference: Math.abs(productGen - reactantGen),
-        });
-      });
-
-      // Connect reactant compounds to reaction left
-      reactants.forEach(({ compoundId, stoichiometry }) => {
-        edges.push({
-          source: compoundId,
-          target: reactionLeftId,
-          type: "solid",
-          weight: stoichiometry,
-          generation: reactantGen,
-          genDifference: 0, // Same generation
-        });
-      });
-
-      // Connect reaction right to product compounds
-      products.forEach(({ compoundId, stoichiometry }) => {
-        edges.push({
-          source: reactionRightId,
-          target: compoundId,
-          type: "solid",
-          weight: stoichiometry,
-          generation: productGen,
-          genDifference: Math.abs(productGen - reactantGen),
-        });
-      });
-
-      // Connect reaction left to reaction right
-      edges.push({
-        source: reactionLeftId,
-        target: reactionRightId,
-        type: "dashed",
-        generation: Math.max(reactantGen, productGen),
-        genDifference: Math.abs(productGen - reactantGen),
+    results.forEach(reaction => {
+      Object.values(reaction.compound_generation).forEach(gen => {
+        if (gen > maxGen) maxGen = gen;
       });
     });
-
-    // Convert EC's relatedReactions from Set to Array
-    ecs.forEach((ec) => {
-      ec.relatedReactions = Array.from(ec.relatedReactions);
-    });
-
-    // Combine all nodes
-    const nodes = [
-      ...Array.from(compounds.values()),
-      ...Array.from(reactions.values()),
-      ...Array.from(ecs.values()),
-    ];
-
-    // Update stats
-    setNodeCount({
-      compounds: compounds.size,
-      reactions: Math.floor(reactions.size / 2), // Count each reaction only once (left and right)
-      ecs: ecs.size,
-    });
-
-    setGraphData({ nodes, edges });
+    
     setMaxGeneration(maxGen);
-    setCurrentGeneration(0);
+    
+    // Generate the graph data for all generations
+    const { nodes, links } = processGraphData(results);
+    
+    setGraphData({ nodes, links });
     setLoading(false);
+    
+    // Initialize force graph with a timeout to ensure it's mounted
+    setTimeout(() => {
+      if (fgRef.current) {
+        // Ensure simulation and forces are properly initialized
+        if (fgRef.current.d3Force('charge')) {
+          fgRef.current.d3Force('charge').strength(-120);
+        }
+        
+        if (fgRef.current.d3Force('link')) {
+          fgRef.current.d3Force('link').distance(link => {
+            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+          });
+        }
+        
+        // Reheat the simulation
+        fgRef.current.d3ReheatSimulation();
+      }
+    }, 300);
   }, [results]);
 
-  // Create and update the 3D visualization
+  // Apply different layout algorithms
   useEffect(() => {
-    if (!graphData || !sceneRef.current) return;
-
-    // Clear existing nodes and edges
-    nodesRef.current.forEach((node) => {
-      // Remove labels from the node
-      node.children.forEach((child) => {
-        if (child instanceof CSS2DObject) {
-          sceneRef.current.remove(child);
+    if (!fgRef.current) return;
+    
+    // Wait a bit to ensure graph is initialized
+    setTimeout(() => {
+      if (layoutMode === 'tornado') {
+        // Apply spiral layout
+        if (fgRef.current.d3Force('charge')) {
+          fgRef.current.d3Force('charge', null);
         }
-      });
-      sceneRef.current.remove(node);
-    });
-
-    edgesRef.current.forEach((edge) => {
-      // Remove labels from the edge
-      edge.children.forEach((child) => {
-        if (child instanceof CSS2DObject) {
-          sceneRef.current.remove(child);
+        if (fgRef.current.d3Force('link')) {
+          fgRef.current.d3Force('link', null);
         }
-      });
-      sceneRef.current.remove(edge);
-    });
-
-    nodesRef.current = [];
-    edgesRef.current = [];
-
-    // Filter nodes and edges by current generation
-    const visibleNodes = graphData.nodes.filter(
-      (node) => node.generation <= currentGeneration
-    );
-
-    const visibleEdges = graphData.edges.filter(
-      (edge) => edge.generation <= currentGeneration
-    );
-
-    // Create node objects for simulation
-    const nodeObjects = visibleNodes.map((node) => ({
-      ...node,
-      x: node.x || (Math.random() - 0.5) * 150,
-      y: node.y || (Math.random() - 0.5) * 150,
-      z: node.z || (Math.random() - 0.5) * 150,
-    }));
-
-    // Create map of nodes by ID for edge creation
-    const nodeMap = new Map();
-    nodeObjects.forEach((node) => nodeMap.set(node.id, node));
-
-    // Create edge objects with references to node objects
-    const edgeObjects = visibleEdges
-      .filter((edge) => nodeMap.has(edge.source) && nodeMap.has(edge.target))
-      .map((edge) => ({
-        ...edge,
-        sourceNode: nodeMap.get(edge.source),
-        targetNode: nodeMap.get(edge.target),
-      }));
-
-    // Split nodes by type for different force treatments
-    const compoundNodes = nodeObjects.filter(
-      (node) => node.type === "compound"
-    );
-    const reactionNodes = nodeObjects.filter(
-      (node) => node.type === "reaction"
-    );
-    const ecNodes = nodeObjects.filter((node) => node.type === "ec");
-
-    // Group reaction nodes by baseId for same-reaction handling
-    const reactionsByBase = {};
-    reactionNodes.forEach((node) => {
-      if (!reactionsByBase[node.baseId]) {
-        reactionsByBase[node.baseId] = [];
-      }
-      reactionsByBase[node.baseId].push(node);
-    });
-
-    // Group EC nodes by related reactions
-    const ecByReaction = {};
-    ecNodes.forEach((node) => {
-      if (node.relatedReactions) {
-        node.relatedReactions.forEach((reactionId) => {
-          if (!ecByReaction[reactionId]) {
-            ecByReaction[reactionId] = [];
-          }
-          ecByReaction[reactionId].push(node);
-        });
-      }
-    });
-
-    // Create enhanced force simulation (3D)
-    const simulation = d3
-      .forceSimulation(nodeObjects)
-      .alphaTarget(0.1)
-      .force(
-        "charge",
-        d3
-          .forceManyBody()
-          .strength((d) => {
-            const baseStrength = -120;
-            const genMultiplier = 1 + (d.generation || 0) * 0.2;
-            if (d.type === "compound")
-              return baseStrength * 1.5 * genMultiplier;
-            if (d.type === "reaction")
-              return baseStrength * 1.0 * genMultiplier;
-            return baseStrength * 1.2 * genMultiplier; // EC
-          })
-          .distanceMax(700)
-      )
-      .force("center", d3.forceCenter(0, 0))
-      .force(
-        "radial",
-        d3.forceRadial((d) => {
-          const baseRadius = 100;
-          const genRadius = d.generation * 30;
-          if (d.type === "compound") return baseRadius + genRadius + 20;
-          if (d.type === "reaction") return baseRadius + genRadius;
-          return baseRadius + genRadius - 10; // EC
-        })
-      )
-      .force(
-        "collision",
-        d3.forceCollide().radius((d) => {
-          if (d.type === "compound") return 20;
-          if (d.type === "reaction") return 15;
-          return 17; // EC
-        })
-      )
-      .force(
-        "link",
-        d3
-          .forceLink(edgeObjects)
-          .id((d) => d.id)
-          .distance((d) => {
-            const baseDist = d.type === "dashed" ? 50 : 80;
-            const genEffect = (d.genDifference || 0) * 15;
-            const weightEffect = (d.weight || 1) * 5;
-            return baseDist + genEffect + weightEffect;
-          })
-          .strength((d) => {
-            const baseStrength = d.type === "dashed" ? 0.8 : 0.6;
-            const genFactor = 1 / (1 + (d.genDifference || 0) * 0.5);
-            const weightFactor = 1 / Math.sqrt(d.weight || 1);
-            return baseStrength * genFactor * weightFactor;
-          })
-      );
-
-    // Add custom 3D force
-    const applyCustom3DForces = () => {
-      nodeObjects.forEach((node) => {
-        if (!node.fx3d) node.fx3d = 0;
-        if (!node.fy3d) node.fy3d = 0;
-        if (!node.fz3d) node.fz3d = 0;
-        node.fx3d = 0;
-        node.fy3d = 0;
-        node.fz3d = 0;
-      });
-
-      for (let i = 0; i < nodeObjects.length; i++) {
-        const nodeA = nodeObjects[i];
-        for (let j = i + 1; j < nodeObjects.length; j++) {
-          const nodeB = nodeObjects[j];
-          const dx = nodeB.x - nodeA.x;
-          const dy = nodeB.y - nodeA.y;
-          const dz = nodeB.z - nodeA.z || 0;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (distance === 0) continue;
-          let strength = -150 / (distance * distance);
-          if (nodeA.type === nodeB.type) {
-            strength *= 1.5;
-            if (nodeA.type === "reaction" && nodeA.baseId === nodeB.baseId) {
-              strength = 50 / distance;
-            }
-            if (
-              nodeA.type === "ec" &&
-              nodeA.relatedReactions &&
-              nodeB.relatedReactions
-            ) {
-              const commonReactions = nodeA.relatedReactions.filter((r) =>
-                nodeB.relatedReactions.includes(r)
-              );
-              if (commonReactions.length > 0) {
-                strength = 40 / distance;
-              }
-            }
-          }
-          const genDiff = Math.abs(
-            (nodeA.generation || 0) - (nodeB.generation || 0)
-          );
-          strength *= 1 + genDiff * 0.3;
-          const fx = (dx / distance) * strength;
-          const fy = (dy / distance) * strength;
-          const fz = (dz / distance) * strength;
-          nodeA.fx3d -= fx;
-          nodeA.fy3d -= fy;
-          nodeA.fz3d -= fz;
-          nodeB.fx3d += fx;
-          nodeB.fy3d += fy;
-          nodeB.fz3d += fz;
+        if (fgRef.current.d3Force('center')) {
+          fgRef.current.d3Force('center', null);
+        }
+        
+        const nodes = graphData.nodes;
+        const spiral = d3Force => {
+          const alpha = 0.1;
+          nodes.forEach(node => {
+            if (!node.x || !node.y || !node.z) return;
+            
+            const angle = 0.4 * node.generation;
+            const radius = 20 + 10 * node.generation;
+            const targetX = radius * Math.cos(angle);
+            const targetY = radius * Math.sin(angle);
+            const targetZ = 5 * node.generation;
+            
+            node.vx += (targetX - node.x) * alpha;
+            node.vy += (targetY - node.y) * alpha;
+            node.vz += (targetZ - node.z) * alpha;
+          });
+        };
+        
+        fgRef.current.d3Force('spiral', spiral);
+      } 
+      else if (layoutMode === 'globe') {
+        // Apply globe layout
+        if (fgRef.current.d3Force('charge')) {
+          fgRef.current.d3Force('charge', null);
+        }
+        if (fgRef.current.d3Force('link')) {
+          fgRef.current.d3Force('link', null);
+        }
+        if (fgRef.current.d3Force('center')) {
+          fgRef.current.d3Force('center', null);
+        }
+        
+        const nodes = graphData.nodes;
+        const globe = d3Force => {
+          const alpha = 0.1;
+          nodes.forEach((node, i) => {
+            if (!node.x || !node.y || !node.z) return;
+            
+            const radius = 50 + 15 * node.generation;
+            const phi = Math.acos(-1 + (2 * (i % 100)) / Math.min(nodes.length, 100));
+            const theta = Math.sqrt(Math.min(nodes.length, 100) * Math.PI) * phi;
+            
+            const targetX = radius * Math.sin(phi) * Math.cos(theta);
+            const targetY = radius * Math.sin(phi) * Math.sin(theta);
+            const targetZ = radius * Math.cos(phi);
+            
+            node.vx += (targetX - node.x) * alpha;
+            node.vy += (targetY - node.y) * alpha;
+            node.vz += (targetZ - node.z) * alpha;
+          });
+        };
+        
+        fgRef.current.d3Force('globe', globe);
+      } 
+      else {
+        // Reset to force-directed layout
+        if (fgRef.current.d3Force('spiral')) {
+          fgRef.current.d3Force('spiral', null);
+        }
+        if (fgRef.current.d3Force('globe')) {
+          fgRef.current.d3Force('globe', null);
+        }
+        
+        if (!fgRef.current.d3Force('charge')) {
+          fgRef.current.d3Force('charge', d3.forceManyBody().strength(-120));
+        } else {
+          fgRef.current.d3Force('charge').strength(-120);
+        }
+        
+        if (!fgRef.current.d3Force('link')) {
+          fgRef.current.d3Force('link', d3.forceLink().distance(link => {
+            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+          }));
+        } else {
+          fgRef.current.d3Force('link').distance(link => {
+            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+          });
+        }
+        
+        if (!fgRef.current.d3Force('center')) {
+          fgRef.current.d3Force('center', d3.forceCenter());
         }
       }
+      
+      // Reheat simulation
+      fgRef.current.d3ReheatSimulation();
+    }, 300);
+    
+  }, [layoutMode, graphData.nodes]);
 
-      edgeObjects.forEach((edge) => {
-        const sourceNode = edge.sourceNode;
-        const targetNode = edge.targetNode;
-        if (!sourceNode || !targetNode) return;
-        const dx = targetNode.x - sourceNode.x;
-        const dy = targetNode.y - sourceNode.y;
-        const dz = (targetNode.z || 0) - (sourceNode.z || 0);
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance === 0) return;
-        let strength = edge.type === "dashed" ? 0.01 : 0.02;
-        const genDiff = edge.genDifference || 0;
-        if (genDiff > 0) {
-          const zForce = genDiff * 2;
-          if (sourceNode.generation < targetNode.generation) {
-            sourceNode.fz3d -= zForce;
-            targetNode.fz3d += zForce;
-          } else {
-            sourceNode.fz3d += zForce;
-            targetNode.fz3d -= zForce;
-          }
-          strength *= 0.8;
-        }
-        const fx = dx * strength;
-        const fy = dy * strength;
-        const fz = dz * strength;
-        sourceNode.fx3d += fx;
-        sourceNode.fy3d += fy;
-        sourceNode.fz3d += fz;
-        targetNode.fx3d -= fx;
-        targetNode.fy3d -= fy;
-        targetNode.fz3d -= fz;
-      });
-
-      nodeObjects.forEach((node) => {
-        const targetZ = node.generation * 60;
-        const zDiff = targetZ - (node.z || 0);
-        node.fz3d += zDiff * 0.05;
-        const damping = 0.7;
-        node.x += node.fx3d * damping;
-        node.y += node.fy3d * damping;
-        node.z = (node.z || 0) + node.fz3d * damping;
-      });
+  // Effect to handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (isFullscreen && fgRef.current) {
+        fgRef.current.width(window.innerWidth);
+        fgRef.current.height(window.innerHeight);
+      }
     };
 
-    const originalTick = simulation.tick;
-    simulation.tick = function () {
-      originalTick.call(this);
-      applyCustom3DForces();
-      return this;
-    };
-
-    simulation.tick(300);
-
-    // Create 3D objects for nodes
-    nodeObjects.forEach((node) => {
-      let geometry, material;
-      if (node.type === "compound") {
-        geometry = new THREE.SphereGeometry(10, 32, 32);
-        material = new THREE.MeshPhongMaterial({
-          color: theme.compound.color,
-          emissive: theme.compound.emissive,
-          specular: 0x111111,
-          shininess: 70,
-          transparent: false,
-          opacity: 1,
-        });
-      } else if (node.type === "reaction") {
-        geometry = new THREE.SphereGeometry(6, 24, 24);
-        material = new THREE.MeshPhongMaterial({
-          color: theme.reaction.color,
-          emissive: theme.reaction.emissive,
-          specular: 0x222222,
-          shininess: 10,
-          transparent: false,
-          opacity: 1,
-        });
-      } else {
-        // ec
-        geometry = new THREE.IcosahedronGeometry(9);
-        material = new THREE.MeshPhongMaterial({
-          color: theme.ec.color,
-          emissive: theme.ec.emissive,
-          specular: 0x222222,
-          shininess: 50,
-          transparent: false,
-          opacity: 1,
-        });
-      }
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(node.x, node.y, node.z || 0);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData = { nodeData: node };
-
-      // Create label
-      const labelDiv = document.createElement("div");
-      labelDiv.className = "labelDiv";
-      labelDiv.textContent = node.id;
-      if (node.type === "compound") {
-        labelDiv.style.color = "#1e40af";
-        labelDiv.style.borderBottom = "2px solid #3b82f6";
-      } else if (node.type === "reaction") {
-        labelDiv.style.color = "#9a3412";
-        labelDiv.style.borderBottom = "2px solid #f97316";
-      } else {
-        // ec
-        labelDiv.style.color = "#065f46";
-        labelDiv.style.borderBottom = "2px solid #10b981";
-      }
-      labelDiv.style.fontSize = "11px";
-      labelDiv.style.fontWeight = "medium";
-      labelDiv.style.padding = "3px 8px";
-      labelDiv.style.backgroundColor = "rgba(255, 255, 255, 0.8)";
-      labelDiv.style.borderRadius = "6px";
-      labelDiv.style.pointerEvents = "none";
-      labelDiv.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.1)";
-      labelDiv.style.transition = "all 0.15s ease";
-
-      const label = new CSS2DObject(labelDiv);
-      if (node.type === "compound") {
-        label.position.set(0, 14, 0);
-      } else if (node.type === "reaction") {
-        label.position.set(0, 10, 0);
-      } else {
-        // ec
-        label.position.set(0, 12, 0);
-      }
-      label.visible = showLabels;
-    //   mesh.add(label);
-
-      sceneRef.current.add(mesh);
-      nodesRef.current.push(mesh);
-    });
-
-    // Create 3D objects for edges
-    edgeObjects.forEach((edge) => {
-      const sourcePos = new THREE.Vector3(
-        edge.sourceNode.x,
-        edge.sourceNode.y,
-        edge.sourceNode.z || 0
-      );
-      const targetPos = new THREE.Vector3(
-        edge.targetNode.x,
-        edge.targetNode.y,
-        edge.targetNode.z || 0
-      );
-      let edgeObject;
-      if (edge.type === "dashed") {
-        const geometry = new THREE.BufferGeometry().setFromPoints([
-          sourcePos,
-          targetPos,
-        ]);
-        const material = new THREE.LineDashedMaterial({
-          color: theme.edge.dashed,
-          linewidth: 1,
-          scale: 1,
-          dashSize: 3,
-          gapSize: 2,
-          opacity: 0.7,
-          transparent: true,
-        });
-        const line = new THREE.Line(geometry, material);
-        line.computeLineDistances();
-        edgeObject = line;
-      } else {
-        const midpoint = new THREE.Vector3()
-          .addVectors(sourcePos, targetPos)
-          .multiplyScalar(0.5);
-        const curve = new THREE.CubicBezierCurve3(
-          sourcePos,
-          new THREE.Vector3(
-            midpoint.x + (Math.random() - 0.5) * 5,
-            midpoint.y + (Math.random() - 0.5) * 5,
-            midpoint.z + (Math.random() - 0.5) * 5
-          ),
-          new THREE.Vector3(
-            midpoint.x + (Math.random() - 0.5) * 5,
-            midpoint.y + (Math.random() - 0.5) * 5,
-            midpoint.z + (Math.random() - 0.5) * 5
-          ),
-          targetPos
-        );
-        const tubeRadius = Math.max(
-          0.5,
-          Math.min(2, 0.8 + (edge.weight || 1) * 0.3)
-        );
-        const geometry = new THREE.TubeGeometry(curve, 8, tubeRadius, 8, false);
-        const material = new THREE.MeshPhongMaterial({
-          color: theme.edge.color,
-          transparent: true,
-          opacity: 0.8,
-          shininess: 30,
-        });
-        edgeObject = new THREE.Mesh(geometry, material);
-        edgeObject.castShadow = true;
-      }
-      edgeObject.userData = { edgeData: edge };
-      if (edge.weight && edge.weight > 1) {
-        const labelDiv = document.createElement("div");
-        labelDiv.className = "edgeLabelDiv";
-        labelDiv.textContent = edge.weight.toString();
-        labelDiv.style.color = "#ffffff";
-        labelDiv.style.fontSize = "10px";
-        labelDiv.style.fontWeight = "bold";
-        labelDiv.style.padding = "1px 5px";
-        labelDiv.style.backgroundColor = "rgba(79, 70, 229, 0.85)";
-        labelDiv.style.borderRadius = "8px";
-        labelDiv.style.pointerEvents = "none";
-        const midpoint = new THREE.Vector3()
-          .addVectors(sourcePos, targetPos)
-          .multiplyScalar(0.5);
-        const label = new CSS2DObject(labelDiv);
-        label.position.copy(midpoint);
-        label.visible = showLabels;
-        edgeObject.add(label);
-      }
-      sceneRef.current.add(edgeObject);
-      edgesRef.current.push(edgeObject);
-    });
-
-    simulationRef.current = simulation;
-
-    // Adjust camera to fit all nodes
-    if (cameraRef.current && nodeObjects.length > 0) {
-      const box = new THREE.Box3();
-      nodesRef.current.forEach((node) => box.expandByObject(node));
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z);
-      const fitHeightDistance =
-        maxSize / (2 * Math.tan((Math.PI * cameraRef.current.fov) / 360));
-      const fitWidthDistance = fitHeightDistance / cameraRef.current.aspect;
-      const distance = 1.2 * Math.max(fitHeightDistance, fitWidthDistance);
-      const direction = new THREE.Vector3(1, 0.8, 1).normalize();
-      cameraRef.current.position
-        .copy(center)
-        .add(direction.multiplyScalar(distance));
-      cameraRef.current.lookAt(center);
-      if (controlsRef.current) {
-        controlsRef.current.target.copy(center);
-        controlsRef.current.update();
-      }
-    }
-  }, [graphData, currentGeneration, showLabels]);
-
-  // Handle animation for generation expansion
-  useEffect(() => {
-    let animationInterval;
-
-    if (isPlaying && currentGeneration < maxGeneration) {
-      animationInterval = setInterval(() => {
-        setCurrentGeneration((prev) => {
-          const next = prev + 1;
-          if (next > maxGeneration) {
-            setIsPlaying(false);
-            return maxGeneration;
-          }
-          return next;
-        });
-      }, 1800); // Animation speed
-    }
-
+    window.addEventListener('resize', handleResize);
     return () => {
-      if (animationInterval) {
-        clearInterval(animationInterval);
-      }
+      window.removeEventListener('resize', handleResize);
     };
-  }, [isPlaying, currentGeneration, maxGeneration]);
+  }, [isFullscreen]);
 
-  // Handle fullscreen changes
+  // Effect for the fullscreen change event listener
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const isFullscreenNow = !!(
-        document.fullscreenElement ||
-        document.mozFullScreenElement ||
-        document.webkitFullscreenElement ||
-        document.msFullscreenElement
-      );
-
-      setIsFullscreen(isFullscreenNow);
-
-      // Update renderer size
-      if (
-        rendererRef.current &&
-        labelRendererRef.current &&
-        containerRef.current
-      ) {
-        const width = containerRef.current.clientWidth;
-        const height = containerRef.current.clientHeight;
-
-        if (cameraRef.current) {
-          cameraRef.current.aspect = width / height;
-          cameraRef.current.updateProjectionMatrix();
-        }
-
-        rendererRef.current.setSize(width, height);
-        labelRendererRef.current.setSize(width, height);
-      }
+      setIsFullscreen(!!document.fullscreenElement);
     };
 
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
-    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
-
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener(
-        "webkitfullscreenchange",
-        handleFullscreenChange
-      );
-      document.removeEventListener(
-        "mozfullscreenchange",
-        handleFullscreenChange
-      );
-      document.removeEventListener(
-        "MSFullscreenChange",
-        handleFullscreenChange
-      );
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
 
-  // Update label visibility
+  // Effect to clean up rotation interval on unmount
   useEffect(() => {
-    nodesRef.current.forEach((node) => {
-      if (node.children && node.children.length > 0) {
-        node.children[0].visible = showLabels;
+    return () => {
+      // Clear any running rotation intervals
+      clearInterval(window.axisRotationInterval);
+      
+      // Clear play interval if running
+      if (playInterval) {
+        clearInterval(playInterval);
       }
-    });
+    };
+  }, [playInterval]);
 
-    edgesRef.current.forEach((edge) => {
-      if (edge.children && edge.children.length > 0) {
-        edge.children.forEach((child) => {
-          if (child instanceof CSS2DObject) {
-            child.visible = showLabels;
-          }
+  // =============================================================================
+  // User Interaction Functions
+  // =============================================================================
+
+  // Play/pause controls for generational animation
+  const togglePlay = () => {
+    if (isPlaying) {
+      clearInterval(playInterval);
+      setPlayInterval(null);
+      setIsPlaying(false);
+    } else {
+      const interval = setInterval(() => {
+        setCurrentGeneration(gen => {
+          if (gen < maxGeneration) return gen + 1;
+          clearInterval(interval);
+          setIsPlaying(false);
+          setPlayInterval(null);
+          return gen;
         });
-      }
-    });
-  }, [showLabels]);
+      }, 1500);
+      
+      setPlayInterval(interval);
+      setIsPlaying(true);
+    }
+  };
+
+  // Step forward one generation
+  const stepForward = () => {
+    if (currentGeneration < maxGeneration) {
+      setCurrentGeneration(currentGeneration + 1);
+    }
+  };
+
+  // Step backward one generation
+  const stepBackward = () => {
+    if (currentGeneration > 0) {
+      setCurrentGeneration(currentGeneration - 1);
+    }
+  };
 
   // Toggle fullscreen
   const toggleFullscreen = () => {
-    const element = containerRef.current.parentElement;
-
-    if (!isFullscreen) {
-      if (element.requestFullscreen) {
-        element.requestFullscreen();
-      } else if (element.mozRequestFullScreen) {
-        element.mozRequestFullScreen();
-      } else if (element.webkitRequestFullscreen) {
-        element.webkitRequestFullscreen();
-      } else if (element.msRequestFullscreen) {
-        element.msRequestFullscreen();
-      }
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+      setIsFullscreen(true);
     } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      } else if (document.mozCancelFullScreen) {
-        document.mozCancelFullScreen();
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen();
-      } else if (document.msExitFullscreen) {
-        document.msExitFullscreen();
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+  
+  // Toggle node positions locked/unlocked
+  const toggleNodesLocked = () => {
+    setNodesLocked(!nodesLocked);
+    
+    if (fgRef.current) {
+      // If locking nodes, simply freeze the simulation in place
+      if (!nodesLocked) {
+        // Stop simulation completely
+        if (fgRef.current.graphData().nodes.length > 0) {
+          // Fix nodes in their current positions
+          fgRef.current.graphData().nodes.forEach(node => {
+            node.fx = node.x;
+            node.fy = node.y;
+            node.fz = node.z;
+          });
+          fgRef.current.refresh();
+        }
+      } else {
+        // Unfreeze nodes - remove fixed positions
+        if (fgRef.current.graphData().nodes.length > 0) {
+          fgRef.current.graphData().nodes.forEach(node => {
+            node.fx = undefined;
+            node.fy = undefined;
+            node.fz = undefined;
+          });
+          fgRef.current.refresh();
+          fgRef.current.d3ReheatSimulation();
+        }
       }
     }
   };
-
-  // Controls and UI handlers
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleReset = () => {
-    setIsPlaying(false);
-    setCurrentGeneration(0);
-  };
-
-  // Function to toggle labels
-  const toggleLabelsVisibility = () => {
-    setShowLabels(!showLabels);
-  };
-
-  const zoomIn = () => {
-    if (controlsRef.current) {
-      // Simulate mousewheel zoom in
-      controlsRef.current.dollyIn(1.2);
-      controlsRef.current.update();
+  
+  // Handle axis rotations
+  const handleAxisControl = (axis, direction) => {
+    if (!fgRef.current) return;
+    
+    // Get current camera position
+    const camera = fgRef.current.camera();
+    const controls = fgRef.current.controls();
+    
+    if (axis === 'center') {
+      // Center and fit all objects in view
+      if (fgRef.current.graphData().nodes.length > 0) {
+        // Calculate the bounding box of all nodes
+        const box = new THREE.Box3();
+        
+        fgRef.current.graphData().nodes.forEach(node => {
+          if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
+            box.expandByPoint(new THREE.Vector3(node.x, node.y, node.z));
+          }
+        });
+        
+        // Ensure box is not empty or invalid
+        if (box.min.x !== Infinity && box.max.x !== -Infinity) {
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          
+          // Get the size of the box
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          
+          // Calculate distance needed to fit the entire box
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const fitHeightDistance = maxDim / (2 * Math.atan(Math.PI * camera.fov / 360));
+          const fitWidthDistance = fitHeightDistance / camera.aspect;
+          const distance = Math.max(fitHeightDistance, fitWidthDistance) * 1.2; // Add 20% margin
+          
+          // Set the camera position
+          const direction = camera.position.clone().sub(controls.target).normalize().multiplyScalar(distance);
+          camera.position.copy(center.clone().add(direction));
+          controls.target.copy(center);
+          
+          // Update controls
+          controls.update();
+        }
+      }
+      return;
     }
+    
+    // Set up rotation interval for continuous rotation while button is held
+    clearInterval(window.axisRotationInterval);
+    
+    // Define rotation amounts
+    const rotationAmount = direction === 'pos' ? Math.PI/60 : -Math.PI/60;
+    
+    // Create rotation function
+    const rotateOnAxis = () => {
+      // Apply rotation based on axis
+      switch(axis) {
+        case 'x':
+          camera.position.y = camera.position.y * Math.cos(rotationAmount) - camera.position.z * Math.sin(rotationAmount);
+          camera.position.z = camera.position.y * Math.sin(rotationAmount) + camera.position.z * Math.cos(rotationAmount);
+          break;
+        case 'y':
+          camera.position.x = camera.position.x * Math.cos(rotationAmount) + camera.position.z * Math.sin(rotationAmount);
+          camera.position.z = -camera.position.x * Math.sin(rotationAmount) + camera.position.z * Math.cos(rotationAmount);
+          break;
+        case 'z':
+          camera.position.x = camera.position.x * Math.cos(rotationAmount) - camera.position.y * Math.sin(rotationAmount);
+          camera.position.y = camera.position.x * Math.sin(rotationAmount) + camera.position.y * Math.cos(rotationAmount);
+          break;
+      }
+      
+      controls.update();
+    };
+    
+    // Start the rotation
+    rotateOnAxis(); // Execute once immediately
+    
+    // Set up interval for continuous rotation
+    window.axisRotationInterval = setInterval(rotateOnAxis, 16); // ~60fps
   };
-
-  const zoomOut = () => {
-    if (controlsRef.current) {
-      // Simulate mousewheel zoom out
-      controlsRef.current.dollyOut(1.2);
-      controlsRef.current.update();
+  
+  // Handle rotation stop when button is released
+  const handleAxisControlEnd = () => {
+    clearInterval(window.axisRotationInterval);
+  };
+  
+  // Handle node click to show details
+  const handleNodeClick = async (node) => {
+    setSelectedNode(node);
+    setNodeInfoVisible(true);
+    setIsLoading(true);
+    
+    // Determine node type and ID for API call
+    let nodeType, nodeId;
+    
+    if (node.type === 'compound') {
+      nodeType = 'compound';
+      nodeId = node.id;
+    } else if (node.type === 'reaction') {
+      nodeType = 'reaction';
+      nodeId = node.label; // Use the label which is the reaction ID without _reactant/_product
+    } else if (node.type === 'ec') {
+      nodeType = 'ec';
+      nodeId = node.label; // EC number
     }
+    
+    // Calculate node connections (degree)
+    const nodeConnections = calculateNodeConnections(node);
+    
+    // Set basic node data
+    const nodeData = {
+      basic: {
+        id: node.id,
+        type: node.type,
+        subtype: node.subtype,
+        generation: node.generation,
+        connections: nodeConnections
+      }
+    };
+    
+    // Make API call if node type is valid
+    if (nodeType && nodeId) {
+      try {
+        const apiData = await fetchNodeData(nodeType, nodeId);
+        if (apiData && apiData.data) {
+          nodeData.api = apiData.data;
+        }
+      } catch (error) {
+        console.error(`Error fetching data for ${nodeType} ${nodeId}:`, error);
+      }
+    }
+    
+    setNodeApiData(nodeData);
+    setIsLoading(false);
+  };
+  
+  // Calculate node connections (degree)
+  const calculateNodeConnections = (node) => {
+    if (!graphData.links) return 0;
+    
+    // Count links connected to this node
+    let connections = graphData.links.filter(link => {
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+      return sourceId === node.id || targetId === node.id;
+    }).length;
+    
+    // Apply special calculation rules
+    if (node.type === 'ec') {
+      // Divide by 2 for EC nodes as mentioned
+      connections = Math.floor(connections / 2);
+    } else if (node.type === 'reaction') {
+      // Don't count dashed edges for reaction nodes
+      const dashedConnections = graphData.links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return (sourceId === node.id || targetId === node.id) && link.type === 'dashed';
+      }).length;
+      
+      connections -= dashedConnections;
+    }
+    
+    return connections;
   };
 
-  // Render
-  return (
-    <div
-      className={`bg-white border rounded-xl shadow-md overflow-hidden transition-all ${
-        isFullscreen ? "fixed inset-0 z-50 rounded-none" : ""
-      }`}
-    >
-      {/* Header */}
-      <div className="px-4 py-3 border-b flex justify-between items-center bg-gradient-to-r from-slate-50 to-blue-50">
-        <h3 className="font-semibold text-slate-700 flex items-center gap-2">
-          <span className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-4 h-4"
-            >
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-              <path d="M12 17h.01"></path>
-            </svg>
-          </span>
-          3D Metabolic Network
-        </h3>
-        <div className="flex items-center gap-3">
-          <div className="hidden md:block text-sm font-medium bg-white py-1 px-3 rounded-full border border-slate-200 text-slate-600 shadow-sm">
-            Generation: {currentGeneration} / {maxGeneration}
-          </div>
+  // =============================================================================
+  // UI Component Rendering
+  // =============================================================================
 
-          <div className="hidden md:flex gap-1 text-xs font-medium bg-white py-1 px-3 rounded-full border border-slate-200 text-slate-600 shadow-sm">
-            <span className="text-blue-600">
-              {nodeCount.compounds} Compounds
-            </span>
-            <span className="text-slate-300">|</span>
-            <span className="text-orange-600">
-              {nodeCount.reactions} Reactions
-            </span>
-            <span className="text-slate-300">|</span>
-            <span className="text-emerald-600">{nodeCount.ecs} ECs</span>
-          </div>
-        </div>
-      </div>
+  // Control panel UI
+  const renderControlPanel = () => (
+    <ControlPanel>
+      <SliderContainer>
+        <SliderLabel>
+          <span>Generation</span>
+          <span>{currentGeneration} / {maxGeneration}</span>
+        </SliderLabel>
+        <Slider
+          type="range"
+          min={0}
+          max={maxGeneration}
+          value={currentGeneration}
+          onChange={e => setCurrentGeneration(parseInt(e.target.value))}
+        />
+      </SliderContainer>
+      
+      <ButtonGroup>
+        <Button 
+          onClick={stepBackward}
+          disabled={currentGeneration === 0}
+          $iconOnly={true}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.5 7.5a.5.5 0 0 1 0 1H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5z"/>
+          </svg>
+        </Button>
+        
+        <Button 
+          onClick={togglePlay}
+          $active={isPlaying}
+        >
+          {isPlaying ? (
+            <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/>
+            </svg> Pause</>
+          ) : (
+            <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>
+            </svg> Play</>
+          )}
+        </Button>
+        
+        <Button 
+          onClick={stepForward}
+          disabled={currentGeneration === maxGeneration}
+          $iconOnly={true}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM4.5 7.5a.5.5 0 0 0 0 1h5.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L10.293 7.5H4.5z"/>
+          </svg>
+        </Button>
+      </ButtonGroup>
+    </ControlPanel>
+  );
 
-      {/* Render container */}
-      <div
-        ref={containerRef}
-        style={{
-          width: isFullscreen ? "100vw" : width,
-          height: isFullscreen ? "calc(100vh - 110px)" : height,
-        }}
-        className="relative"
-      >
-        {/* Loading overlay */}
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="text-slate-700 font-medium">
-                Building metabolic network...
-              </p>
-              <p className="text-slate-500 text-sm mt-1">
-                This may take a moment
-              </p>
-            </div>
+  // Options panel UI
+  const renderOptionsPanel = () => (
+    <OptionsPanel>
+      <Option>
+        <OptionLabel htmlFor="hideLabels">Hide Labels</OptionLabel>
+        <Toggle>
+          <ToggleInput 
+            id="hideLabels"
+            type="checkbox" 
+            checked={hideLabels}
+            onChange={() => setHideLabels(!hideLabels)}
+          />
+          <ToggleSlider />
+        </Toggle>
+      </Option>
+      
+      <Option>
+        <OptionLabel htmlFor="hideEC">Hide EC Nodes</OptionLabel>
+        <Toggle>
+          <ToggleInput 
+            id="hideEC"
+            type="checkbox" 
+            checked={hideEC}
+            onChange={() => setHideEC(!hideEC)}
+          />
+          <ToggleSlider />
+        </Toggle>
+      </Option>
+      
+      <Option>
+        <OptionLabel htmlFor="layoutMode">Layout</OptionLabel>
+        <Select 
+          id="layoutMode"
+          value={layoutMode}
+          onChange={e => setLayoutMode(e.target.value)}
+        >
+          <option value="force">Force-Directed</option>
+          <option value="tornado">Tornado (Spiral)</option>
+          <option value="globe">Globe (Atomic)</option>
+        </Select>
+      </Option>
+    </OptionsPanel>
+  );
+
+  // =============================================================================
+  // Main Render
+  // =============================================================================
+
+  // Render node info panel
+  const renderNodeInfoPanel = () => {
+    if (!selectedNode || !nodeApiData) return null;
+    
+    return (
+      <NodeInfoPanel $visible={nodeInfoVisible}>
+        <CloseButton onClick={() => setNodeInfoVisible(false)}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </CloseButton>
+        
+        <NodeInfoTitle>
+          {selectedNode.type === 'compound' ? 'Compound' : 
+           selectedNode.type === 'reaction' ? 'Reaction' : 'EC'} Details
+        </NodeInfoTitle>
+        
+        <NodeInfoSection>
+          <NodeInfoSectionTitle>Basic Information</NodeInfoSectionTitle>
+          <NodeInfoTable>
+            <tbody>
+              <tr>
+                <td>ID</td>
+                <td>{selectedNode.id}</td>
+              </tr>
+              <tr>
+                <td>Type</td>
+                <td>{selectedNode.type}{selectedNode.subtype ? ` (${selectedNode.subtype})` : ''}</td>
+              </tr>
+              <tr>
+                <td>Generation</td>
+                <td>{selectedNode.generation}</td>
+              </tr>
+              <tr>
+                <td>Connections</td>
+                <td>{nodeApiData.basic.connections}</td>
+              </tr>
+              {selectedNode.coenzyme && (
+                <tr>
+                  <td>Coenzyme</td>
+                  <td>{selectedNode.coenzyme}</td>
+                </tr>
+              )}
+            </tbody>
+          </NodeInfoTable>
+        </NodeInfoSection>
+        
+        {isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
+            <Spinner style={{ width: '30px', height: '30px' }} />
           </div>
+        ) : nodeApiData.api ? (
+          <NodeInfoSection>
+            <NodeInfoSectionTitle>API Data</NodeInfoSectionTitle>
+            {selectedNode.type === 'compound' && (
+              <NodeInfoTable>
+                <tbody>
+                  <tr>
+                    <td>Name</td>
+                    <td>{nodeApiData.api.name}</td>
+                  </tr>
+                  <tr>
+                    <td>Formula</td>
+                    <td>{nodeApiData.api.formula}</td>
+                  </tr>
+                  <tr>
+                    <td>Exact Mass</td>
+                    <td>{nodeApiData.api.exact_mass}</td>
+                  </tr>
+                  <tr>
+                    <td>Molecular Weight</td>
+                    <td>{nodeApiData.api.mol_weight}</td>
+                  </tr>
+                </tbody>
+              </NodeInfoTable>
+            )}
+            
+            {selectedNode.type === 'reaction' && (
+              <NodeInfoTable>
+                <tbody>
+                  <tr>
+                    <td>Definition</td>
+                    <td>{nodeApiData.api.definition}</td>
+                  </tr>
+                </tbody>
+              </NodeInfoTable>
+            )}
+            
+            {selectedNode.type === 'ec' && Array.isArray(nodeApiData.api) && (
+              <NodeInfoPre>
+                {JSON.stringify(nodeApiData.api, null, 2)}
+              </NodeInfoPre>
+            )}
+          </NodeInfoSection>
+        ) : (
+          <NodeInfoSection>
+            <p style={{ color: '#abb4c5', fontSize: '13px' }}>No additional data available</p>
+          </NodeInfoSection>
         )}
+      </NodeInfoPanel>
+    );
+  };
 
-        {/* Floating controls */}
-        <div className="absolute top-4 right-4 flex flex-col gap-2">
-          <button
-            onClick={toggleLabelsVisibility}
-            className={`p-2 ${
-              showLabels
-                ? "bg-blue-500 text-white"
-                : "bg-white text-slate-600 border border-slate-200"
-            } rounded-lg shadow-md hover:shadow-lg transition-all`}
-            title={showLabels ? "Hide Labels" : "Show Labels"}
-          >
-            {showLabels ? (
-              <EyeOff className="w-5 h-5" />
-            ) : (
-              <Eye className="w-5 h-5" />
-            )}
-          </button>
+  return (
+    <Container ref={containerRef} style={{ height }}>
+      <TopLeftButtonGroup>
+        <ControlButton onClick={toggleFullscreen}>
+          {isFullscreen ? (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+              </svg>
+              Exit Fullscreen
+            </>
+          ) : (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+              </svg>
+              Fullscreen
+            </>
+          )}
+        </ControlButton>
+        
+        <ControlButton onClick={toggleNodesLocked} $active={nodesLocked}>
+          {nodesLocked ? (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              Unlock Nodes
+            </>
+          ) : (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              Lock Nodes
+            </>
+          )}
+        </ControlButton>
+      </TopLeftButtonGroup>
+      
+      <ForceGraph3D
+        ref={fgRef}
+        graphData={filteredData}
+        nodeThreeObject={nodeThreeObject}
+        nodeThreeObjectExtend={nodeThreeObjectExtend}
+        nodeColor={getNodeColor}
+        nodeLabel={nodeLabel}
+        nodeRelSize={1}
+        linkThreeObject={linkThreeObject}
+        linkPositionAttribute={linkPositionAttribute}
+        linkWidth={linkWidth}
+        linkDirectionalParticles={linkDirectionalParticles}
+        linkDirectionalParticleWidth={linkDirectionalParticleWidth}
+        linkDirectionalArrowLength={linkDirectionalArrowLength}
+        linkColor={linkColor}
+        linkOpacity={0.8}
+        backgroundColor="rgba(0,0,0,0)"
+        linkDirectionalParticleSpeed={0.01}
+        linkCurvature={link => link.type === 'dashed' ? 0.1 : 0}
+        enableNodeDrag={!nodesLocked}
+        enableNavigationControls={true}
+        showNavInfo={false}
+        controlType="orbit"
+        warmupTicks={100}
+        cooldownTicks={100}
+        width={isFullscreen ? window.innerWidth : undefined}
+        height={isFullscreen ? window.innerHeight : undefined}
+        onNodeClick={handleNodeClick}
+        onEngineStop={() => {
+          // Save node positions after layout stabilizes
+          if (fgRef.current) {
+            fgRef.current.d3ReheatSimulation();
+          }
+        }}
+      />
+      
+      {renderControlPanel()}
+      {renderOptionsPanel()}
+      
+      <AxisControls>
+        <AxisButton 
+          className="x-axis" 
+          onMouseDown={() => handleAxisControl('x', 'neg')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('x', 'neg')}
+          onTouchEnd={handleAxisControlEnd}
+        >X-</AxisButton>
+        <AxisButton 
+          className="y-axis" 
+          onMouseDown={() => handleAxisControl('y', 'neg')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('y', 'neg')}
+          onTouchEnd={handleAxisControlEnd}
+        >Y-</AxisButton>
+        <AxisButton 
+          className="z-axis" 
+          onMouseDown={() => handleAxisControl('z', 'neg')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('z', 'neg')}
+          onTouchEnd={handleAxisControlEnd}
+        >Z-</AxisButton>
+        <AxisButton 
+          className="x-axis" 
+          onMouseDown={() => handleAxisControl('x', 'pos')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('x', 'pos')}
+          onTouchEnd={handleAxisControlEnd}
+        >X+</AxisButton>
+        <AxisButton 
+          className="y-axis" 
+          onMouseDown={() => handleAxisControl('y', 'pos')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('y', 'pos')}
+          onTouchEnd={handleAxisControlEnd}
+        >Y+</AxisButton>
+        <AxisButton 
+          className="z-axis" 
+          onMouseDown={() => handleAxisControl('z', 'pos')}
+          onMouseUp={handleAxisControlEnd}
+          onMouseLeave={handleAxisControlEnd}
+          onTouchStart={() => handleAxisControl('z', 'pos')}
+          onTouchEnd={handleAxisControlEnd}
+        >Z+</AxisButton>
+        <AxisButton $center onClick={() => handleAxisControl('center')} style={{ gridColumn: '1 / span 3' }}>
+          Fit To View
+        </AxisButton>
+      </AxisControls>
+      
+      {renderNodeInfoPanel()}
+      
+      <LoadingOverlay $loading={loading}>
+        <Spinner />
+        <div>Loading Network Data...</div>
+      </LoadingOverlay>
+    </Container>
+  );
+};
 
-          <button
-            onClick={toggleFullscreen}
-            className={`p-2 ${
-              isFullscreen
-                ? "bg-blue-500 text-white"
-                : "bg-white text-slate-600 border border-slate-200"
-            } rounded-lg shadow-md hover:shadow-lg transition-all`}
-            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-          >
-            {isFullscreen ? (
-              <Minimize className="w-5 h-5" />
-            ) : (
-              <Maximize className="w-5 h-5" />
-            )}
-          </button>
+// =============================================================================
+// Container Component
+// =============================================================================
 
-          <button
-            onClick={zoomIn}
-            className="p-2 bg-white text-slate-600 border border-slate-200 rounded-lg shadow-md hover:shadow-lg transition-all"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
-
-          <button
-            onClick={zoomOut}
-            className="p-2 bg-white text-slate-600 border border-slate-200 rounded-lg shadow-md hover:shadow-lg transition-all"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
+const NetworkViewerContainer = ({ results, height }) => {
+  return (
+    <div style={{ width: '100%', height }}>
+      {results && results.length > 0 ? (
+        <NetworkViewer3D results={results} height={height} />
+      ) : (
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100%',
+          backgroundColor: '#121820',
+          color: '#abb4c5',
+          borderRadius: '8px'
+        }}>
+          No data available. Please select a reaction network.
         </div>
-      </div>
-
-      {/* Controls bar */}
-      <div className="px-4 py-3 border-t bg-gradient-to-r from-slate-50 to-blue-50 flex items-center">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleReset}
-            className={`p-2 ${
-              currentGeneration === 0
-                ? "text-slate-400"
-                : "text-slate-600 hover:text-blue-600 hover:bg-blue-50"
-            } rounded-lg transition-colors`}
-            disabled={loading || currentGeneration === 0}
-            title="Reset to Generation 0"
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-
-          <button
-            onClick={handlePlayPause}
-            className={`p-2 rounded-lg transition-colors ${
-              isPlaying
-                ? "bg-red-100 text-red-600 hover:bg-red-200"
-                : "bg-emerald-100 text-emerald-600 hover:bg-emerald-200"
-            }`}
-            disabled={loading || currentGeneration === maxGeneration}
-            title={isPlaying ? "Pause Animation" : "Play Animation"}
-          >
-            {isPlaying ? (
-              <Pause className="w-5 h-5" />
-            ) : (
-              <Play className="w-5 h-5" />
-            )}
-          </button>
-        </div>
-
-        <div className="flex-1 mx-4">
-          <div className="relative pt-1">
-            <input
-              type="range"
-              className="w-full h-2 appearance-none rounded-lg focus:outline-none focus:ring-0 bg-slate-200"
-              style={{
-                background: `linear-gradient(to right, #3b82f6 ${
-                  (currentGeneration / maxGeneration) * 100
-                }%, #e2e8f0 ${(currentGeneration / maxGeneration) * 100}%)`,
-              }}
-              min={0}
-              max={maxGeneration}
-              value={currentGeneration}
-              onChange={(e) => {
-                setCurrentGeneration(parseInt(e.target.value));
-                setIsPlaying(false);
-              }}
-              disabled={loading}
-            />
-
-            <div className="flex justify-between text-xs text-slate-500 mt-1">
-              <span>Gen {currentGeneration}</span>
-              <span className="md:hidden">/ {maxGeneration}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-xs text-slate-500 hidden sm:block">
-          Drag to rotate • Scroll to zoom
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
-export default NetworkViewer;
+export default NetworkViewerContainer;
