@@ -12,7 +12,7 @@ import * as d3 from 'd3';
 // API fetch function
 const fetchNodeData = async (nodeType, nodeId) => {
   try {
-    const response = await fetch(`/api/${nodeType}/${nodeId}`);
+    const response = await fetch(`http://localhost:8000/api/${nodeType}/${nodeId}`);
     if (!response.ok) {
       throw new Error(`Error fetching ${nodeType} data: ${response.statusText}`);
     }
@@ -1628,7 +1628,7 @@ const NetworkViewer3D = ({ results, height }) => {
         nodeThreeObjectExtend={nodeThreeObjectExtend}
         nodeColor={getNodeColor}
         nodeLabel={nodeLabel}
-        nodeRelSize={1}
+        nodeRelSize={2}
         linkThreeObject={linkThreeObject}
         linkPositionAttribute={linkPositionAttribute}
         linkWidth={linkWidth}
@@ -1638,14 +1638,14 @@ const NetworkViewer3D = ({ results, height }) => {
         linkColor={linkColor}
         linkOpacity={0.8}
         backgroundColor="rgba(0,0,0,0)"
-        linkDirectionalParticleSpeed={0.01}
-        linkCurvature={link => link.type === 'dashed' ? 0.1 : 0}
+        linkDirectionalParticleSpeed={0.1}
+        linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
         enableNodeDrag={!nodesLocked}
         enableNavigationControls={true}
         showNavInfo={false}
         controlType="orbit"
-        warmupTicks={100}
-        cooldownTicks={100}
+        warmupTicks={500}
+        cooldownTicks={500}
         width={isFullscreen ? window.innerWidth : undefined}
         height={isFullscreen ? window.innerHeight : undefined}
         onNodeClick={handleNodeClick}
