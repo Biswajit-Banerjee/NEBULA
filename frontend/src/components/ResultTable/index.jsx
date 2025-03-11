@@ -10,7 +10,8 @@ const ResultTable = ({
   filteredResults, 
   setFilteredResults, 
   selectedRows: externalSelectedRows = null, 
-  setSelectedRows: setExternalSelectedRows = null 
+  setSelectedRows: setExternalSelectedRows = null,
+  combinedMode = false
 }) => {
   // Use internal state if no external state is provided
   const [internalSelectedRows, setInternalSelectedRows] = useState(new Set());
@@ -94,7 +95,7 @@ const ResultTable = ({
         setLoadingDetails(prev => ({ ...prev, [reaction]: true }));
         
         // Fetch reaction details from local API
-        fetch(`http://127.0.0.1:8000/api/reaction/${reaction}`)
+        fetch(`/api/reaction/${reaction}`)
           .then(response => response.json())
           .then(data => {
             setReactionDetails(prev => ({
@@ -131,6 +132,36 @@ const ResultTable = ({
       ...prev,
       [columnKey]: !prev[columnKey]
     }));
+  };
+
+  // Get row background color based on pair colors
+  const getRowStyles = (row) => {
+    // In combined mode, a row might have multiple colors
+    if (combinedMode && row.pairColors && row.pairColors.length > 0) {
+      // For rows in multiple pairs, use white background with colored stripes
+      if (row.pairColors.length > 1) {
+        return {
+          borderLeft: `4px solid ${row.pairColors[0]}`,
+          backgroundColor: 'white'
+        };
+      } else {
+        // For rows in a single pair, keep the colored background
+        return {
+          borderLeft: `4px solid ${row.pairColors[0]}`,
+          backgroundColor: `${row.pairColors[0]}10`
+        };
+      }
+    } 
+    
+    // Standard single-color mode
+    if (row.pairColor) {
+      return {
+        borderLeft: `4px solid ${row.pairColor}`,
+        backgroundColor: `${row.pairColor}10`
+      };
+    }
+    
+    return {};
   };
 
   const ColumnManager = () => (
@@ -190,6 +221,23 @@ const ResultTable = ({
     );
   };
 
+  // Render multi-color indicator for combined mode
+  const MultiColorIndicator = ({ colors }) => {
+    if (!colors || colors.length === 0) return null;
+    
+    return (
+      <div className="flex items-center h-5 gap-0.5">
+        {colors.map((color, index) => (
+          <div 
+            key={index}
+            className="w-2 h-full rounded-sm"
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -234,17 +282,20 @@ const ResultTable = ({
                 <div className="flex items-center justify-center">
                   <input
                     type="checkbox"
-                    checked={selectedRows.size === results.length && results.length > 0}
+                    checked={selectedRows.size === filteredResults.length && filteredResults.length > 0}
                     onChange={toggleSelectAll}
                     className="opacity-0 absolute"
                   />
                   <div className={`w-5 h-5 rounded-md flex items-center justify-center 
-                    ${selectedRows.size === results.length ? 'bg-emerald-500' : 'bg-white border-2 border-slate-200'}`}>
-                    {selectedRows.size === results.length && <CheckCircle2 className="w-3 h-3 text-white" />}
+                    ${selectedRows.size === filteredResults.length && filteredResults.length > 0 ? 'bg-emerald-500' : 'bg-white border-2 border-slate-200'}`}>
+                    {selectedRows.size === filteredResults.length && filteredResults.length > 0 && <CheckCircle2 className="w-3 h-3 text-white" />}
                   </div>
                 </div>
               </th>
               <th className="w-8 px-2"></th>
+              {combinedMode && (
+                <th className="w-10 px-2"></th>
+              )}
               {visibleColumns.map(column => (
                 <th
                   key={column}
@@ -256,13 +307,16 @@ const ResultTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {results.map((row, index) => (
+            {filteredResults?.map((row, index) => (
               <React.Fragment key={index}>
-                <tr className={`
-                  hover:bg-slate-50 transition-all
-                  ${selectedRows.has(index) ? 'bg-blue-50' : ''}
-                  ${expandedRows.has(index) ? '!bg-indigo-50' : ''}
-                `}>
+                <tr 
+                  className={`
+                    hover:bg-slate-50 transition-all
+                    ${selectedRows.has(index) ? 'bg-blue-50' : ''}
+                    ${expandedRows.has(index) ? '!bg-indigo-50' : ''}
+                  `}
+                  style={getRowStyles(row)}
+                >
                   <td className="w-8 px-4 py-3">
                     <div className="flex items-center justify-center">
                       <input
@@ -289,13 +343,18 @@ const ResultTable = ({
                       )}
                     </button>
                   </td>
+                  {combinedMode && (
+                    <td className="w-10 px-2">
+                      {row.pairColors && <MultiColorIndicator colors={row.pairColors} />}
+                    </td>
+                  )}
                   {visibleColumns.map(col => (
                     <TableCell key={col} column={col} row={row} />
                   ))}
                 </tr>
                 {expandedRows.has(index) && (
                   <tr className="bg-indigo-50">
-                    <td colSpan={visibleColumns.length + 2} className="px-6 py-4">
+                    <td colSpan={visibleColumns.length + 2 + (combinedMode ? 1 : 0)} className="px-6 py-4">
                       {loadingDetails[row.reaction] ? (
                         <div className="flex justify-center py-8">
                           <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-500 border-t-transparent"></div>
@@ -333,20 +392,6 @@ const ResultTable = ({
                               </div>
                             </div>
                           )}
-                          
-                          {/* EC Numbers */}
-                          {/* {row.ec_list && row.ec_list.length > 0 && (
-                            <div className="bg-white p-5 rounded-lg border border-indigo-100 shadow-sm">
-                              <span className="text-slate-600 text-sm font-medium">EC Numbers</span>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {row.ec_list.map((ec, i) => (
-                                  <div key={i} className="inline-flex px-3 py-1.5 rounded-md text-blue-700 bg-blue-50 border border-blue-100 text-sm">
-                                    {ec}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )} */}
                         </div>
                       )}
                     </td>
@@ -368,9 +413,9 @@ const TableCell = ({ column, row }) => {
     reaction: row.reaction,
     source: row.source,
     coenzyme: row.coenzyme,
-    equation: row.equation,//<ReactionTooltip equation={row.equation} />,
+    equation: row.equation,
     transition: row.transition,
-    target: row.target,//<CompoundTooltip compoundId={row.target} />,
+    target: row.target,
     ec: row.ec_list?.map((ec, i) => (
       <ECDetails key={i} ec={ec} />
     ))

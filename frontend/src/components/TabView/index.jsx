@@ -54,7 +54,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
         <button
           onClick={() => setActiveTab('network3d')}
           className={`px-6 py-4 font-medium transition-colors relative ${
-            activeTab === 'network2d'
+            activeTab === 'network3d'
               ? 'text-blue-600'
               : 'text-slate-600 hover:text-slate-900'
           }`}
