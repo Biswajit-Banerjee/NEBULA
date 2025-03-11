@@ -9,11 +9,14 @@ def parse_ec_list(ec_string: str) -> List[str]:
         return []
     return [ec.strip() for ec in str(ec_string).split(',') if ec.strip()]
 
-def create_backtrack_df(df, target_compound, gen_mapper, skip_cofactor=True):
+def create_backtrack_df(df, target_compound, gen_mapper, cofactors=[], src_compound=None):
     # Initialize result dataframe
     result = pd.DataFrame()
     compounds_to_process = {target_compound}
-    processed_compounds = set()
+    processed_compounds = set(cofactors)
+    
+    if src_compound:
+        processed_compounds.add(src_compound)
     
     while compounds_to_process:
         current_compound = compounds_to_process.pop()
@@ -31,11 +34,6 @@ def create_backtrack_df(df, target_compound, gen_mapper, skip_cofactor=True):
             # Add new reactants to process
             for _, row in relevant_reactions.iterrows():
                 reactants = set(re.findall("([CZ][0-9]{5})", row['reactants']))
-                products  = set(re.findall("([CZ][0-9]{5})", row['products']))
-                
-                if skip_cofactor:
-                    reactants -= products
-                
                 compounds_to_process.update(reactants)
                 
         processed_compounds.add(current_compound)

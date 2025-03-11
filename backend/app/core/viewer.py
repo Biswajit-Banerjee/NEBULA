@@ -56,6 +56,8 @@ class MetabolicViewer:
         self.generation_df = pd.read_csv(DATA_DIR / "generations.csv")
         self.domain_df = pd.read_csv(DATA_DIR / "domains.csv")
         self.ecod_df = pd.read_csv(DATA_DIR / "ecod_domains.csv")
+        self.cof_df = pd.read_csv(DATA_DIR / "cofactors.csv")
+        self.cofactors = self.cof_df.loc[:, 'Compound ID'].tolist()
         
         # processing the data
         self.generation_df.set_index("compound_id", inplace=True)
@@ -90,14 +92,20 @@ class MetabolicViewer:
         except Exception as e:
             return {"error": str(e)}
 
-    async def get_backtrace(self, target: str, skip_cofactor=True) -> Dict:
+    async def get_backtrace(self, target: str, source: str=None, skip_cofactor=True) -> Dict:
         """
         Perform backtrace analysis for a target compound
         Returns reaction pathway data including EC numbers
         """
         try:
             self.current_target = target
-            backtrack_df = create_backtrack_df(self.df, target, self.gen_mapper, skip_cofactor)
+            
+            if skip_cofactor:
+                cofactors = self.cofactors
+            else:
+                cofactors = []
+            
+            backtrack_df = create_backtrack_df(self.df, target, self.gen_mapper, cofactors, source)
             
             if backtrack_df.empty:
                 return {"data": []}
@@ -140,7 +148,7 @@ class MetabolicViewer:
             agg_df['target'] = lambda x: ', '.join(x)
             # agg_df['ec_list'] = set
             display_df = display_df.groupby("reaction").agg(agg_df).reset_index()
-            
+            display_df = display_df.sort_values(['transition'])
             # add product generation
             display_df.loc[:, "compound_generation"] = display_df.equation.apply(lambda x: add_compound_generation(x, self.gen_mapper))
             
