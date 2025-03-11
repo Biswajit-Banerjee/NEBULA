@@ -41,7 +41,7 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.get("/api/backtrace")
-async def get_backtrace(target: str, source: str=None):
+async def get_backtrace(target: str, source: str=''):
     """
     Perform backtrace analysis for a target compound
     
@@ -53,7 +53,7 @@ async def get_backtrace(target: str, source: str=None):
     """
     try:
         for element in [target, source]:
-            if not re.match(r'^C\d{5}$', element):
+            if element and not re.match(r'^C\d{5}$', element):
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid compound ID format. Must start with 'C' followed by 5 digits."
