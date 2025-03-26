@@ -151,6 +151,8 @@ class MetabolicViewer:
             display_df = display_df.sort_values(['transition'])
             # add product generation
             display_df.loc[:, "compound_generation"] = display_df.equation.apply(lambda x: add_compound_generation(x, self.gen_mapper))
+            display_df.loc[:, "max_generation"] = display_df["compound_generation"].apply(lambda x: max(x.values()))
+            display_df = display_df.sort_values("max_generation") 
             
             return {"data": display_df.to_dict('records')}
         except Exception as e:

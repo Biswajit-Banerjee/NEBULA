@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Filter, Download } from "lucide-react";
+import { Filter } from "lucide-react";
 import Logo from "./components/Logo";
 import FilterMenu from "./components/FilterMenu";
 import TabView from "./components/TabView";
@@ -16,7 +16,32 @@ function App() {
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [combinedMode, setCombinedMode] = useState(false);
 
-  const handleMultiSearch = async (searchPairsInput) => {
+  const handleMultiSearch = async (searchPairsInput, importedData = null) => {
+    // If we have imported data, use it directly instead of fetching from backend
+    if (importedData) {
+      try {
+        setLoading(true);
+        setError(null);
+        setSelectedRows(new Set());
+        
+        // Create new search pairs with results info
+        const updatedPairs = [...searchPairsInput].map(pair => ({
+          ...pair,
+          hasResults: true,
+          visible: true
+        }));
+        
+        setSearchPairs(updatedPairs);
+        setResults(importedData);
+        setLoading(false);
+      } catch (error) {
+        setError(error.message || "Error processing imported data");
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Regular search processing
     if (searchPairsInput.length === 0) {
       setError("Please enter at least one target compound ID");
       return;
@@ -89,23 +114,6 @@ function App() {
       setError(error.message || "An error occurred");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const response = await fetch("/api/download/csv");
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "nebula-results.csv";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      setError("Failed to download results");
     }
   };
 
@@ -199,19 +207,8 @@ function App() {
               setSearchPairs={setSearchPairs}
               combinedMode={combinedMode}
               toggleCombinedMode={toggleCombinedMode}
+              results={processedResults}
             />
-            
-            {results && (
-              <div className="w-full max-w-5xl mt-2 flex justify-end">
-                <button
-                  onClick={handleDownload}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-2 text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Export CSV</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>

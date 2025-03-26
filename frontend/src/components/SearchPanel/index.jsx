@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Search, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Plus, X, Search, ArrowRight, Eye, EyeOff, Download, Upload } from 'lucide-react';
 
 // Colors that are distinct and visually pleasing (moved outside component)
 const COLORS = [
@@ -102,7 +102,17 @@ const SearchPair = ({ index, pair, onChange, onRemove, onToggleVisibility, disab
   );
 };
 
-const SearchPanel = ({ onSearch, isLoading, onToggleVisibility, activeFilters, searchPairs: externalPairs = null, setSearchPairs: setExternalPairs = null, combinedMode, toggleCombinedMode }) => {
+const SearchPanel = ({ 
+  onSearch, 
+  isLoading, 
+  onToggleVisibility, 
+  activeFilters, 
+  searchPairs: externalPairs = null, 
+  setSearchPairs: setExternalPairs = null, 
+  combinedMode, 
+  toggleCombinedMode,
+  results
+}) => {
   // Use internal state if no external state is provided
   const [internalPairs, setInternalPairs] = useState([
     { source: '', target: '', color: getRandomColor(), visible: true }
@@ -145,6 +155,171 @@ const SearchPanel = ({ onSearch, isLoading, onToggleVisibility, activeFilters, s
     }
     
     onSearch(validPairs);
+  };
+
+  // Function to export CSV from frontend data
+  const handleExportCSV = () => {
+    if (!results || results.length === 0) return;
+    
+    try {
+      // First collect all the session data we need to restore
+      const sessionData = {
+        searchPairs: searchPairs,
+        results: results
+      };
+      
+      // Create a blob with the session data in JSON format
+      const sessionBlob = new Blob([JSON.stringify(sessionData)], { type: 'application/json' });
+      
+      // Create and download the file
+      const sessionUrl = URL.createObjectURL(sessionBlob);
+      const sessionLink = document.createElement('a');
+      sessionLink.setAttribute('href', sessionUrl);
+      sessionLink.setAttribute('download', 'nebula-session.json');
+      document.body.appendChild(sessionLink);
+      sessionLink.click();
+      document.body.removeChild(sessionLink);
+      URL.revokeObjectURL(sessionUrl);
+    } catch (error) {
+      console.error('Error exporting session data:', error);
+      alert('Failed to export session data');
+    }
+  };
+
+  // Function to handle session upload
+  const handleUploadCSV = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target.result;
+        
+        // Try to parse as JSON first (for session files)
+        try {
+          const sessionData = JSON.parse(content);
+          
+          if (sessionData && sessionData.searchPairs && sessionData.results) {
+            // We have a valid session file, restore the state
+            setSearchPairs(sessionData.searchPairs);
+            
+            // Send the data to the parent component to restore the full session
+            onSearch(sessionData.searchPairs, sessionData.results);
+            
+            // Reset file input value so the same file can be uploaded again if needed
+            event.target.value = '';
+            return;
+          }
+        } catch (jsonError) {
+          // Not a valid JSON file, try to parse as CSV
+          console.log("Not a JSON file, trying CSV format...");
+        }
+        
+        // If we get here, it's not a JSON session file, try CSV
+        // Split lines and handle different line endings
+        const lines = content.split(/\r?\n/);
+        
+        if (lines.length < 2) {
+          throw new Error('Invalid file format. Please upload a valid Nebula session file.');
+        }
+        
+        // Parse headers
+        const headers = lines[0].split(',').map(h => h.trim());
+        
+        // Parse data rows
+        const parsedData = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue; // Skip empty lines
+          
+          // CSV parsing with support for quoted values containing commas
+          let values = [];
+          let inQuote = false;
+          let currentValue = '';
+          
+          for (let char of lines[i]) {
+            if (char === '"') {
+              inQuote = !inQuote;
+            } else if (char === ',' && !inQuote) {
+              values.push(currentValue);
+              currentValue = '';
+            } else {
+              currentValue += char;
+            }
+          }
+          values.push(currentValue); // Push the last value
+          
+          const rowData = {};
+          
+          headers.forEach((header, index) => {
+            if (values[index] !== undefined) {
+              if (header === 'compound_generation' && values[index].startsWith('{')) {
+                // Try to parse compound_generation as JSON
+                try {
+                  rowData[header] = JSON.parse(values[index]);
+                } catch (e) {
+                  console.warn('Could not parse compound_generation JSON:', values[index]);
+                  rowData[header] = {};
+                }
+              } else {
+                rowData[header] = values[index];
+              }
+            }
+          });
+          
+          parsedData.push(rowData);
+        }
+        
+        // Process rows to properly assign pairIndices and colors
+        const uniquePairs = new Map();
+        parsedData.forEach(row => {
+          const pairKey = `${row.source || ''}:${row.target || ''}`;
+          
+          if (!uniquePairs.has(pairKey) && row.target) {
+            const pairIndex = uniquePairs.size;
+            const color = getRandomColor();
+            
+            uniquePairs.set(pairKey, {
+              index: pairIndex,
+              source: row.source || '',
+              target: row.target || '',
+              color: color,
+              visible: true,
+              hasResults: true
+            });
+            
+            // Update row with correct pairIndex and color
+            row.pairIndex = pairIndex;
+            row.pairColor = color;
+          } else if (uniquePairs.has(pairKey)) {
+            // Use existing pair data for this row
+            const pair = uniquePairs.get(pairKey);
+            row.pairIndex = pair.index;
+            row.pairColor = pair.color;
+          }
+        });
+        
+        const detectedPairs = Array.from(uniquePairs.values());
+        
+        // Update the application state
+        if (detectedPairs.length > 0) {
+          setSearchPairs(detectedPairs.map(({ index, ...pairData }) => pairData));
+        }
+        
+        // Send the data to the parent component
+        onSearch(detectedPairs.map(({ index, ...pairData }) => pairData), parsedData);
+        
+      } catch (error) {
+        console.error('Error parsing uploaded file:', error);
+        alert('Failed to parse the uploaded file. Please ensure it is a valid Nebula session file.');
+      }
+      
+      // Reset file input value so the same file can be uploaded again if needed
+      event.target.value = '';
+    };
+    
+    reader.readAsText(file);
   };
 
   return (
@@ -192,10 +367,39 @@ const SearchPanel = ({ onSearch, isLoading, onToggleVisibility, activeFilters, s
           </button>
         )}
         
-        <div className="flex-1">
+        <div className="flex flex-1 gap-3 justify-end">
+          {/* Upload CSV button */}
+          <label
+            className="flex-none px-4 py-2.5 border border-blue-200 bg-blue-50 rounded-xl text-blue-600 hover:bg-blue-100 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
+            disabled={isLoading}
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload Session</span>
+            <input
+              type="file"
+              accept=".json,.csv"
+              onChange={handleUploadCSV}
+              className="hidden"
+              disabled={isLoading}
+            />
+          </label>
+          
+          {/* Export CSV button */}
+          {results && results.length > 0 && (
+            <button
+              onClick={handleExportCSV}
+              className="flex-none px-4 py-2.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-600 hover:bg-emerald-100 transition-colors flex items-center gap-2 shadow-sm"
+              disabled={isLoading}
+            >
+              <Download className="w-4 h-4" />
+              <span>Export Session</span>
+            </button>
+          )}
+          
+          {/* Search button - now smaller */}
           <button
             onClick={handleSearch}
-            className="w-full px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+            className="flex-none w-36 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -205,8 +409,8 @@ const SearchPanel = ({ onSearch, isLoading, onToggleVisibility, activeFilters, s
               </>
             ) : (
               <>
-                <Search className="w-5 h-5" />
-                <span>Explore Network</span>
+                <Search className="w-4 h-4" />
+                <span>Explore</span>
               </>
             )}
           </button>
