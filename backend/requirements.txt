@@ -1,0 +1,7 @@
+networkx
+pandas
+matplotlib
+requests
+fastapi
+uvicorn[standard]
+numpy
