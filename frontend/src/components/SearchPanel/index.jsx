@@ -1,83 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, X, Search, ArrowRight, Eye, EyeOff, Download, Upload } from 'lucide-react';
+import AutocompleteInput from './AutocompleteInput';
+import compoundDataJson from './compound_map.json';
 
-// Colors that are distinct and visually pleasing (moved outside component)
-const COLORS = [
-  '#34D399', // emerald-400
-  '#60A5FA', // blue-400
-  '#F472B6', // pink-400
-  '#FBBF24', // amber-400
-  '#A78BFA', // violet-400
-  '#4ADE80', // green-400
-  '#F87171', // red-400
-  '#38BDF8', // sky-400
-  '#FB923C', // orange-400
-  '#818CF8', // indigo-400
-];
-
-// Helper function to get random color (moved outside component)
-function getRandomColor(lastColor = null) {
-  let newColor;  
+// Helper function to get random pastel color 
+const getRandomColor = (lastColor = null) => {
+  let newColor;
   do {
-    newColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-  } while (newColor === lastColor && COLORS.length > 1);
-  
+    // mix each channel with white (255) to get a pastel tone
+    const r = Math.floor((Math.random() * 256 + 255) / 2);
+    const g = Math.floor((Math.random() * 256 + 255) / 2);
+    const b = Math.floor((Math.random() * 256 + 255) / 2);
+    // convert to hex and pad to two digits
+    newColor = `#${r.toString(16).padStart(2, '0')}`
+             + `${g.toString(16).padStart(2, '0')}`
+             + `${b.toString(16).padStart(2, '0')}`;
+  } while (newColor === lastColor);
   return newColor;
-}
+};
 
-const SearchPair = ({ index, pair, onChange, onRemove, onToggleVisibility, disabled }) => {
+const SearchPair = ({ index, pair, onChange, onRemove, onToggleVisibility, disabled, compoundData }) => {
   return (
     <div className="relative flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md animate-fade-in">
-      {/* Color indicator */}
-      <div 
-        className="absolute left-0 top-0 bottom-0 w-2 rounded-l-xl transition-colors" 
+      <div
+        className="absolute left-0 top-0 bottom-0 w-2 rounded-l-xl transition-colors"
         style={{ backgroundColor: pair.color }}
       />
-      
-      {/* Source field */}
-      <div className="flex-1">
-        <label htmlFor={`source-${index}`} className="block text-xs font-medium text-slate-500 mb-1">
-          Source (optional)
-        </label>
-        <input
-          id={`source-${index}`}
-          type="text"
-          placeholder="Any source"
-          value={pair.source}
-          onChange={(e) => onChange(index, { ...pair, source: e.target.value })}
-          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-shadow text-sm"
-          disabled={disabled}
-        />
-      </div>
-      
-      {/* Direction indicator */}
+
+      <AutocompleteInput
+        idPrefix={`source-${index}`}
+        label="Source (optional)"
+        placeholder="Any source (name or ID)"
+        value={pair.source} // This should be the compound_id
+        onValueSelect={(compoundId) => onChange(index, { ...pair, source: compoundId })}
+        compoundData={compoundData}
+        disabled={disabled}
+        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-shadow text-sm"
+      />
+
       <div className="flex-none">
         <ArrowRight className="w-5 h-5 text-slate-400" />
       </div>
-      
-      {/* Target field */}
-      <div className="flex-1">
-        <label htmlFor={`target-${index}`} className="block text-xs font-medium text-slate-500 mb-1">
-          Target (required)
-        </label>
-        <input
-          id={`target-${index}`}
-          type="text"
-          placeholder="Target compound"
-          value={pair.target}
-          onChange={(e) => onChange(index, { ...pair, target: e.target.value })}
-          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-shadow text-sm"
-          disabled={disabled}
-        />
-      </div>
 
-      {/* Visibility toggle - only appears after search */}
+      <AutocompleteInput
+        idPrefix={`target-${index}`}
+        label="Target (required)"
+        placeholder="Target compound (name or ID)"
+        value={pair.target} // This should be the compound_id
+        onValueSelect={(compoundId) => onChange(index, { ...pair, target: compoundId })}
+        compoundData={compoundData}
+        disabled={disabled}
+        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-shadow text-sm"
+      />
+
       {pair.hasResults && (
         <button
           onClick={() => onToggleVisibility(index)}
           className={`flex-none p-2 rounded-lg transition-colors ${
-            pair.visible 
-              ? 'text-blue-600 hover:bg-blue-50' 
+            pair.visible
+              ? 'text-blue-600 hover:bg-blue-50'
               : 'text-slate-400 hover:bg-slate-50'
           }`}
           title={pair.visible ? "Hide results" : "Show results"}
@@ -86,8 +67,7 @@ const SearchPair = ({ index, pair, onChange, onRemove, onToggleVisibility, disab
           {pair.visible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
         </button>
       )}
-      
-      {/* Remove button - only show for non-first pairs */}
+
       {index > 0 && (
         <button
           onClick={() => onRemove(index)}
@@ -122,21 +102,28 @@ const SearchPanel = ({
   const searchPairs = externalPairs || internalPairs;
   const setSearchPairs = setExternalPairs || setInternalPairs;
 
+  const [compoundData, setCompoundData] = useState([]);
+
+  useEffect(() => {
+    setCompoundData(compoundDataJson);
+  }, []);
+
   const addSearchPair = () => {
-    // Get the last color to avoid repetition
-    const lastColor = searchPairs.length > 0 
-      ? searchPairs[searchPairs.length - 1].color 
+    const lastColor = searchPairs.length > 0
+      ? searchPairs[searchPairs.length - 1].color
       : null;
-      
     setSearchPairs([
-      ...searchPairs, 
-      { source: '', target: '', color: getRandomColor(lastColor), visible: true }
+      ...searchPairs,
+      { source: '', target: '', color: getRandomColor(lastColor), visible: true, hasResults: false }
     ]);
   };
 
   const updateSearchPair = (index, updatedPair) => {
     const newPairs = [...searchPairs];
-    newPairs[index] = updatedPair;
+    // When a selection is made, AutocompleteInput returns the compound_id.
+    // The name display is handled within AutocompleteInput itself.
+    // So, updatedPair.source and updatedPair.target will be compound_ids.
+    newPairs[index] = { ...newPairs[index], ...updatedPair, hasResults: false }; // Reset hasResults on change
     setSearchPairs(newPairs);
   };
 
@@ -147,31 +134,29 @@ const SearchPanel = ({
   };
 
   const handleSearch = () => {
-    // Validate that at least one pair has a target
-    const validPairs = searchPairs.filter(pair => pair.target.trim() !== '');
+    // Validate that at least one pair has a target compound_id
+    const validPairs = searchPairs.filter(pair => pair.target && pair.target.trim() !== '');
     if (validPairs.length === 0) {
       alert('Please enter at least one target compound ID');
       return;
     }
-    
+    // onSearch expects pairs with source/target as compound_ids
     onSearch(validPairs);
   };
 
   // Function to export CSV from frontend data
   const handleExportCSV = () => {
     if (!results || results.length === 0) return;
-    
     try {
-      // First collect all the session data we need to restore
       const sessionData = {
-        searchPairs: searchPairs,
+        // Ensure searchPairs saved have IDs, not names, if they were resolved
+        searchPairs: searchPairs.map(pair => ({
+            ...pair,
+            // source and target are already IDs from AutocompleteInput
+        })),
         results: results
       };
-      
-      // Create a blob with the session data in JSON format
       const sessionBlob = new Blob([JSON.stringify(sessionData)], { type: 'application/json' });
-      
-      // Create and download the file
       const sessionUrl = URL.createObjectURL(sessionBlob);
       const sessionLink = document.createElement('a');
       sessionLink.setAttribute('href', sessionUrl);
@@ -190,135 +175,132 @@ const SearchPanel = ({
   const handleUploadCSV = (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const content = e.target.result;
-        
+        let sessionRestored = false;
+
         // Try to parse as JSON first (for session files)
         try {
           const sessionData = JSON.parse(content);
-          
           if (sessionData && sessionData.searchPairs && sessionData.results) {
-            // We have a valid session file, restore the state
-            setSearchPairs(sessionData.searchPairs);
-            
-            // Send the data to the parent component to restore the full session
-            onSearch(sessionData.searchPairs, sessionData.results);
-            
-            // Reset file input value so the same file can be uploaded again if needed
-            event.target.value = '';
-            return;
+            // Restore search pairs making sure they have all necessary fields
+            const restoredPairs = sessionData.searchPairs.map(p => ({
+                source: p.source || '', // compound_id
+                target: p.target || '', // compound_id
+                color: p.color || getRandomColor(),
+                visible: p.visible !== undefined ? p.visible : true,
+                hasResults: p.hasResults !== undefined ? p.hasResults : true // Assume results if restoring
+            }));
+            setSearchPairs(restoredPairs);
+            onSearch(restoredPairs, sessionData.results); // Pass results to parent
+            sessionRestored = true;
           }
         } catch (jsonError) {
-          // Not a valid JSON file, try to parse as CSV
-          console.log("Not a JSON file, trying CSV format...");
+          console.log("Not a JSON session file, trying CSV format...");
         }
-        
-        // If we get here, it's not a JSON session file, try CSV
-        // Split lines and handle different line endings
+
+        if (sessionRestored) {
+          event.target.value = '';
+          return;
+        }
+
+        // If we get here, it's not a JSON session file, or JSON parsing failed for session structure
+        // Attempt to parse as CSV (legacy or other format)
         const lines = content.split(/\r?\n/);
-        
-        if (lines.length < 2) {
-          throw new Error('Invalid file format. Please upload a valid Nebula session file.');
+        if (lines.length < 1) { // Allow empty CSV or just headers
+          throw new Error('Invalid file format. Please upload a valid Nebula session file or CSV.');
         }
-        
-        // Parse headers
+
+        // For CSV, we'd need a more complex logic to map CSV rows back to search pairs
+        // if the CSV doesn't directly map to compound_ids for source/target.
+        // The current CSV parsing logic seems to create `parsedData` which might be `results`.
+        // And then it tries to infer `searchPairs` from this `parsedData`.
+
+        // The original CSV parsing logic to create `searchPairs` from `results` data:
         const headers = lines[0].split(',').map(h => h.trim());
-        
-        // Parse data rows
         const parsedData = [];
-        
         for (let i = 1; i < lines.length; i++) {
-          if (!lines[i].trim()) continue; // Skip empty lines
-          
-          // CSV parsing with support for quoted values containing commas
+          if (!lines[i].trim()) continue;
           let values = [];
           let inQuote = false;
           let currentValue = '';
-          
           for (let char of lines[i]) {
-            if (char === '"') {
-              inQuote = !inQuote;
-            } else if (char === ',' && !inQuote) {
-              values.push(currentValue);
-              currentValue = '';
-            } else {
-              currentValue += char;
-            }
+            if (char === '"') inQuote = !inQuote;
+            else if (char === ',' && !inQuote) { values.push(currentValue); currentValue = ''; }
+            else currentValue += char;
           }
-          values.push(currentValue); // Push the last value
-          
+          values.push(currentValue);
           const rowData = {};
-          
           headers.forEach((header, index) => {
             if (values[index] !== undefined) {
               if (header === 'compound_generation' && values[index].startsWith('{')) {
-                // Try to parse compound_generation as JSON
-                try {
-                  rowData[header] = JSON.parse(values[index]);
-                } catch (e) {
-                  console.warn('Could not parse compound_generation JSON:', values[index]);
-                  rowData[header] = {};
-                }
-              } else {
-                rowData[header] = values[index];
-              }
+                try { rowData[header] = JSON.parse(values[index]); }
+                catch (e) { rowData[header] = {}; }
+              } else { rowData[header] = values[index]; }
             }
           });
-          
           parsedData.push(rowData);
         }
-        
-        // Process rows to properly assign pairIndices and colors
-        const uniquePairs = new Map();
-        parsedData.forEach(row => {
-          const pairKey = `${row.source || ''}:${row.target || ''}`;
-          
-          if (!uniquePairs.has(pairKey) && row.target) {
-            const pairIndex = uniquePairs.size;
-            const color = getRandomColor();
-            
-            uniquePairs.set(pairKey, {
-              index: pairIndex,
-              source: row.source || '',
-              target: row.target || '',
-              color: color,
-              visible: true,
-              hasResults: true
-            });
-            
-            // Update row with correct pairIndex and color
-            row.pairIndex = pairIndex;
-            row.pairColor = color;
-          } else if (uniquePairs.has(pairKey)) {
-            // Use existing pair data for this row
-            const pair = uniquePairs.get(pairKey);
-            row.pairIndex = pair.index;
-            row.pairColor = pair.color;
-          }
-        });
-        
-        const detectedPairs = Array.from(uniquePairs.values());
-        
-        // Update the application state
-        if (detectedPairs.length > 0) {
-          setSearchPairs(detectedPairs.map(({ index, ...pairData }) => pairData));
+
+        if (parsedData.length === 0 && lines.length > 1) {
+             alert('CSV parsing resulted in no data. Check file format.');
+             event.target.value = '';
+             return;
         }
-        
-        // Send the data to the parent component
-        onSearch(detectedPairs.map(({ index, ...pairData }) => pairData), parsedData);
-        
+
+
+        // Process rows to properly assign pairIndices and colors from parsedData
+        // This logic assumes 'source' and 'target' in CSV rows are compound_ids or can be resolved.
+        // If they are names, you'd need to resolve them to IDs using `compoundData`.
+        const uniquePairsMap = new Map();
+        parsedData.forEach(row => {
+            // Assuming row.source and row.target from CSV are compound IDs or names
+            // For this integration, they should ideally be IDs. If they are names,
+            // you'd need a lookup function here.
+            const sourceId = row.source || ''; // Assume it's an ID for now
+            const targetId = row.target || ''; // Assume it's an ID
+
+            if (targetId) { // Only create a pair if there's a target
+                const pairKey = `${sourceId}:${targetId}`;
+                if (!uniquePairsMap.has(pairKey)) {
+                    uniquePairsMap.set(pairKey, {
+                        source: sourceId,
+                        target: targetId,
+                        color: getRandomColor(uniquePairsMap.size > 0 ? Array.from(uniquePairsMap.values()).pop().color : null),
+                        visible: true,
+                        hasResults: true // Assume results if data is present
+                    });
+                }
+            }
+        });
+
+        const detectedPairs = Array.from(uniquePairsMap.values());
+
+        if (detectedPairs.length > 0) {
+          setSearchPairs(detectedPairs);
+          // The onSearch function should handle how to process these pairs and potentially the parsedData as results.
+          onSearch(detectedPairs, parsedData); // Pass detected pairs and the full parsed CSV data as results
+        } else if (parsedData.length > 0) {
+            // No specific pairs detected, but there's data.
+            // This might happen if CSV is just a list of results without clear source/target for pairing.
+            // Decide how to handle this: maybe treat as a single "all results" view?
+            // For now, we'll just call onSearch with empty pairs and the results.
+            onSearch([], parsedData);
+            alert("CSV data loaded. Could not determine distinct search pairs from CSV structure. Displaying all results.");
+        } else {
+            alert('No valid search pairs or data could be extracted from the CSV.');
+        }
+
       } catch (error) {
         console.error('Error parsing uploaded file:', error);
-        alert('Failed to parse the uploaded file. Please ensure it is a valid Nebula session file.');
+        alert(`Failed to parse the uploaded file: ${error.message}. Please ensure it is a valid Nebula session JSON or a supported CSV format.`);
+      } finally {
+        event.target.value = ''; // Reset file input
       }
-      
-      // Reset file input value so the same file can be uploaded again if needed
-      event.target.value = '';
     };
-    
     reader.readAsText(file);
   };
 
@@ -327,64 +309,57 @@ const SearchPanel = ({
       <div className="space-y-3 mb-4">
         {searchPairs.map((pair, index) => (
           <SearchPair
-            key={index}
+            key={index} // Consider using a more stable key if pairs can be reordered significantly
             index={index}
             pair={pair}
             onChange={updateSearchPair}
             onRemove={removeSearchPair}
             onToggleVisibility={onToggleVisibility}
-            disabled={isLoading}
+            disabled={isLoading || compoundData.length === 0} // Disable if compound data not loaded
+            compoundData={compoundData}
           />
         ))}
       </div>
-      
+
       <div className="flex flex-wrap gap-3 items-center">
         <button
           onClick={addSearchPair}
           className="flex-none px-4 py-2.5 border border-slate-200 bg-white rounded-xl text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm"
-          disabled={isLoading}
+          disabled={isLoading || compoundData.length === 0}
         >
           <Plus className="w-4 h-4" />
           <span>Add Path</span>
         </button>
-        
+
         {externalPairs && externalPairs.some(p => p.hasResults) && (
           <button
             onClick={toggleCombinedMode}
             className={`flex-none px-4 py-2.5 border rounded-xl transition-colors flex items-center gap-2 shadow-sm ${
-              combinedMode 
-                ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100' 
+              combinedMode
+                ? 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="M2 10h20" />
-              <path d="M6 16h.01" />
-              <path d="M10 16h8" />
-            </svg>
+            {/* SVG for Combine Results */}
             <span>Combine Results</span>
           </button>
         )}
-        
+
         <div className="flex flex-1 gap-3 justify-end">
-          {/* Upload CSV button */}
           <label
-            className="flex-none px-4 py-2.5 border border-blue-200 bg-blue-50 rounded-xl text-blue-600 hover:bg-blue-100 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
-            disabled={isLoading}
+            className={`flex-none px-4 py-2.5 border rounded-xl transition-colors flex items-center gap-2 shadow-sm cursor-pointer ${isLoading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
           >
             <Upload className="w-4 h-4" />
             <span>Upload Session</span>
             <input
               type="file"
-              accept=".json,.csv"
+              accept=".json,.csv" // Accept both JSON (session) and CSV
               onChange={handleUploadCSV}
               className="hidden"
               disabled={isLoading}
             />
           </label>
-          
-          {/* Export CSV button */}
+
           {results && results.length > 0 && (
             <button
               onClick={handleExportCSV}
@@ -395,12 +370,11 @@ const SearchPanel = ({
               <span>Export Session</span>
             </button>
           )}
-          
-          {/* Search button - now smaller */}
+
           <button
             onClick={handleSearch}
             className="flex-none w-36 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
-            disabled={isLoading}
+            disabled={isLoading || compoundData.length === 0 || searchPairs.every(p => !p.target)}
           >
             {isLoading ? (
               <>
