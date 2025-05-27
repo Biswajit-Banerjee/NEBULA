@@ -4,7 +4,7 @@ import ResultTable from '../ResultTable';
 import NetworkViewerContainer from '../NetworkViewer';
 import NetworkViewer2D from '../NetworkViewer2D';
 
-const TabView = ({ results, setResults, selectedRows, setSelectedRows }) => {
+const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode }) => {
   const [activeTab, setActiveTab] = useState('table');
   const [filteredResults, setFilteredResults] = useState(results);
 
