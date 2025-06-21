@@ -1,4 +1,3 @@
-// NetworkViewer2D/GraphRenderer.jsx
 import React, {
     useEffect,
     useRef,

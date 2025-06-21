@@ -1,0 +1,644 @@
+import React, {
+  useRef,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  useState,
+  useCallback,
+} from "react";
+import * as d3 from "d3";
+import { processData, applySpiral } from "./utils/graphProcessing";
+import { Lock, Unlock } from "lucide-react";
+
+/*
+Canvas‐based 2-D graph renderer.
+Only UI / drawing code is moved to Canvas – the existing graph logic (data processing
+& d3-force simulation) stays untouched.  For performance we draw everything to a
+single <canvas>, achieving ~60 fps with tens-of-thousands of nodes.
+
+Extra feature – Ctrl-click on a reaction side-node collapses the upstream (for _r)
+or downstream (for _p) part of the network.  Collapsed state is persisted inside
+React state so it survives generation changes, (un)fullscreen and other view
+updates until the user toggles it off.
+*/
+
+const GraphRendererCanvas = forwardRef(
+  (
+    {
+      data,
+      currentGeneration,
+      maxGeneration,
+      containerRef,
+      height = 600,
+      isFullscreen,
+      toolMode,
+      tension,
+      repulsion,
+    },
+    ref
+  ) => {
+    const canvasRef = useRef(null);
+    const simulationRef = useRef(null);
+    const zoomRef = useRef(null);
+    const transformRef = useRef(d3.zoomIdentity);
+    const [collapsedRoots, setCollapsedRoots] = useState(new Set()); // reaction-side nodes acting as collapse pivots
+    const [hiddenIds, setHiddenIds] = useState(new Set());
+    const [nodesLocked, setNodesLocked] = useState(false);
+    const [ctrlHeld, setCtrlHeld] = useState(false);
+
+    /* ------------------------------------------------------------------ */
+    /* Helpers                                                            */
+    /* ------------------------------------------------------------------ */
+
+    const computeHiddenNodes = useCallback(
+      (nodes, links, roots) => {
+        if (!roots || roots.size === 0) return new Set();
+
+        const toHide = new Set();
+        const adjacency = {};
+        links.forEach((l) => {
+          const sId = l.source?.id || l.source;
+          const tId = l.target?.id || l.target;
+          if (!adjacency[sId]) adjacency[sId] = [];
+          if (!adjacency[tId]) adjacency[tId] = [];
+          adjacency[sId].push(tId);
+          adjacency[tId].push(sId);
+        });
+
+        const bfs = (startId, direction) => {
+          /** direction: "upstream" | "downstream" */
+          const queue = [startId];
+          const visited = new Set([startId]);
+          while (queue.length) {
+            const cur = queue.shift();
+            (adjacency[cur] || []).forEach((nbr) => {
+              if (visited.has(nbr)) return;
+              visited.add(nbr);
+
+              const nbrNode = nodes.find((n) => n.id === nbr);
+              if (!nbrNode) return;
+
+              // Continue only if direction matches relative position in reaction pair
+              const isReactionSide = /reaction-/.test(nbrNode.type);
+              if (direction === "upstream") {
+                // Stop traversing past product side
+                if (nbrNode.id.endsWith("_p")) return;
+              }
+              if (direction === "downstream") {
+                if (nbrNode.id.endsWith("_r")) return;
+              }
+
+              toHide.add(nbr);
+              queue.push(nbr);
+            });
+          }
+        };
+
+        roots.forEach((rootId) => {
+          const rootDir = rootId.endsWith("_r") ? "upstream" : "downstream";
+          bfs(rootId, rootDir);
+        });
+
+        // Never hide the roots themselves
+        roots.forEach((id) => toHide.delete(id));
+
+        return toHide;
+      },
+      []
+    );
+
+    const [graph, setGraph] = useState({ nodes: [], links: [] });
+
+    /* ------------------------------------------------------------------ */
+    /* Build/Update graph when raw data or generation changes              */
+    /* ------------------------------------------------------------------ */
+    useEffect(() => {
+      if (!Array.isArray(data)) return;
+      const processed = processData(data, currentGeneration);
+      setGraph(processed);
+    }, [data, currentGeneration]);
+
+    /* ------------------------------------------------------------------ */
+    /* Collapse logic                                                     */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      const hidden = computeHiddenNodes(graph.nodes, graph.links, collapsedRoots);
+      setHiddenIds(hidden);
+    }, [collapsedRoots, graph, computeHiddenNodes]);
+
+    /* ------------------------------------------------------------------ */
+    /* Force-simulation                                                   */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      if (!graph.nodes.length) return;
+
+      // Deep copy nodes so d3 can mutate x/y without affecting state
+      const nodesCopy = graph.nodes.map((n) => ({ ...n }));
+      const linksCopy = graph.links.map((l) => ({ ...l }));
+
+      // Remove hidden nodes from simulation arrays
+      const visibleNodes = nodesCopy.filter((n) => !hiddenIds.has(n.id));
+      const visibleLinks = linksCopy.filter((l) => {
+        const sId = l.source?.id || l.source;
+        const tId = l.target?.id || l.target;
+        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
+      });
+
+      // Initial positions – reuse previous if simulation exists
+      const prevPositions = simulationRef.current?.nodes().reduce((acc, n) => {
+        acc[n.id] = { x: n.x, y: n.y };
+        return acc;
+      }, {});
+      visibleNodes.forEach((n) => {
+        if (prevPositions?.[n.id]) {
+          n.x = prevPositions[n.id].x;
+          n.y = prevPositions[n.id].y;
+        }
+      });
+
+      // Spiral placement for fresh nodes
+      applySpiral(
+        visibleNodes,
+        (containerRef.current?.clientWidth || 800) / 2,
+        (typeof height === "string" ? parseInt(height) : height) / 2,
+        currentGeneration,
+        true,
+        nodesLocked
+      );
+
+      if (simulationRef.current) simulationRef.current.stop();
+
+      const sim = d3
+        .forceSimulation(visibleNodes)
+        .force(
+          "link",
+          d3
+            .forceLink(visibleLinks)
+            .id((d) => d.id)
+            .distance(tension)
+        )
+        .force("charge", d3.forceManyBody().strength(-repulsion))
+        .force(
+          "center",
+          d3.forceCenter(
+            (containerRef.current?.clientWidth || 800) / 2,
+            (typeof height === "string" ? parseInt(height) : height) / 2
+          )
+        )
+        .alpha(1)
+        .alphaDecay(0.02)
+        .on("tick", () => draw(sim.nodes()));
+
+      if (nodesLocked) {
+        sim.stop();
+      }
+
+      simulationRef.current = sim;
+
+      // Initial draw
+      draw(visibleNodes);
+
+      return () => {
+        sim.stop();
+      };
+    }, [graph, hiddenIds, nodesLocked, currentGeneration, height, containerRef, tension, repulsion]);
+
+    /* ------------------------------------------------------------------ */
+    /* Canvas & Zoom                                                      */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d", { alpha: true });
+
+      const handleResize = () => {
+        const w = isFullscreen ? window.innerWidth : containerRef.current?.clientWidth || 800;
+        const h = isFullscreen
+          ? window.innerHeight
+          : typeof height === "string"
+          ? parseInt(height)
+          : height;
+        canvas.width = w * window.devicePixelRatio;
+        canvas.height = h * window.devicePixelRatio;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        context.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+        draw(simulationRef.current?.nodes() || []);
+      };
+      handleResize();
+      window.addEventListener("resize", handleResize);
+
+      const zoom = d3
+        .zoom()
+        .scaleExtent([0.2, 10])
+        // Disable pointer-driven panning when in cursor mode but keep scroll-wheel zoom
+        .filter((ev) => {
+          if (mode === "cursor" && ev.type === "mousedown") return false;
+          return true;
+        })
+        .on("zoom", (ev) => {
+          transformRef.current = ev.transform;
+          draw(simulationRef.current?.nodes() || []);
+        });
+      d3.select(canvas).call(zoom);
+      zoomRef.current = zoom;
+
+      return () => {
+        window.removeEventListener("resize", handleResize);
+      };
+    }, [containerRef, height, isFullscreen, toolMode]);
+
+    /* ------------------------------------------------------------------ */
+    /* Drawing                                                             */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      const down = (e) => {
+        if (e.key === 'Control') setCtrlHeld(true);
+      };
+      const up = (e) => {
+        if (e.key === 'Control') setCtrlHeld(false);
+      };
+      window.addEventListener('keydown', down);
+      window.addEventListener('keyup', up);
+      return () => {
+        window.removeEventListener('keydown', down);
+        window.removeEventListener('keyup', up);
+      };
+    }, []);
+
+    const mode = ctrlHeld ? (toolMode === 'pan' ? 'cursor' : 'pan') : toolMode;
+
+    const draw = (nodes) => {
+      if (!canvasRef.current) return;
+      const ctx = canvasRef.current.getContext("2d");
+      if (!ctx) return;
+
+      const { width: w, height: h } = canvasRef.current;
+      // Clear
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+      ctx.clearRect(0, 0, w, h);
+      ctx.restore();
+
+      ctx.save();
+      const t = transformRef.current;
+      ctx.translate(t.x, t.y);
+      ctx.scale(t.k, t.k);
+
+      const links = graph.links.filter((l) => {
+        const sId = l.source?.id || l.source;
+        const tId = l.target?.id || l.target;
+        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
+      });
+
+      // Draw links with style per type
+      ctx.lineCap = "round";
+      links.forEach((l) => {
+        const lType = l.type;
+        if (lType && lType.startsWith("ec")) {
+          ctx.strokeStyle = "#8B5CF6"; // violet
+          ctx.setLineDash([2 / t.k, 4 / t.k]);
+        } else if (lType === "reaction") {
+          ctx.strokeStyle = "#9CA3AF"; // gray dashed
+          ctx.setLineDash([6 / t.k, 4 / t.k]);
+        } else {
+          ctx.strokeStyle = "#9CA3AF";
+          ctx.setLineDash([]);
+        }
+
+        ctx.lineWidth = Math.max(1 / t.k, 0.8);
+        const srcId = l.source?.id || l.source;
+        const trgId = l.target?.id || l.target;
+        if (hiddenIds.has(srcId) || hiddenIds.has(trgId)) return;
+        const src = nodes.find((n) => n.id === srcId);
+        const trg = nodes.find((n) => n.id === trgId);
+        if (!src || !trg) return;
+        ctx.beginPath();
+        ctx.moveTo(src.x, src.y);
+        ctx.lineTo(trg.x, trg.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (l.stoichiometry && l.stoichiometry > 1) {
+          ctx.save();
+          ctx.fillStyle = "#1F2937";
+          //ctx.font = `${Math.max(8 / t.k, 6)}px Inter, sans-serif`;
+          ctx.font = `6px Inter, sans-serif`;
+          const midX = (src.x + trg.x) / 2;
+          const midY = (src.y + trg.y) / 2 - 4 / t.k;
+          ctx.fillText(l.stoichiometry, midX, midY);
+          ctx.restore();
+        }
+      });
+
+      // Draw nodes
+      nodes.forEach((n) => {
+        if (hiddenIds.has(n.id)) return;
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,0.1)";
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        switch (n.type) {
+          case "compound":
+            ctx.fillStyle = "hsl(200,100%,95%)"; // cute pastel blue
+            ctx.strokeStyle = "hsl(200,60%,50%)";
+            ctx.lineWidth = 1.5;
+            ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
+            break;
+          case "ec":
+            ctx.fillStyle = "#FFFFFF";
+            ctx.strokeStyle = "#7C3AED"; // violet-600
+            ctx.lineWidth = 1.5;
+            ctx.ellipse(n.x, n.y, 24, 14, 0, 0, Math.PI * 2);
+            break;
+          default:
+            ctx.fillStyle = "#FEF9C3"; // pastel yellow
+            ctx.strokeStyle = collapsedRoots.has(n.id) ? "#EF4444" : "#F59E0B";
+            ctx.lineWidth = collapsedRoots.has(n.id) ? 3 : 1.5;
+            // rounded rectangle
+            const rx = n.x - 20;
+            const ry = n.y - 12;
+            const rw = 40;
+            const rh = 24;
+            const radius = 4;
+            ctx.beginPath();
+            ctx.moveTo(rx + radius, ry);
+            ctx.lineTo(rx + rw - radius, ry);
+            ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
+            ctx.lineTo(rx + rw, ry + rh - radius);
+            ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
+            ctx.lineTo(rx + radius, ry + rh);
+            ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
+            ctx.lineTo(rx, ry + radius);
+            ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+            ctx.fill();
+            ctx.stroke();
+            break;
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // Draw labels (compound + EC + reaction as text)
+      //ctx.font = `${Math.max(9 / t.k, 5)}px "Inter", sans-serif`;
+      ctx.font = `7px "Inter", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      nodes.forEach((n) => {
+        if (hiddenIds.has(n.id)) return;
+        let label = n.label ?? n.id;
+        if (/reaction-/.test(n.type)) label = label.split("_")[0];
+
+        ctx.fillStyle = "#374151"; // gray-700
+        ctx.fillText(label, n.x, n.y);
+      });
+
+      ctx.restore();
+    };
+
+    /* ------------------------------------------------------------------ */
+    /* Pointer interaction – selection & collapse                          */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+
+      const handleClick = (evt) => {
+        if (!evt.ctrlKey) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (evt.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+        const y = (evt.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+        // find nearest node (simple search)
+        const hit = (simulationRef.current?.nodes() || []).find((n) => {
+          if (/reaction-/.test(n.type)) {
+            // Reaction side nodes are small rectangles 24×12
+            return x >= n.x - 12 && x <= n.x + 12 && y >= n.y - 6 && y <= n.y + 6;
+          } else if (n.type === "compound") {
+            return (x - n.x) ** 2 + (y - n.y) ** 2 <= 100; // r=10
+          }
+          return false;
+        });
+        if (hit && /reaction-/.test(hit.type)) {
+          setCollapsedRoots((prev) => {
+            const newSet = new Set(prev);
+            if (newSet.has(hit.id)) newSet.delete(hit.id);
+            else newSet.add(hit.id);
+            return newSet;
+          });
+        }
+      };
+
+      canvas.addEventListener("click", handleClick);
+      return () => canvas.removeEventListener("click", handleClick);
+    }, [mode, nodesLocked]);
+
+    /* ------------------------------------------------------------------ */
+    /* Dragging for node reposition                                        */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      let dragging = null;
+
+      const pointerdown = (e) => {
+        if (nodesLocked) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+        const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+        const node = (simulationRef.current?.nodes() || []).find((n) => {
+          // simple hit test (circle radius 12)
+          return (mx - n.x) ** 2 + (my - n.y) ** 2 < 400; // match larger node size
+        });
+        if (node) {
+          dragging = node;
+          simulationRef.current.alphaTarget(0.3).restart();
+          node.fx = node.x;
+          node.fy = node.y;
+          if (mode === "cursor") canvas.style.cursor = "grabbing";
+        }
+      };
+
+      const pointermove = (e) => {
+        if (!dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+        const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+        dragging.fx = mx;
+        dragging.fy = my;
+      };
+
+      const pointerup = () => {
+        if (dragging) {
+          // Permanently fix node at its dropped location, regardless of mode
+          dragging.fx = dragging.x;
+          dragging.fy = dragging.y;
+
+          // Calm simulation so neighbours settle without pulling node back
+          simulationRef.current.alphaTarget(0);
+          dragging = null;
+          canvas.style.cursor = mode === 'pan' ? 'default' : 'grab';
+        }
+      };
+
+      canvas.addEventListener("pointerdown", pointerdown, { passive: false });
+      window.addEventListener("pointermove", pointermove);
+      window.addEventListener("pointerup", pointerup);
+
+      return () => {
+        canvas.removeEventListener("pointerdown", pointerdown);
+        window.removeEventListener("pointermove", pointermove);
+        window.removeEventListener("pointerup", pointerup);
+      };
+    }, [nodesLocked, mode]);
+
+    /* ------------------------------------------------------------------ */
+    /* Imperative API – for ActionButtons etc.                             */
+    /* ------------------------------------------------------------------ */
+
+    useImperativeHandle(ref, () => ({
+      zoomIn: () => {
+        const canvasSel = d3.select(canvasRef.current);
+        canvasSel.transition().call(zoomRef.current.scaleBy, 1.5);
+      },
+      zoomOut: () => {
+        const canvasSel = d3.select(canvasRef.current);
+        canvasSel.transition().call(zoomRef.current.scaleBy, 0.75);
+      },
+      resetView: () => {
+        const w = containerRef.current?.clientWidth || 800;
+        const h = typeof height === "string" ? parseInt(height) : height;
+        const identity = d3.zoomIdentity.translate(w / 4, h / 4).scale(0.8);
+        d3.select(canvasRef.current)
+          .transition()
+          .call(zoomRef.current.transform, identity);
+      },
+      downloadSVG: () => {
+        // Build an off-screen SVG containing the whole graph (not just viewport)
+        const nodes = simulationRef.current?.nodes() || [];
+        if (!nodes.length) return;
+
+        const visibleLinks = graph.links.filter((l) => {
+          const s = l.source?.id || l.source;
+          const t = l.target?.id || l.target;
+          return !hiddenIds.has(s) && !hiddenIds.has(t);
+        });
+
+        // Determine bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        nodes.forEach((n) => {
+          if (hiddenIds.has(n.id)) return;
+          minX = Math.min(minX, n.x);
+          minY = Math.min(minY, n.y);
+          maxX = Math.max(maxX, n.x);
+          maxY = Math.max(maxY, n.y);
+        });
+        const pad = 50;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        const width = maxX - minX;
+        const heightSvg = maxY - minY;
+
+        // Helper to map canvas colors
+        const getNodeStyle = (n) => {
+          if (n.type === 'compound') return { fill: 'hsl(200,100%,95%)', stroke: 'hsl(200,60%,50%)' };
+          if (n.type === 'ec') return { fill: '#FFFFFF', stroke: '#7C3AED' };
+          return { fill: '#FEF9C3', stroke: '#F59E0B' };
+        };
+
+        const svgParts = [];
+        svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${heightSvg}" viewBox="${minX} ${minY} ${width} ${heightSvg}">`);
+
+        // Links
+        visibleLinks.forEach((l) => {
+          const sId = l.source?.id || l.source;
+          const tId = l.target?.id || l.target;
+          const src = nodes.find((n) => n.id === sId);
+          const trg = nodes.find((n) => n.id === tId);
+          if (!src || !trg) return;
+          let dash = '';
+          if (l.type && l.type.startsWith('ec')) dash = '2 4';
+          else if (l.type === 'reaction') dash = '6 4';
+          const stroke = l.type && l.type.startsWith('ec') ? '#8B5CF6' : '#9CA3AF';
+          svgParts.push(`<line x1="${src.x}" y1="${src.y}" x2="${trg.x}" y2="${trg.y}" stroke="${stroke}" stroke-width="1" stroke-linecap="round" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`);
+        });
+
+        // Nodes
+        nodes.forEach((n) => {
+          if (hiddenIds.has(n.id)) return;
+          const { fill, stroke } = getNodeStyle(n);
+          if (n.type === 'compound') {
+            svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="18" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
+          } else if (n.type === 'ec') {
+            svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="24" ry="14" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
+          } else {
+            svgParts.push(`<rect x="${n.x - 20}" y="${n.y - 12}" width="40" height="24" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`);
+          }
+          // label
+          let label = n.label ?? n.id;
+          if (/reaction-/.test(n.type)) label = label.split('_')[0];
+          svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="#374151" font-family="Inter, sans-serif">${label}</text>`);
+        });
+
+        svgParts.push('</svg>');
+
+        const blob = new Blob(svgParts, { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'metabolic-network.svg';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      },
+      toggleLock: () => setNodesLocked((prev) => !prev),
+      resetSpiral: () => {
+        simulationRef.current?.stop();
+        applySpiral(
+          simulationRef.current.nodes(),
+          (containerRef.current?.clientWidth || 800) / 2,
+          (typeof height === "string" ? parseInt(height) : height) / 2,
+          currentGeneration,
+          true,
+          false
+        );
+        simulationRef.current?.alpha(0.8).restart();
+      },
+      isLocked: nodesLocked,
+    }));
+
+    /* ------------------------------------------------------------------ */
+    /* Render                                                              */
+    /* ------------------------------------------------------------------ */
+
+    return (
+      <div className="relative w-full h-full">
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", cursor: mode === 'pan' ? 'default' : 'grab' }}
+        />
+
+        {/* Lock Button */}
+        <button
+          onClick={() => setNodesLocked((p) => !p)}
+          className={`absolute bottom-4 left-4 p-2 rounded-full z-10 shadow-md hover:shadow-lg transition-all ${
+            nodesLocked ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200"
+          }`}
+          title={nodesLocked ? "Unlock node positions" : "Lock node positions"}
+        >
+          {nodesLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+        </button>
+      </div>
+    );
+  }
+);
+
+export default GraphRendererCanvas; 

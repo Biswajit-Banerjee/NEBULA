@@ -1,17 +1,25 @@
-import React, { useRef } from "react";
-import GraphRenderer from "./GraphRenderer";
+import React, { useRef, useState } from "react";
+import GraphRenderer from "./GraphRendererCanvas";
 import ActionButtons from "./ActionButtons";
 import GenerationControls from "./GenerationControls";
 import Legend from "./Legend";
 import useGraphData from "./hooks/useGraphData";
 import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
+import PhysicsControls from "./PhysicsControls";
 
 const NetworkViewer2D = ({ results, height = "600px" }) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const graphRendererRef = useRef(null);
+
+  // Tool mode: 'pan' (hand) or 'cursor' (move nodes)
+  const [toolMode, setToolMode] = useState('pan');
+
+  const [showPhysics, setShowPhysics] = useState(false);
+  const [tension, setTension] = useState(120);
+  const [repulsion, setRepulsion] = useState(400);
 
   // Use custom hooks for state management
   const { 
@@ -89,7 +97,20 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
           isFullscreen={isFullscreen}
           toggleFullscreen={toggleFullscreen}
           handleDownloadSVG={handleDownloadSVG}
+          toolMode={toolMode}
+          setToolMode={setToolMode}
+          togglePhysics={()=>setShowPhysics(prev=>!prev)}
         />
+
+        {showPhysics && (
+          <PhysicsControls
+            tension={tension}
+            setTension={setTension}
+            repulsion={repulsion}
+            setRepulsion={setRepulsion}
+            onClose={()=>setShowPhysics(false)}
+          />
+        )}
 
         {/* Main Visualization Area */}
         <div className="flex-1 relative">
@@ -101,6 +122,9 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
             containerRef={containerRef}
             height={height}
             isFullscreen={isFullscreen}
+            toolMode={toolMode}
+            tension={tension}
+            repulsion={repulsion}
           />
         </div>
 

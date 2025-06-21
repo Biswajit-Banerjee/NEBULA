@@ -6,6 +6,9 @@ import {
   RefreshCcw,
   Maximize,
   Minimize,
+  Hand,
+  MousePointer,
+  SlidersHorizontal,
 } from "lucide-react";
 
 const ActionButtons = ({
@@ -15,9 +18,21 @@ const ActionButtons = ({
   isFullscreen,
   toggleFullscreen,
   handleDownloadSVG,
+  toolMode,
+  setToolMode,
+  togglePhysics,
 }) => {
   return (
     <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+      <button
+        onClick={() => setToolMode(toolMode === 'pan' ? 'cursor' : 'pan')}
+        className={`p-2 rounded-lg shadow transition-colors ${
+          toolMode === 'pan' ? 'bg-indigo-50 text-indigo-600' : 'bg-white hover:bg-gray-50 text-gray-700'
+        }`}
+        title={toolMode === 'pan' ? 'Switch to Browse/Hand tool' : 'Switch to Pan tool'}
+      >
+        {toolMode === 'pan' ? <MousePointer className="w-5 h-5" /> : <Hand className="w-5 h-5" /> }
+      </button>
       <button
         onClick={handleZoomIn}
         className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
@@ -56,6 +71,13 @@ const ActionButtons = ({
         title="Download as SVG"
       >
         <Download className="w-5 h-5 text-gray-700" />
+      </button>
+      <button
+        onClick={togglePhysics}
+        className="p-2 bg-white rounded-lg shadow hover:bg-gray-50 transition-colors"
+        title="Physics controls"
+      >
+        <SlidersHorizontal className="w-5 h-5 text-gray-700" />
       </button>
     </div>
   );
