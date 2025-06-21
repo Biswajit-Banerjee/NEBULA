@@ -50,14 +50,23 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration) {
   }, [isPlaying, maxGeneration, setCurrentGeneration, transitionSpeed]);
 
   const togglePlay = () => {
-    if (currentGeneration >= maxGeneration && !isPlaying) {
-      setCurrentGeneration(0);
-      // Reset the transition flag
-      transitionInProgressRef.current = false;
-      setIsPlaying(true);
-    } else {
-      setIsPlaying(!isPlaying);
+    if (isPlaying) {
+      // Currently playing – pause
+      setIsPlaying(false);
+      return;
     }
+
+    // About to start playing
+    if (currentGeneration >= maxGeneration) {
+      setCurrentGeneration(0);
+    } else {
+      // Immediate advance for instant feedback
+      setCurrentGeneration((prev) => Math.min(prev + 1, maxGeneration));
+    }
+
+    // Reset transition flag and start the interval
+    transitionInProgressRef.current = false;
+    setIsPlaying(true);
   };
 
   const stepForward = () => {

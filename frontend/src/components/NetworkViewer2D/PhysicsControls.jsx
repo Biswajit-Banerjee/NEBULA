@@ -9,7 +9,7 @@ const PhysicsControls = ({
   onClose,
 }) => {
   return (
-    <div className="absolute top-4 right-20 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 z-30 w-56">
+    <div className="absolute bottom-20 right-4 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 z-40 w-60">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-sm font-semibold text-gray-700">Physics</h3>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-4 h-4"/></button>

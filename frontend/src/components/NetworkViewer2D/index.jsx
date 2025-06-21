@@ -1,12 +1,12 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import GraphRenderer from "./GraphRendererCanvas";
-import ActionButtons from "./ActionButtons";
 import GenerationControls from "./GenerationControls";
 import Legend from "./Legend";
 import useGraphData from "./hooks/useGraphData";
 import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
 import PhysicsControls from "./PhysicsControls";
+import HelpOverlay from "./HelpOverlay";
 
 const NetworkViewer2D = ({ results, height = "600px" }) => {
   const svgRef = useRef(null);
@@ -14,12 +14,14 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
   const wrapperRef = useRef(null);
   const graphRendererRef = useRef(null);
 
-  // Tool mode: 'pan' (hand) or 'cursor' (move nodes)
-  const [toolMode, setToolMode] = useState('pan');
-
   const [showPhysics, setShowPhysics] = useState(false);
   const [tension, setTension] = useState(120);
   const [repulsion, setRepulsion] = useState(400);
+
+  // New: help overlay visibility state
+  const [showHelp, setShowHelp] = useState(false);
+  // New: color by generation toggle
+  const [colorByGeneration, setColorByGeneration] = useState(true);
 
   // Use custom hooks for state management
   const { 
@@ -79,6 +81,60 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
   // Make sure we have array data to pass to the GraphRenderer
   const safeResults = Array.isArray(results) ? results : [];
 
+  // Keyboard shortcuts for common actions
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return; // ignore when typing
+      switch (e.key) {
+        case '+':
+        case '=': // laptop keyboards
+          handleZoomIn();
+          break;
+        case '-':
+        case '_':
+          handleZoomOut();
+          break;
+        case ' ': // Space toggles play
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowRight':
+          stepForward();
+          break;
+        case 'ArrowLeft':
+          stepBackward();
+          break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
+        case 'h':
+        case 'H':
+          setShowHelp((prev) => !prev);
+          break;
+        case 'c':
+        case 'C':
+          setColorByGeneration(prev => !prev);
+          break;
+        case 'p':
+        case 'P':
+          setShowPhysics(prev => !prev);
+          break;
+        case 'r':
+        case 'R':
+          resetSpiral();
+          break;
+        case '0':
+          handleReset();
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, setColorByGeneration, setShowPhysics, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
+
   return (
     <div className="relative rounded-xl border border-gray-200 shadow" ref={containerRef}>
       {/* Main container */}
@@ -89,18 +145,8 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}
       >
-        {/* Floating Visualization Controls */}
-        <ActionButtons 
-          handleZoomIn={handleZoomIn}
-          handleZoomOut={handleZoomOut}
-          resetSpiral={resetSpiral}
-          isFullscreen={isFullscreen}
-          toggleFullscreen={toggleFullscreen}
-          handleDownloadSVG={handleDownloadSVG}
-          toolMode={toolMode}
-          setToolMode={setToolMode}
-          togglePhysics={()=>setShowPhysics(prev=>!prev)}
-        />
+        {/* Help overlay */}
+        {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
 
         {showPhysics && (
           <PhysicsControls
@@ -122,9 +168,9 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
             containerRef={containerRef}
             height={height}
             isFullscreen={isFullscreen}
-            toolMode={toolMode}
             tension={tension}
             repulsion={repulsion}
+            colorByGeneration={colorByGeneration}
           />
         </div>
 
@@ -140,6 +186,15 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
           transitionSpeed={transitionSpeed}
           setTransitionSpeed={setTransitionSpeed}
           isFullscreen={isFullscreen}
+          handleZoomIn={handleZoomIn}
+          handleZoomOut={handleZoomOut}
+          resetSpiral={resetSpiral}
+          toggleFullscreen={toggleFullscreen}
+          handleDownloadSVG={handleDownloadSVG}
+          togglePhysics={() => setShowPhysics(prev => !prev)}
+          toggleHelp={() => setShowHelp(prev => !prev)}
+          colorByGeneration={colorByGeneration}
+          toggleColorByGen={() => setColorByGeneration(prev => !prev)}
         />
 
         {/* Legend and Help Text */}

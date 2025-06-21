@@ -31,9 +31,9 @@ const GraphRendererCanvas = forwardRef(
       containerRef,
       height = 600,
       isFullscreen,
-      toolMode,
       tension,
       repulsion,
+      colorByGeneration,
     },
     ref
   ) => {
@@ -234,10 +234,17 @@ const GraphRendererCanvas = forwardRef(
       const zoom = d3
         .zoom()
         .scaleExtent([0.2, 10])
-        // Disable pointer-driven panning when in cursor mode but keep scroll-wheel zoom
         .filter((ev) => {
-          if (mode === "cursor" && ev.type === "mousedown") return false;
-          return true;
+          if (ev.type !== 'mousedown') return true;
+          // Disable zoom if pointer is on a node (so we can drag it)
+          const rect = canvas.getBoundingClientRect();
+          const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+          const my = (ev.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+          const hitNode = (simulationRef.current?.nodes() || []).find((n) => {
+            const radius = n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20;
+            return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
+          });
+          return !hitNode; // allow pan if not clicking on node
         })
         .on("zoom", (ev) => {
           transformRef.current = ev.transform;
@@ -249,7 +256,7 @@ const GraphRendererCanvas = forwardRef(
       return () => {
         window.removeEventListener("resize", handleResize);
       };
-    }, [containerRef, height, isFullscreen, toolMode]);
+    }, [containerRef, height, isFullscreen]);
 
     /* ------------------------------------------------------------------ */
     /* Drawing                                                             */
@@ -269,8 +276,6 @@ const GraphRendererCanvas = forwardRef(
         window.removeEventListener('keyup', up);
       };
     }, []);
-
-    const mode = ctrlHeld ? (toolMode === 'pan' ? 'cursor' : 'pan') : toolMode;
 
     const draw = (nodes) => {
       if (!canvasRef.current) return;
@@ -335,6 +340,15 @@ const GraphRendererCanvas = forwardRef(
         }
       });
 
+      // Helper to compute color for a generation index
+      const genColor = (g) => {
+        const hue = maxGeneration ? (g / (maxGeneration + 1)) * 320 : 200;
+        return {
+          fill: `hsl(${hue}, 70%, 90%)`,
+          stroke: `hsl(${hue}, 70%, 45%)`,
+        };
+      };
+
       // Draw nodes
       nodes.forEach((n) => {
         if (hiddenIds.has(n.id)) return;
@@ -342,22 +356,36 @@ const GraphRendererCanvas = forwardRef(
         ctx.shadowColor = "rgba(0,0,0,0.1)";
         ctx.shadowBlur = 3;
         ctx.beginPath();
+
+        // Determine styles
+        if (colorByGeneration) {
+          const { fill, stroke } = genColor(n.generation || 0);
+          ctx.fillStyle = fill;
+          ctx.strokeStyle = stroke;
+        }
+
         switch (n.type) {
           case "compound":
-            ctx.fillStyle = "hsl(200,100%,95%)"; // cute pastel blue
-            ctx.strokeStyle = "hsl(200,60%,50%)";
+            if (!colorByGeneration) {
+              ctx.fillStyle = "hsl(200,100%,95%)";
+              ctx.strokeStyle = "hsl(200,60%,50%)";
+            }
             ctx.lineWidth = 1.5;
             ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
             break;
           case "ec":
-            ctx.fillStyle = "#FFFFFF";
-            ctx.strokeStyle = "#7C3AED"; // violet-600
+            if (!colorByGeneration) {
+              ctx.fillStyle = "#FFFFFF";
+              ctx.strokeStyle = "#7C3AED";
+            }
             ctx.lineWidth = 1.5;
             ctx.ellipse(n.x, n.y, 24, 14, 0, 0, Math.PI * 2);
             break;
           default:
-            ctx.fillStyle = "#FEF9C3"; // pastel yellow
-            ctx.strokeStyle = collapsedRoots.has(n.id) ? "#EF4444" : "#F59E0B";
+            if (!colorByGeneration) {
+              ctx.fillStyle = "#FEF9C3";
+              ctx.strokeStyle = collapsedRoots.has(n.id) ? "#EF4444" : "#F59E0B";
+            }
             ctx.lineWidth = collapsedRoots.has(n.id) ? 3 : 1.5;
             // rounded rectangle
             const rx = n.x - 20;
@@ -437,7 +465,7 @@ const GraphRendererCanvas = forwardRef(
 
       canvas.addEventListener("click", handleClick);
       return () => canvas.removeEventListener("click", handleClick);
-    }, [mode, nodesLocked]);
+    }, []);
 
     /* ------------------------------------------------------------------ */
     /* Dragging for node reposition                                        */
@@ -463,7 +491,7 @@ const GraphRendererCanvas = forwardRef(
           simulationRef.current.alphaTarget(0.3).restart();
           node.fx = node.x;
           node.fy = node.y;
-          if (mode === "cursor") canvas.style.cursor = "grabbing";
+          canvas.style.cursor = "grabbing";
         }
       };
 
@@ -485,7 +513,7 @@ const GraphRendererCanvas = forwardRef(
           // Calm simulation so neighbours settle without pulling node back
           simulationRef.current.alphaTarget(0);
           dragging = null;
-          canvas.style.cursor = mode === 'pan' ? 'default' : 'grab';
+          canvas.style.cursor = 'grab';
         }
       };
 
@@ -498,7 +526,7 @@ const GraphRendererCanvas = forwardRef(
         window.removeEventListener("pointermove", pointermove);
         window.removeEventListener("pointerup", pointerup);
       };
-    }, [nodesLocked, mode]);
+    }, [nodesLocked]);
 
     /* ------------------------------------------------------------------ */
     /* Imperative API – for ActionButtons etc.                             */
@@ -623,7 +651,7 @@ const GraphRendererCanvas = forwardRef(
       <div className="relative w-full h-full">
         <canvas
           ref={canvasRef}
-          style={{ width: "100%", height: "100%", cursor: mode === 'pan' ? 'default' : 'grab' }}
+          style={{ width: "100%", height: "100%", cursor: 'grab' }}
         />
 
         {/* Lock Button */}
