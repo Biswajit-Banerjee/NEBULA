@@ -591,25 +591,26 @@ import React, {
         svg.node().downloadSVG = downloadFullSVG;
       };
   
-      // Set up D3 visualization when data changes
+      // Set up D3 visualization when core data or generation changes
       useEffect(() => {
         setupVisualization(Array.isArray(data) ? data : []);
-      }, [
-        data,
-        currentGeneration,
-        maxGeneration,
-        containerRef,
-        height,
-        isFullscreen,
-        nodesLocked,
-        layoutType,
-      ]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [data, currentGeneration, maxGeneration]);
+  
+      // Handle fullscreen enter/exit just by fitting view without rebuilding the graph
+      useEffect(() => {
+        fitToView();
+      }, [isFullscreen, height]);
   
       // Update positions when the simulation ticks
       useEffect(() => {
         if (!simulationRef.current) return;
   
+        let tickCount = 0; // throttle DOM updates for better performance
         simulationRef.current.on("tick", () => {
+          tickCount++;
+          if (tickCount % 2 !== 0) return; // update DOM every other tick
+  
           const linkGroups = d3.selectAll(".link-group");
           const edgeLabels = d3.selectAll(".edge-label");
           const nodes = d3.selectAll(".node");

@@ -76,7 +76,7 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
       {/* Main container */}
       <div 
         ref={wrapperRef}
-        className={`flex flex-col bg-gradient-to-br from-blue-50 to-indigo-50 transition-all duration-300 ${
+        className={`relative flex flex-col bg-gradient-to-br from-blue-50 to-indigo-50 transition-all duration-300 ${
           isFullscreen ? 'min-h-screen' : ''
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}

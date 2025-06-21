@@ -28,7 +28,7 @@ const GenerationControls = ({
   };
 
   return (
-    <div className={`p-3 ${isFullscreen ? 'bg-white/30' : 'bg-white/50'} backdrop-blur-sm transition-all duration-300`}>
+    <div className={`absolute bottom-0 left-0 w-full p-3 z-20 ${isFullscreen ? 'bg-white/30' : 'bg-white/50'} backdrop-blur-sm transition-all duration-300`}>
       <div className="flex items-center justify-between mb-1">
         {/* Left side: Speed control */}
         <div className="relative">
