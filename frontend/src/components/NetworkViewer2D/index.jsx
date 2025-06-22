@@ -15,6 +15,7 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
   const graphRendererRef = useRef(null);
 
   const [showPhysics, setShowPhysics] = useState(false);
+  const [physicsOff, setPhysicsOff] = useState(false);
   const [tension, setTension] = useState(120);
   const [repulsion, setRepulsion] = useState(400);
 
@@ -76,7 +77,21 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
     }
   };
 
-  // Removed resetToGenZero function as it's not needed
+  const startRotate = () => {
+    if (!graphRendererRef.current) return;
+    rotateIntervalRef.current = setInterval(() => {
+      graphRendererRef.current.rotateGraph(-Math.PI / 90); // 2° per frame
+    }, 30);
+  };
+
+  const stopRotate = () => {
+    if (rotateIntervalRef.current) {
+      clearInterval(rotateIntervalRef.current);
+      rotateIntervalRef.current = null;
+    }
+  };
+
+  const rotateIntervalRef = useRef(null);
 
   // Make sure we have array data to pass to the GraphRenderer
   const safeResults = Array.isArray(results) ? results : [];
@@ -137,6 +152,13 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
     setNodePositions: (positions) => graphRendererRef.current?.setNodePositions?.(positions),
   }));
 
+  const togglePhysicsSim = () => {
+    if (graphRendererRef.current) {
+      graphRendererRef.current.toggleLock();
+      setPhysicsOff(prev=>!prev);
+    }
+  };
+
   return (
     <div className="relative rounded-xl border border-gray-200 dark:border-slate-700 shadow bg-white dark:bg-slate-800" ref={containerRef}>
       {/* Main container */}
@@ -194,8 +216,11 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
           toggleFullscreen={toggleFullscreen}
           handleDownloadSVG={handleDownloadSVG}
           togglePhysics={() => setShowPhysics(prev => !prev)}
+          togglePhysicsSim={togglePhysicsSim}
+          physicsOff={physicsOff}
           toggleHelp={() => setShowHelp(prev => !prev)}
-          /* colorByGeneration always true, palette button removed */
+          startRotate={startRotate}
+          stopRotate={stopRotate}
         />
 
         {/* Legend and Help Text */}

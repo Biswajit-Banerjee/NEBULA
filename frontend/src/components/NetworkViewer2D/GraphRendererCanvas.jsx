@@ -123,153 +123,7 @@ const GraphRendererCanvas = forwardRef(
     /* Force-simulation                                                   */
     /* ------------------------------------------------------------------ */
 
-    useEffect(() => {
-      if (!graph.nodes.length) return;
-
-      // Deep copy nodes so d3 can mutate x/y without affecting state
-      const nodesCopy = graph.nodes.map((n) => ({ ...n }));
-      const linksCopy = graph.links.map((l) => ({ ...l }));
-
-      // Remove hidden nodes from simulation arrays
-      const visibleNodes = nodesCopy.filter((n) => !hiddenIds.has(n.id));
-      const visibleLinks = linksCopy.filter((l) => {
-        const sId = l.source?.id || l.source;
-        const tId = l.target?.id || l.target;
-        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
-      });
-
-      // Initial positions – reuse previous if simulation exists
-      const prevPositions = simulationRef.current?.nodes().reduce((acc, n) => {
-        acc[n.id] = { x: n.x, y: n.y };
-        return acc;
-      }, {});
-      visibleNodes.forEach((n) => {
-        if (prevPositions?.[n.id]) {
-          n.x = prevPositions[n.id].x;
-          n.y = prevPositions[n.id].y;
-        }
-      });
-
-      // Spiral placement for fresh nodes
-      applySpiral(
-        visibleNodes,
-        (containerRef.current?.clientWidth || 800) / 2,
-        (typeof height === "string" ? parseInt(height) : height) / 2,
-        currentGeneration,
-        true,
-        nodesLocked
-      );
-
-      if (simulationRef.current) simulationRef.current.stop();
-
-      const sim = d3
-        .forceSimulation(visibleNodes)
-        .force(
-          "link",
-          d3
-            .forceLink(visibleLinks)
-            .id((d) => d.id)
-            .distance(tension)
-        )
-        .force("charge", d3.forceManyBody().strength(-repulsion))
-        .force(
-          "center",
-          d3.forceCenter(
-            (containerRef.current?.clientWidth || 800) / 2,
-            (typeof height === "string" ? parseInt(height) : height) / 2
-          )
-        )
-        .alpha(1)
-        .alphaDecay(0.02)
-        .on("tick", () => draw(sim.nodes()));
-
-      if (nodesLocked) {
-        sim.stop();
-      }
-
-      simulationRef.current = sim;
-
-      // Initial draw
-      draw(visibleNodes);
-
-      return () => {
-        sim.stop();
-      };
-    }, [graph, hiddenIds, nodesLocked, currentGeneration, height, containerRef, tension, repulsion]);
-
-    /* ------------------------------------------------------------------ */
-    /* Canvas & Zoom                                                      */
-    /* ------------------------------------------------------------------ */
-
-    useEffect(() => {
-      if (!canvasRef.current) return;
-      const canvas = canvasRef.current;
-      const context = canvas.getContext("2d", { alpha: true });
-
-      const handleResize = () => {
-        const w = isFullscreen ? window.innerWidth : containerRef.current?.clientWidth || 800;
-        const h = isFullscreen
-          ? window.innerHeight
-          : typeof height === "string"
-          ? parseInt(height)
-          : height;
-        canvas.width = w * window.devicePixelRatio;
-        canvas.height = h * window.devicePixelRatio;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
-        context.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
-        draw(simulationRef.current?.nodes() || []);
-      };
-      handleResize();
-      window.addEventListener("resize", handleResize);
-
-      const zoom = d3
-        .zoom()
-        .scaleExtent([0.2, 10])
-        .filter((ev) => {
-          if (ev.type !== 'mousedown') return true;
-          // Disable zoom if pointer is on a node (so we can drag it)
-          const rect = canvas.getBoundingClientRect();
-          const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
-          const my = (ev.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
-          const hitNode = (simulationRef.current?.nodes() || []).find((n) => {
-            const radius = n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20;
-            return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
-          });
-          return !hitNode; // allow pan if not clicking on node
-        })
-        .on("zoom", (ev) => {
-          transformRef.current = ev.transform;
-          draw(simulationRef.current?.nodes() || []);
-        });
-      d3.select(canvas).call(zoom);
-      zoomRef.current = zoom;
-
-      return () => {
-        window.removeEventListener("resize", handleResize);
-      };
-    }, [containerRef, height, isFullscreen]);
-
-    /* ------------------------------------------------------------------ */
-    /* Drawing                                                             */
-    /* ------------------------------------------------------------------ */
-
-    useEffect(() => {
-      const down = (e) => {
-        if (e.key === 'Control') setCtrlHeld(true);
-      };
-      const up = (e) => {
-        if (e.key === 'Control') setCtrlHeld(false);
-      };
-      window.addEventListener('keydown', down);
-      window.addEventListener('keyup', up);
-      return () => {
-        window.removeEventListener('keydown', down);
-        window.removeEventListener('keyup', up);
-      };
-    }, []);
-
-    const draw = (nodes) => {
+    const draw = useCallback((nodes) => {
       if (!canvasRef.current) return;
       const ctx = canvasRef.current.getContext("2d");
       if (!ctx) return;
@@ -407,7 +261,154 @@ const GraphRendererCanvas = forwardRef(
       });
 
       ctx.restore();
-    };
+    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots]);
+
+    useEffect(() => {
+      if (!graph.nodes.length) return;
+
+      // Deep copy nodes so d3 can mutate x/y without affecting state
+      const nodesCopy = graph.nodes.map((n) => ({ ...n }));
+      const linksCopy = graph.links.map((l) => ({ ...l }));
+
+      // Remove hidden nodes from simulation arrays
+      const visibleNodes = nodesCopy.filter((n) => !hiddenIds.has(n.id));
+      const visibleLinks = linksCopy.filter((l) => {
+        const sId = l.source?.id || l.source;
+        const tId = l.target?.id || l.target;
+        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
+      });
+
+      // Initial positions – reuse previous if simulation exists
+      const prevPositions = simulationRef.current?.nodes().reduce((acc, n) => {
+        acc[n.id] = { x: n.x, y: n.y };
+        return acc;
+      }, {});
+      visibleNodes.forEach((n) => {
+        if (prevPositions?.[n.id]) {
+          n.x = prevPositions[n.id].x;
+          n.y = prevPositions[n.id].y;
+        }
+      });
+
+      // Spiral placement for fresh nodes
+      applySpiral(
+        visibleNodes,
+        (containerRef.current?.clientWidth || 800) / 2,
+        (typeof height === "string" ? parseInt(height) : height) / 2,
+        currentGeneration,
+        true,
+        nodesLocked
+      );
+
+      if (simulationRef.current) simulationRef.current.stop();
+
+      const sim = d3
+        .forceSimulation(visibleNodes)
+        .force(
+          "link",
+          d3
+            .forceLink(visibleLinks)
+            .id((d) => d.id)
+            .distance(tension)
+        )
+        .force("charge", d3.forceManyBody().strength(-repulsion))
+        .force(
+          "center",
+          d3.forceCenter(
+            (containerRef.current?.clientWidth || 800) / 2,
+            (typeof height === "string" ? parseInt(height) : height) / 2
+          )
+        )
+        .alpha(1)
+        .alphaDecay(0.02)
+        .on("tick", () => draw(sim.nodes()));
+
+      if (nodesLocked) {
+        sim.stop();
+      }
+
+      simulationRef.current = sim;
+
+      // Initial draw
+      draw(visibleNodes);
+
+      return () => {
+        sim.stop();
+      };
+    }, [graph, hiddenIds, nodesLocked, currentGeneration, height, containerRef, tension, repulsion, draw]);
+
+    /* ------------------------------------------------------------------ */
+    /* Canvas & Zoom                                                      */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d", { alpha: true });
+
+      const handleResize = () => {
+        const w = isFullscreen ? window.innerWidth : containerRef.current?.clientWidth || 800;
+        const h = isFullscreen
+          ? window.innerHeight
+          : typeof height === "string"
+          ? parseInt(height)
+          : height;
+        canvas.width = w * window.devicePixelRatio;
+        canvas.height = h * window.devicePixelRatio;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        context.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+        draw(simulationRef.current?.nodes() || []);
+      };
+      handleResize();
+      window.addEventListener("resize", handleResize);
+
+      const zoom = d3
+        .zoom()
+        .scaleExtent([0.2, 10])
+        .filter((ev) => {
+          if (ev.type !== 'mousedown') return true;
+          // Disable zoom if pointer is on a node (so we can drag it)
+          const rect = canvas.getBoundingClientRect();
+          const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+          const my = (ev.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+          const hitNode = (simulationRef.current?.nodes() || []).find((n) => {
+            const radius = n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20;
+            return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
+          });
+          return !hitNode; // allow pan if not clicking on node
+        })
+        .on("zoom", (ev) => {
+          transformRef.current = ev.transform;
+          draw(simulationRef.current?.nodes() || []);
+        });
+      d3.select(canvas).call(zoom);
+      zoomRef.current = zoom;
+
+      return () => {
+        window.removeEventListener("resize", handleResize);
+        d3.select(canvas).on('.zoom', null);
+      };
+    }, [containerRef, height, isFullscreen, draw]);
+
+    /* ------------------------------------------------------------------ */
+    /* Drawing                                                             */
+    /* ------------------------------------------------------------------ */
+
+    useEffect(() => {
+      const down = (e) => {
+        if (e.key === 'Control') setCtrlHeld(true);
+      };
+      const up = (e) => {
+        if (e.key === 'Control') setCtrlHeld(false);
+      };
+      window.addEventListener('keydown', down);
+      window.addEventListener('keyup', up);
+      return () => {
+        window.removeEventListener('keydown', down);
+        window.removeEventListener('keyup', up);
+      };
+    }, []);
 
     /* ------------------------------------------------------------------ */
     /* Pointer interaction – selection & collapse                          */
@@ -423,7 +424,6 @@ const GraphRendererCanvas = forwardRef(
         const x = (evt.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
         const y = (evt.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
-        // find nearest node (simple search)
         const hit = (simulationRef.current?.nodes() || []).find((n) => {
           if (/reaction-/.test(n.type)) {
             // Reaction side nodes are small rectangles 24×12
@@ -458,13 +458,11 @@ const GraphRendererCanvas = forwardRef(
       let dragging = null;
 
       const pointerdown = (e) => {
-        if (nodesLocked) return;
         const rect = canvas.getBoundingClientRect();
         const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
         const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
         const node = (simulationRef.current?.nodes() || []).find((n) => {
-          // simple hit test (circle radius 12)
-          return (mx - n.x) ** 2 + (my - n.y) ** 2 < 400; // match larger node size
+          return (mx - n.x) ** 2 + (my - n.y) ** 2 < 400;
         });
         if (node) {
           dragging = node;
@@ -482,6 +480,7 @@ const GraphRendererCanvas = forwardRef(
         const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
         dragging.fx = mx;
         dragging.fy = my;
+        if (nodesLocked) draw(simulationRef.current?.nodes() || []);
       };
 
       const pointerup = () => {
@@ -492,6 +491,7 @@ const GraphRendererCanvas = forwardRef(
 
           // Calm simulation so neighbours settle without pulling node back
           simulationRef.current.alphaTarget(0);
+          if (nodesLocked) draw(simulationRef.current?.nodes() || []);
           dragging = null;
           canvas.style.cursor = 'grab';
         }
@@ -607,7 +607,25 @@ const GraphRendererCanvas = forwardRef(
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       },
-      toggleLock: () => setNodesLocked((prev) => !prev),
+      toggleLock: () => {
+        setNodesLocked((prev) => {
+          const next = !prev;
+          const simNodes = simulationRef.current?.nodes?.() || [];
+          if (next) {
+            // Locking: fix current positions
+            simNodes.forEach((n) => {
+              n.fx = n.x;
+              n.fy = n.y;
+            });
+            simulationRef.current?.stop();
+          } else {
+            // Unlocking: keep previous fixes; simulation can reheat slightly
+            simulationRef.current?.alpha(0.7).restart();
+          }
+          draw(simNodes);
+          return next;
+        });
+      },
       resetSpiral: () => {
         simulationRef.current?.stop();
         applySpiral(
@@ -649,6 +667,28 @@ const GraphRendererCanvas = forwardRef(
           }
         });
         // Redraw canvas with updated positions
+        draw(nodes);
+      },
+      /**
+       * Rotate all visible nodes around the canvas centre by a given angle (radians, CCW).
+       */
+      rotateGraph: (angleRad) => {
+        const nodes = simulationRef.current?.nodes?.() || [];
+        if (!nodes.length) return;
+        const cx = (containerRef.current?.clientWidth || 800) / 2;
+        const cy = (typeof height === 'string' ? parseInt(height) : height) / 2;
+        nodes.forEach((n) => {
+          const dx = n.x - cx;
+          const dy = n.y - cy;
+          const rX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad) + cx;
+          const rY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad) + cy;
+          n.x = rX;
+          n.y = rY;
+          if (n.fx !== undefined) {
+            n.fx = rX;
+            n.fy = rY;
+          }
+        });
         draw(nodes);
       },
     }));

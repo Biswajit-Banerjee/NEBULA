@@ -8,7 +8,6 @@ export const ThemeContext = createContext({
 const STORAGE_KEY = "nebula-theme";
 
 export function ThemeProvider({ children }) {
-  // Determine initial theme: prefer localStorage, then OS preference
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false;
     const stored = localStorage.getItem(STORAGE_KEY);

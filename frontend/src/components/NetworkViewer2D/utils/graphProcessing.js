@@ -203,24 +203,7 @@ export const processData = (data, currentGen) => {
       }
     });
   
-    // Remove any nodes that don't have any connections
-    const connectedNodeIds = new Set();
-    links.forEach((link) => {
-      connectedNodeIds.add(
-        link.source instanceof Object ? link.source.id : link.source
-      );
-      connectedNodeIds.add(
-        link.target instanceof Object ? link.target.id : link.target
-      );
-    });
-  
-    const connectedNodes = nodes.filter((node) => {
-      // Always keep compounds, filter reactions and EC nodes with no connections
-      if (node.type === "compound") return true;
-      return connectedNodeIds.has(node.id);
-    });
-  
-    return { nodes: connectedNodes, links };
+    return { nodes, links };
   };
   
   /**

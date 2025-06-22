@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RefreshCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RotateCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle, Lock, Unlock } from 'lucide-react';
 
 const GenerationControls = ({
   currentGeneration,
@@ -19,6 +19,10 @@ const GenerationControls = ({
   handleDownloadSVG,
   togglePhysics,
   toggleHelp,
+  startRotate,
+  stopRotate,
+  togglePhysicsSim,
+  physicsOff,
 }) => {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
   
@@ -36,7 +40,25 @@ const GenerationControls = ({
         <div className={clusterGap}>
           <button onClick={handleZoomIn} className={btnBase} title="Zoom in" aria-label="Zoom in"><ZoomIn className="w-4 h-4"/></button>
           <button onClick={handleZoomOut} className={btnBase} title="Zoom out" aria-label="Zoom out"><ZoomOut className="w-4 h-4"/></button>
-          <button onClick={resetSpiral} className={btnBase} title="Reset layout" aria-label="Reset layout"><RefreshCcw className="w-4 h-4"/></button>
+          <button
+            onClick={resetSpiral}
+            onMouseDown={startRotate}
+            onMouseUp={stopRotate}
+            onMouseLeave={stopRotate}
+            className={btnBase}
+            title="Rotate layout"
+            aria-label="Rotate layout"
+          >
+            <RotateCcw className="w-4 h-4"/>
+          </button>
+          <button
+            onClick={togglePhysicsSim}
+            className={btnBase}
+            title={physicsOff ? "Unlock physics" : "Lock physics"}
+            aria-label="Toggle physics simulation"
+          >
+            {physicsOff ? <Unlock className="w-4 h-4"/> : <Lock className="w-4 h-4"/>}
+          </button>
         </div>
 
         {/* Centre cluster – generation navigation & slider */}

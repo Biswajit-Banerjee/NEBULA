@@ -15,7 +15,7 @@
     margin: 0;
   }
 
-  /* Basic styling for headings for consistency if not overridden by utilities */
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold text-neutral-900 dark:text-[#f8f8f2];
   }
@@ -49,8 +49,7 @@
   }
 }
 
-/* You can keep your existing keyframes or use the ones defined in tailwind.config.js */
-/* The .animate-spin class is already provided by Tailwind, so this specific definition is redundant */
+
 
 @keyframes spin {
   from {

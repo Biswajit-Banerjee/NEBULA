@@ -24,9 +24,10 @@ const HelpOverlay = ({ onClose }) => {
         <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
           <li><span className="font-medium">Zoom ±</span> – zoom controls.</li>
           <li><span className="font-medium">Reset View</span> – centre & fit graph.</li>
-          <li><span className="font-medium">Reset Layout (R)</span> – re-run layout for current generation.</li>
+          <li><span className="font-medium">Rotate Layout (R)</span> – re-run layout; hold the button to rotate graph.</li>
           <li><span className="font-medium">Colour by Generation (C)</span> – toggle pastel gradient per generation.</li>
-          <li><span className="font-medium">Physics (P)</span> – show/hide force-simulation sliders.</li>
+          <li><span className="font-medium">Physics Panel (P)</span> – show/hide simulation sliders.</li>
+          <li><span className="font-medium">Disable Physics</span> – freeze simulation for large graphs.</li>
           <li><span className="font-medium">Fullscreen (F)</span> – immerse the visualization.</li>
           <li><span className="font-medium">Download</span> – export current view as SVG.</li>
         </ul>
@@ -38,7 +39,7 @@ const HelpOverlay = ({ onClose }) => {
           <span className="font-medium">0</span><span>Reset view</span>
           <span className="font-medium">Space</span><span>Play/Pause generations</span>
           <span className="font-medium">← / →</span><span>Step generation</span>
-          <span className="font-medium">R</span><span>Reset layout for current generation</span>
+          <span className="font-medium">R</span><span>Rotate / reset layout</span>
           <span className="font-medium">C</span><span>Toggle Sadist mode</span>
           <span className="font-medium">P</span><span>Show/Hide physics panel</span>
           <span className="font-medium">F</span><span>Toggle fullscreen</span>

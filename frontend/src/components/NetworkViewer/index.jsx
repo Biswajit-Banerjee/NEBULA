@@ -864,7 +864,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
   // Custom node label rendering
   const nodeLabel = useCallback((node) => {
-    if (hideLabels) return null; // Return null instead of empty string
+    if (hideLabels) return null;
     
     if (node.type === 'compound') {
       return `${node.label} (${node.generation})`;
@@ -1389,7 +1389,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     // Calculate node connections (degree)
     const nodeConnections = calculateNodeConnections(node);
     
-    // Set basic node data
+    
     const nodeData = {
       basic: {
         id: node.id,

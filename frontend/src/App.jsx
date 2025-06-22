@@ -276,12 +276,12 @@ function App() {
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-[#282a36] text-slate-800 dark:text-[#f8f8f2] flex flex-col relative overflow-x-hidden">
       {/* Theme Toggle */}
-      <ThemeToggle className="fixed top-4 right-4 z-50" />
+      <ThemeToggle className="absolute top-4 right-4" />
       {/* Background decorations removed for flat design */}
 
       <div className="flex flex-1 relative z-10">
         {/* Left Sidebar for Search Panel */}
-        <aside className={`${sidebarCollapsed ? 'w-20' : 'w-80 xl:w-96'} bg-white/80 dark:bg-slate-800/70 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-700/50 shadow-lg transition-all duration-300 ease-in-out fixed lg:static inset-y-0 left-0 z-30 lg:z-auto overflow-hidden`}>
+        <aside className={`${sidebarCollapsed ? 'w-20' : 'w-80 xl:w-96'} bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 shadow-sm fixed lg:static inset-y-0 left-0 z-30 lg:z-auto overflow-hidden`}>
           {!sidebarCollapsed ? (
             <div className="p-4 lg:p-6 w-full h-full overflow-y-auto flex flex-col">
               <SearchPanel
@@ -318,24 +318,13 @@ function App() {
         <main className={`flex-1 min-w-0 transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-0' : ''} px-4 sm:px-6 lg:px-8 py-8`}>
           <div className="max-w-full mx-auto">
             {loading && (
-              <div className="flex flex-col items-center justify-center py-24 animate-fade-in">
-                <div className="relative mb-8">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/25">
-                    <HexagonLucide className="w-10 h-10 text-white animate-[spin_3s_linear_infinite]" />
-                  </div>
-                  <div className="absolute inset-0 rounded-full border-4 border-violet-200/80 dark:border-violet-600/50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite] opacity-70"></div>
-                </div>
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Analyzing Paths</h3>
-                <p className="text-slate-600 dark:text-slate-400 mb-6">Processing your metabolic network queries...</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 bg-violet-500 rounded-full animate-bounce"></div>
-                  <div className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                </div>
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <HexagonLucide className="w-10 h-10 text-violet-600 mb-4" />
+                <p className="text-base text-slate-600 dark:text-slate-400">Loading…</p>
               </div>
             )}
             {error && (
-              <div className="max-w-2xl mx-auto my-12 animate-fade-in">
+              <div className="max-w-2xl mx-auto my-12">
                 <div className="bg-gradient-to-r from-red-50/80 to-rose-50/80 dark:from-red-800/30 dark:to-rose-800/30 border-2 border-red-200 dark:border-red-600/40 rounded-2xl p-8 text-center shadow-xl">
                   <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-500/30 mb-4">
                     <Zap className="w-8 h-8 text-red-600 dark:text-red-400" />
@@ -352,7 +341,7 @@ function App() {
               </div>
             )}
             {results && !loading && !error && (
-              <div className="animate-fade-in">
+              <div>
                  <div className="flex items-center gap-3 sm:gap-4">
                     <div className="flex items-center gap-3">
                       <Logo className="w-10 h-10" />
@@ -365,7 +354,7 @@ function App() {
                       {processedResults?.length || 0} items
                     </span>
                   </div>
-                <div className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-md rounded-2xl sm:rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
                   <TabView 
                     results={processedResults}
                     setResults={setResults}
@@ -379,12 +368,12 @@ function App() {
               </div>
             )}
             {!results && !loading && !error && (
-                <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in">
+                <div className="flex flex-col items-center justify-center py-24 text-center">
                     <div className="relative mb-8 group">
-                      <div className="absolute inset-0 rounded-full blur-3xl opacity-30 group-hover:opacity-50 transition duration-700 bg-gradient-to-br from-purple-500/60 via-violet-600/60 to-indigo-600/60 dark:from-purple-700/40 dark:via-violet-700/40 dark:to-indigo-700/40"></div>
+                      <div className="absolute inset-0 rounded-full bg-slate-300/20 dark:bg-slate-600/20"></div>
                       <Logo className="w-28 h-28 relative z-10 drop-shadow-xl" />
                     </div>
-                    <h1 className="text-4xl sm:text-5xl font-extrabold bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-400 dark:via-purple-400 dark:to-indigo-400 leading-tight mb-4 drop-shadow-sm">
+                    <h1 className="text-4xl sm:text-5xl font-extrabold text-violet-600 dark:text-violet-400 leading-tight mb-4">
                         NEBULA
                     </h1>
                     <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium mb-6 max-w-lg">
@@ -410,7 +399,7 @@ function App() {
         </main>
       </div>
 
-      <footer className="relative z-10 mt-auto py-6 sm:py-8 px-4 sm:px-6 lg:px-8 border-t border-slate-200/80 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm">
+      <footer className="relative z-10 mt-auto py-6 sm:py-8 px-4 sm:px-6 lg:px-8 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Logo />

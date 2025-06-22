@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X as Close } from 'lucide-react';
 
 const AutocompleteInput = ({
   value,
@@ -141,6 +142,16 @@ const AutocompleteInput = ({
         }
         autoComplete="off"
       />
+      {inputText && (
+        <button
+          type="button"
+          onClick={() => { setInputText(''); onValueSelect(''); setSuggestions([]); }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 focus:outline-none"
+          aria-label="Clear input"
+        >
+          <Close className="w-4 h-4" />
+        </button>
+      )}
       {isDropdownVisible && suggestions.length > 0 && (
         <ul className="absolute z-20 w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1 text-left">
           {suggestions.map(suggestion => (

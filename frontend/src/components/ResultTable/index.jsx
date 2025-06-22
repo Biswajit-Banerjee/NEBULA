@@ -440,10 +440,10 @@ const ResultTable = ({
 
                           {/* Definition */}
                           <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-indigo-100 dark:border-slate-600 shadow-sm">
-                            <span className="text-slate-600 text-sm font-medium">
+                            <span className="text-slate-400 text-sm font-medium">
                               KEGG Definition
                             </span>
-                            <p className="mt-2 text-slate-700 font-medium">
+                            <p className="mt-2 text-slate-500 font-medium">
                               {reactionDetails[row.reaction] ||
                                 "No definition available"}
                             </p>
