@@ -21,7 +21,7 @@ start_backend() {
     # Set PYTHONPATH to recognize the app package
     export PYTHONPATH=$PYTHONPATH:$(pwd)
     # Start the FastAPI server
-    python3 -m uvicorn app.main:app --reload --port 8000 &
+    python3 -m uvicorn app.main:app --reload --port 8000 --host 0.0.0.0 &
     cd ..
 }
 

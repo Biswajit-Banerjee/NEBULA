@@ -1,5 +1,4 @@
 import requests
-import json
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd

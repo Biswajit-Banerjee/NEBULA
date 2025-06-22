@@ -5,8 +5,6 @@ import logging
 from pathlib import Path
 import re
 import requests
-from typing import Optional
-import os
 
 from app.core.viewer import MetabolicViewer
 

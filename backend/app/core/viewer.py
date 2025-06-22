@@ -5,7 +5,6 @@ import numpy as np
 from typing import Dict, Optional, List
 import tempfile
 import os
-import requests
 from pathlib import Path
 
 from app.utils.helpers import create_backtrack_df, parse_ec_list, add_compound_generation

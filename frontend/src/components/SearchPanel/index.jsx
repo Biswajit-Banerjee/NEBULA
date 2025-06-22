@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
-    Plus, X, Search as SearchIconLucide, ArrowRight, Eye, EyeOff, Download, Upload, 
-    Combine, Loader2, Layers, FlaskConical, Target, Sparkles 
+    Plus, X, Eye, EyeOff, Download, Upload, 
+    Loader2, Layers, FlaskConical, Target, Sparkles 
 } from 'lucide-react';
 
 import AutocompleteInput from './AutocompleteInput';

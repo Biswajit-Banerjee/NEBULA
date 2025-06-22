@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { 
-    ChevronDown, ChevronUp, Search as SearchIconLucide, Sparkles, 
-    FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap, BarChart3 
+    ChevronDown, ChevronUp, Sparkles, 
+    FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap 
 } from "lucide-react"; 
 
 import Logo from "./components/Logo"; 
