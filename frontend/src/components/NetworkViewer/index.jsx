@@ -1338,6 +1338,14 @@ const NetworkViewer3D = ({ results, height }) => {
     setIsLoading(false);
   };
   
+  // New: keep node fixed after dragging, mimicking 2D viewer behaviour
+  const handleNodeDragEnd = (node) => {
+    if (!node) return;
+    node.fx = node.x;
+    node.fy = node.y;
+    node.fz = node.z;
+  };
+  
   // Calculate node connections (degree)
   const calculateNodeConnections = (node) => {
     if (!graphData.links) return 0;
@@ -1649,6 +1657,7 @@ const NetworkViewer3D = ({ results, height }) => {
         width={isFullscreen ? window.innerWidth : undefined}
         height={isFullscreen ? window.innerHeight : undefined}
         onNodeClick={handleNodeClick}
+        onNodeDragEnd={handleNodeDragEnd}
         onEngineStop={() => {
           // Save node positions after layout stabilizes
           if (fgRef.current) {
