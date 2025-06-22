@@ -81,7 +81,7 @@ const FilterMenu = ({
   const primaryButtonGradient = GRADIENT_COLORS_PALETTE[2]
 
   return (
-    <div className="w-full sm:max-w-sm md:max-w-md bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
+    <div className="w-72 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
       <div className="p-4 sm:p-5"> {/* Reduced padding */}
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">

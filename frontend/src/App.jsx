@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { 
-    Filter, ChevronDown, ChevronUp, Search as SearchIconLucide, Sparkles, 
+    ChevronDown, ChevronUp, Search as SearchIconLucide, Sparkles, 
     FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap, BarChart3 
 } from "lucide-react"; 
 
 import Logo from "./components/Logo"; 
-import FilterMenu from "./components/FilterMenu";
 import TabView from "./components/TabView";
 import SearchPanel from "./components/SearchPanel";
 
@@ -35,7 +34,6 @@ function App() {
     { id: initialPairId, source: '', target: '', color: getSolidColorForPairByIndexApp(0), visible: true, sourceDisplay:'', targetDisplay:'' }
   ]);
 
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [combinedMode, setCombinedMode] = useState(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
@@ -310,23 +308,9 @@ function App() {
                     {processedResults?.length || 0} items
                   </span>
                 </div>
-                <button onClick={() => setIsFilterOpen(!isFilterOpen)}
-                    className={`flex items-center gap-2 transition-colors
-                                ${isFilterOpen
-                                    ? `bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90 ${textButtonClassesApp}`
-                                    : `bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 ${textButtonClassesApp}`
-                                }`}
-                >
-                    <Filter className="w-4 h-4" />
-                    <span>Filter</span>
-                </button>
-            </div>
-            {isFilterOpen && (
-              // <div className="mb-6 p-4 sm:p-6 bg-white dark:bg-slate-800/80 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/60">
-              <div className="mb-6 flex justify-center items-start"> 
-                <FilterMenu results={processedResults} selectedRows={selectedRows} setSelectedRows={setSelectedRows} onClose={() => setIsFilterOpen(false)}/>
+                {/* Filter button moved into ResultTable */}
               </div>
-            )}
+            {/* Filter menu now shows inside ResultTable dropdown */}
             <div className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-md rounded-2xl sm:rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
               <TabView 
                 results={processedResults}

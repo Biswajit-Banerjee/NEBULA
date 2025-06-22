@@ -12,6 +12,7 @@ import {
 import CompoundTooltip from "../CompoundTooltip";
 import ReactionTooltip from "../ReactionTooltip";
 import ECDetails from "../ECDetails";
+import FilterMenu from "../FilterMenu";
 
 const ResultTable = ({
   results,
@@ -38,6 +39,7 @@ const ResultTable = ({
   const [reactionDetails, setReactionDetails] = useState({});
   const [reactionImages, setReactionImages] = useState({});
   const [loadingDetails, setLoadingDetails] = useState({});
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   // Use either external or internal state
   const selectedRows = externalSelectedRows || internalSelectedRows;
@@ -281,14 +283,37 @@ const ResultTable = ({
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
         <SelectionActions />
-        <div className="relative">
-          <button
-            onClick={() => setShowColumnManager(!showColumnManager)}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-600 hover:text-emerald-700"
-          >
-            <Settings2 className="w-5 h-5" />
-          </button>
-          {showColumnManager && <ColumnManager />}
+        <div className="flex items-center gap-2">
+          {/* Filter Button & Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-600 hover:text-blue-700"
+            >
+              <Filter className="w-5 h-5" />
+            </button>
+            {showFilterMenu && (
+              <div className="absolute right-0 top-12 z-50 animate-fade-in">
+                <FilterMenu
+                  results={filteredResults}
+                  selectedRows={selectedRows}
+                  setSelectedRows={setSelectedRows}
+                  onClose={() => setShowFilterMenu(false)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Column Visibility Button & Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowColumnManager(!showColumnManager)}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-600 hover:text-emerald-700"
+            >
+              <Settings2 className="w-5 h-5" />
+            </button>
+            {showColumnManager && <ColumnManager />}
+          </div>
         </div>
       </div>
 
