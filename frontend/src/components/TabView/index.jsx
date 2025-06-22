@@ -4,7 +4,7 @@ import ResultTable from '../ResultTable';
 import NetworkViewerContainer from '../NetworkViewer';
 import NetworkViewer2D from '../NetworkViewer2D';
 
-const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode }) => {
+const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode, network2dRef, network3dRef }) => {
   const [activeTab, setActiveTab] = useState('table');
   const [filteredResults, setFilteredResults] = useState(results);
 
@@ -12,6 +12,14 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
   useEffect(() => {
     setFilteredResults(results);
   }, [results]);
+
+  // Ensure viewers recalculate layout when they become visible
+  useEffect(() => {
+    if (activeTab === 'network2d' || activeTab === 'network3d') {
+      // Trigger global resize so each viewer's handler can update canvas/renderer sizes
+      window.dispatchEvent(new Event('resize'));
+    }
+  }, [activeTab]);
 
   return (
     <div className="flex flex-col">
@@ -71,6 +79,23 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
 
       {/* Tab Content */}
       <div className="tab-content">
+        {/* 3D Viewer – always mounted to preserve state */}
+        <div style={{ display: activeTab === 'network3d' ? 'block' : 'none' }}>
+          <NetworkViewerContainer 
+            ref={network3dRef}
+            results={filteredResults} 
+            height="600px" 
+          />
+        </div>
+
+        {/* 2D Viewer – always mounted to preserve state */}
+        <div style={{ display: activeTab === 'network2d' ? 'block' : 'none' }}>
+          <NetworkViewer2D
+            ref={network2dRef}
+            results={filteredResults}
+            height="600px"
+          />
+        </div>
         {activeTab === 'table' && (
           <ResultTable
             results={results}
@@ -79,18 +104,6 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
             setFilteredResults={setFilteredResults}
             selectedRows={selectedRows}
             setSelectedRows={setSelectedRows}
-          />
-        )}
-        {activeTab === 'network3d' && (
-          <NetworkViewerContainer 
-            results={filteredResults} 
-            height="600px" 
-          />
-        )}
-        {activeTab === 'network2d' && (
-          <NetworkViewer2D
-            results={filteredResults}
-            height="600px"
           />
         )}
       </div>

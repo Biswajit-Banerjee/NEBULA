@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import GraphRenderer from "./GraphRendererCanvas";
 import GenerationControls from "./GenerationControls";
 import Legend from "./Legend";
@@ -8,7 +8,7 @@ import useFullscreen from "./hooks/useFullscreen";
 import PhysicsControls from "./PhysicsControls";
 import HelpOverlay from "./HelpOverlay";
 
-const NetworkViewer2D = ({ results, height = "600px" }) => {
+const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -135,6 +135,12 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
     return () => window.removeEventListener('keydown', handler);
   }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, setColorByGeneration, setShowPhysics, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
 
+  // Expose imperative handlers for exporting/importing positions
+  useImperativeHandle(ref, () => ({
+    getNodePositions: () => graphRendererRef.current?.getNodePositions?.(),
+    setNodePositions: (positions) => graphRendererRef.current?.setNodePositions?.(positions),
+  }));
+
   return (
     <div className="relative rounded-xl border border-gray-200 shadow" ref={containerRef}>
       {/* Main container */}
@@ -202,6 +208,6 @@ const NetworkViewer2D = ({ results, height = "600px" }) => {
       </div>
     </div>
   );
-};
+});
 
 export default NetworkViewer2D;

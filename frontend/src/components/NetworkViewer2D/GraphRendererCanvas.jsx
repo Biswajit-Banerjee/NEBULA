@@ -641,6 +641,36 @@ const GraphRendererCanvas = forwardRef(
         simulationRef.current?.alpha(0.8).restart();
       },
       isLocked: nodesLocked,
+      /**
+       * Return a map of nodeId -> { x, y } capturing current positions.
+       */
+      getNodePositions: () => {
+        const nodes = simulationRef.current?.nodes?.() || [];
+        const positions = {};
+        nodes.forEach((n) => {
+          positions[n.id] = { x: n.x, y: n.y };
+        });
+        return positions;
+      },
+      /**
+       * Restore node positions from a previously captured map.
+       * The map should have the shape { nodeId: { x, y } }
+       */
+      setNodePositions: (positions) => {
+        if (!positions) return;
+        const nodes = simulationRef.current?.nodes?.() || [];
+        nodes.forEach((n) => {
+          const pos = positions[n.id];
+          if (pos) {
+            n.x = pos.x;
+            n.y = pos.y;
+            n.fx = pos.x;
+            n.fy = pos.y;
+          }
+        });
+        // Redraw canvas with updated positions
+        draw(nodes);
+      },
     }));
 
     /* ------------------------------------------------------------------ */

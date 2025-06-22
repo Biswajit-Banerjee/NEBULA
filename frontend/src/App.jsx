@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { 
     ChevronDown, ChevronUp, Sparkles, 
     FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap, 
@@ -39,6 +39,14 @@ function App() {
   const [combinedMode, setCombinedMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Refs to access imperative APIs of network viewers
+  const network2dRef = useRef(null);
+  const network3dRef = useRef(null);
+
+  // Pending positions loaded from imported session
+  const [pendingPositions2D, setPendingPositions2D] = useState(null);
+  const [pendingPositions3D, setPendingPositions3D] = useState(null);
+
   const ensureIdAndColorForPair = useCallback((pair, index) => {
     return {
       ...pair,
@@ -71,34 +79,43 @@ function App() {
   }, []);
 
 
-  const handleMultiSearch = async (pairsFromPanel, importedData = null) => {
+  const handleMultiSearch = async (pairsFromPanel, importedSessionData = null) => {
     setLoading(true);
     setError(null);
     setSelectedRows(new Set());
     
     const processedPairsInput = pairsFromPanel.map((p, idx) => ensureIdAndColorForPair(p, idx));
     
-    if (!importedData) {
+    if (!importedSessionData) {
         handleSetSearchPairs(processedPairsInput);
     }
 
-    if (importedData) {
+    if (importedSessionData) {
       try {
+        // importedData expected to include results, combinedMode, positions2D, positions3D
+        const importedResults = importedSessionData.results || [];
         const updatedPairsWithResults = processedPairsInput.map(pair => ({
           ...pair,
-          hasResults: importedData.some(res => {
+          hasResults: importedResults.some(res => {
             const resPairSource = res.pairSource === 'any' ? '' : (res.pairSource || '');
             const pairSource = pair.source || '';
             return res.pairTarget === pair.target && resPairSource === pairSource;
           }),
-          resultCount: importedData.filter(res => {
+          resultCount: importedResults.filter(res => {
             const resPairSource = res.pairSource === 'any' ? '' : (res.pairSource || '');
             const pairSource = pair.source || '';
             return res.pairTarget === pair.target && resPairSource === pairSource;
           }).length,
         }));
         handleSetSearchPairs(updatedPairsWithResults);
-        setResults(importedData);
+        if (importedSessionData.combinedMode !== undefined) {
+          setCombinedMode(importedSessionData.combinedMode);
+        }
+        setResults(importedResults);
+
+        // Store positions to be applied after viewers mount
+        setPendingPositions2D(importedSessionData.positions2D || null);
+        setPendingPositions3D(importedSessionData.positions3D || null);
       } catch (e) {
         setError(e.message || "Error processing imported data");
       } finally {
@@ -205,6 +222,55 @@ function App() {
     return combined;
   }, [filteredResults, combinedMode]);
 
+  /* ------------------------------------------------------------------ */
+  /* Apply imported positions once results are rendered                 */
+  /* ------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (pendingPositions2D && network2dRef.current) {
+      network2dRef.current.setNodePositions(pendingPositions2D);
+      setPendingPositions2D(null);
+    }
+  }, [pendingPositions2D, network2dRef, results]);
+
+  useEffect(() => {
+    if (pendingPositions3D && network3dRef.current) {
+      network3dRef.current.setNodePositions(pendingPositions3D);
+      setPendingPositions3D(null);
+    }
+  }, [pendingPositions3D, network3dRef, results]);
+
+  /* ------------------------------------------------------------------ */
+  /* Session Export – include node positions                             */
+  /* ------------------------------------------------------------------ */
+
+  const handleExportSession = useCallback(() => {
+    try {
+      const positions2D = network2dRef.current?.getNodePositions?.() || {};
+      const positions3D = network3dRef.current?.getNodePositions?.() || {};
+
+      const sessionData = {
+        searchPairs: searchPairs.map(({ sourceDisplay, targetDisplay, ...rest }) => rest),
+        results: results || [],
+        combinedMode,
+        positions2D,
+        positions3D,
+      };
+
+      const sessionBlob = new Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
+      const sessionUrl = URL.createObjectURL(sessionBlob);
+      const link = document.createElement('a');
+      link.href = sessionUrl;
+      link.download = `nebula-session-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(sessionUrl);
+    } catch (error) {
+      console.error('Error exporting session data:', error);
+      alert('Failed to export session data.');
+    }
+  }, [searchPairs, results, combinedMode]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-900 text-slate-800 dark:text-slate-200 flex flex-col relative overflow-x-hidden">
@@ -228,6 +294,7 @@ function App() {
                   toggleCombinedMode={toggleCombinedMode}
                   results={results}
                   onCollapseSidebar={() => setSidebarCollapsed(true)}
+                  onExportSession={handleExportSession}
               />
             </div>
           ) : (
@@ -305,6 +372,8 @@ function App() {
                     selectedRows={selectedRows} 
                     setSelectedRows={setSelectedRows} 
                     combinedMode={combinedMode}
+                    network2dRef={network2dRef}
+                    network3dRef={network3dRef}
                   />
                 </div>
               </div>

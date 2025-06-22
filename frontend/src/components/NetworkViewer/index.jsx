@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import styled from 'styled-components';
 import * as d3 from 'd3';
+import { forwardRef as forwardRefReact, useRef as useRefReact } from 'react';
 
 // =============================================================================
 // Styled Components
@@ -448,7 +449,7 @@ const NodeInfoPre = styled.pre`
 // Main Component
 // =============================================================================
 
-const NetworkViewer3D = ({ results, height }) => {
+const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   // State variables
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [currentGeneration, setCurrentGeneration] = useState(0);
@@ -1081,8 +1082,19 @@ const NetworkViewer3D = ({ results, height }) => {
   useEffect(() => {
     const handleResize = () => {
       if (isFullscreen && fgRef.current) {
-        fgRef.current.width(window.innerWidth);
-        fgRef.current.height(window.innerHeight);
+        const refObj = fgRef.current;
+        // Some versions expose width/height as setter functions, others as props
+        if (typeof refObj.width === 'function') {
+          refObj.width(window.innerWidth);
+        } else {
+          refObj.width = window.innerWidth;
+        }
+
+        if (typeof refObj.height === 'function') {
+          refObj.height(window.innerHeight);
+        } else {
+          refObj.height = window.innerHeight;
+        }
       }
     };
 
@@ -1587,6 +1599,41 @@ const NetworkViewer3D = ({ results, height }) => {
     );
   };
 
+  // Expose imperative functions for saving/restoring node positions
+  useImperativeHandle(ref, () => ({
+    getNodePositions: () => {
+      if (!fgRef.current) return {};
+      const dataGetter = fgRef.current.graphData;
+      const data = typeof dataGetter === 'function' ? dataGetter() : dataGetter;
+      const nodesArr = (data && data.nodes) ? data.nodes : [];
+      const positions = {};
+      nodesArr.forEach((n) => {
+        positions[n.id] = { x: n.x, y: n.y, z: n.z };
+      });
+      return positions;
+    },
+    setNodePositions: (positions) => {
+      if (!positions || !fgRef.current) return;
+      const dataGetter = fgRef.current.graphData;
+      const data = typeof dataGetter === 'function' ? dataGetter() : dataGetter;
+      const nodesArr = (data && data.nodes) ? data.nodes : [];
+      nodesArr.forEach((n) => {
+        const pos = positions[n.id];
+        if (pos) {
+          n.x = pos.x;
+          n.y = pos.y;
+          n.z = pos.z;
+          n.fx = pos.x;
+          n.fy = pos.y;
+          n.fz = pos.z;
+        }
+      });
+      if (typeof fgRef.current.refresh === 'function') {
+        fgRef.current.refresh();
+      }
+    },
+  }));
+
   return (
     <Container ref={containerRef} style={{ height }}>
       <TopLeftButtonGroup>
@@ -1731,17 +1778,25 @@ const NetworkViewer3D = ({ results, height }) => {
       </LoadingOverlay>
     </Container>
   );
-};
+});
 
 // =============================================================================
 // Container Component
 // =============================================================================
 
-const NetworkViewerContainer = ({ results, height }) => {
+const NetworkViewerContainer = forwardRefReact(({ results, height }, ref) => {
+  const innerRef = useRefReact();
+
+  // Expose imperative API by delegating to the inner 3D viewer
+  useImperativeHandle(ref, () => ({
+    getNodePositions: () => innerRef.current?.getNodePositions?.(),
+    setNodePositions: (positions) => innerRef.current?.setNodePositions?.(positions),
+  }));
+
   return (
     <div style={{ width: '100%', height }}>
       {results && results.length > 0 ? (
-        <NetworkViewer3D results={results} height={height} />
+        <NetworkViewer3D ref={innerRef} results={results} height={height} />
       ) : (
         <div style={{ 
           display: 'flex', 
@@ -1757,6 +1812,6 @@ const NetworkViewerContainer = ({ results, height }) => {
       )}
     </div>
   );
-};
+});
 
 export default NetworkViewerContainer;

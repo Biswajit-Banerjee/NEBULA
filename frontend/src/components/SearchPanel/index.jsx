@@ -125,7 +125,8 @@ const SearchPanel = ({
   combinedMode,
   toggleCombinedMode,
   results,
-  onCollapseSidebar
+  onCollapseSidebar,
+  onExportSession,
 }) => {
   const [compoundData, setCompoundData] = useState([]);
 
@@ -210,7 +211,7 @@ const SearchPanel = ({
               targetDisplay: targetEntry ? targetEntry.name : (p.target || ''),
             };
           });
-          onSearch(restoredPairsWithDisplay, sessionData.results || null); 
+          onSearch(restoredPairsWithDisplay, sessionData); 
         } else {
           throw new Error('Invalid session file.');
         }
@@ -312,7 +313,7 @@ const SearchPanel = ({
               
               {canExport && (
                 <button 
-                    onClick={handleExportSessionInternal}
+                    onClick={onExportSession ? onExportSession : handleExportSessionInternal}
                     disabled={isLoading}
                     className={`flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-700/40 dark:to-teal-700/40 text-emerald-700 dark:text-emerald-300 hover:from-emerald-200 hover:to-teal-200 dark:hover:from-emerald-600/50 dark:hover:to-teal-600/50 ${textButtonClasses} text-xs`}
                 >

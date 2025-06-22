@@ -16,7 +16,7 @@ const PhysicsControls = ({
       </div>
 
       <div className="mb-3">
-        <label className="text-xs text-gray-600">Edge relaxation</label>
+        <label className="textr-xs text-gray-600">Edge relaxation</label>
         <input
           type="range"
           min="50"
