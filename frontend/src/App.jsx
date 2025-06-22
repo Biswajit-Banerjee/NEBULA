@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { 
     ChevronDown, ChevronUp, Sparkles, 
-    FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap 
+    FlaskConical as FlaskConicalLucide, Hexagon as HexagonLucide, Zap, 
+    ChevronRight
 } from "lucide-react"; 
 
 import Logo from "./components/Logo"; 
@@ -36,7 +37,7 @@ function App() {
 
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [combinedMode, setCombinedMode] = useState(false);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const ensureIdAndColorForPair = useCallback((pair, index) => {
     return {
@@ -212,138 +213,126 @@ function App() {
         <div className="absolute -bottom-1/2 -left-1/2 w-full h-full bg-gradient-to-tr from-blue-200/30 to-cyan-200/30 dark:from-blue-800/30 dark:to-cyan-800/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
 
-      <header className={`sticky top-0 z-40 transition-all duration-300 ease-in-out`}>
-        <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-700/50 shadow-sm">
-            <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between items-center h-16">
-                    <div className="flex items-center gap-3">
-                        <Logo /> 
-                        <div>
-                            <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 dark:from-violet-400 dark:to-purple-400 bg-clip-text text-transparent">
-                                NEBULA
-                            </h1>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:block"> 
-                                Metabolic Network Explorer
-                            </p>
-                        </div>
-                    </div>
-                    <button
-                        onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
-                        className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-600/50 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-all duration-300 shadow-sm hover:shadow-md border border-slate-200/50 dark:border-slate-600/50"
-                        title={isHeaderCollapsed ? "Expand Search Panel" : "Collapse Search Panel"}
-                    >
-                        {isHeaderCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                    </button>
-                </div>
-            </div>
-
-            {/* Collapsible Content - Max height fix */}
-            <div
-              className={`transition-all duration-500 ease-in-out overflow-hidden ${
-                isHeaderCollapsed ? 'max-h-0 opacity-0 invisible' : 'max-h-[85vh] opacity-100 visible' // Using 85vh, adjust as needed
-              }`}
-            >
-              <div className="pt-4 pb-6 sm:pb-8 px-4 sm:px-6 lg:px-8">
-                <div className="max-w-7xl mx-auto">
-                  {/* Removed "Pathway Discovery Engine" title and Stats Section for minimalism */}
-                  <div className="flex justify-center">
-                    <SearchPanel
-                        onSearch={handleMultiSearch}
-                        isLoading={loading}
-                        onToggleVisibility={handleToggleVisibility}
-                        searchPairs={searchPairs}
-                        setSearchPairs={handleSetSearchPairs}
-                        combinedMode={combinedMode}
-                        toggleCombinedMode={toggleCombinedMode}
-                        results={results}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-        </div>
-      </header>
-
-      <main className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 z-10 relative">
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-24 animate-fade-in">
-            <div className="relative mb-8">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/25">
-                <HexagonLucide className="w-10 h-10 text-white animate-[spin_3s_linear_infinite]" />
-              </div>
-              <div className="absolute inset-0 rounded-full border-4 border-violet-200/80 dark:border-violet-600/50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite] opacity-70"></div>
-            </div>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Analyzing Pathways</h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">Processing your metabolic network queries...</p>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 bg-violet-500 rounded-full animate-bounce"></div>
-              <div className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-              <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-            </div>
-          </div>
-        )}
-        {error && (
-          <div className="max-w-2xl mx-auto my-12 animate-fade-in">
-            <div className="bg-gradient-to-r from-red-50/80 to-rose-50/80 dark:from-red-800/30 dark:to-rose-800/30 border-2 border-red-200 dark:border-red-600/40 rounded-2xl p-8 text-center shadow-xl">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-500/30 mb-4">
-                <Zap className="w-8 h-8 text-red-600 dark:text-red-400" />
-              </div>
-              <h3 className="text-xl font-bold text-red-700 dark:text-red-300 mb-2">Analysis Failed</h3>
-              <p className="text-red-600 dark:text-red-400 mb-6">{error}</p>
-              <button 
-                onClick={() => setError(null)}
-                className={`bg-red-600 text-white hover:bg-red-700 font-medium ${textButtonClassesApp}`} // Consistent button size
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-        {results && !loading && !error && (
-          <div className="animate-fade-in">
-             <div className="flex items-center justify-between mb-6 sm:mb-8">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">Results</h2>
-                  <span className="text-sm sm:text-base font-normal text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-3 py-1 rounded-full">
-                    {processedResults?.length || 0} items
-                  </span>
-                </div>
-                {/* Filter button moved into ResultTable */}
-              </div>
-            {/* Filter menu now shows inside ResultTable dropdown */}
-            <div className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-md rounded-2xl sm:rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
-              <TabView 
-                results={processedResults}
-                setResults={setResults}
-                selectedRows={selectedRows} 
-                setSelectedRows={setSelectedRows} 
-                combinedMode={combinedMode}
+      <div className="flex flex-1 relative z-10">
+        {/* Left Sidebar for Search Panel */}
+        <aside className={`${sidebarCollapsed ? 'w-20' : 'w-80 xl:w-96'} bg-white/80 dark:bg-slate-800/70 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-700/50 shadow-lg transition-all duration-300 ease-in-out fixed lg:static inset-y-0 left-0 z-30 lg:z-auto overflow-hidden`}>
+          {!sidebarCollapsed ? (
+            <div className="p-4 lg:p-6 w-full h-full overflow-y-auto flex flex-col">
+              <SearchPanel
+                  onSearch={handleMultiSearch}
+                  isLoading={loading}
+                  onToggleVisibility={handleToggleVisibility}
+                  searchPairs={searchPairs}
+                  setSearchPairs={handleSetSearchPairs}
+                  combinedMode={combinedMode}
+                  toggleCombinedMode={toggleCombinedMode}
+                  results={results}
+                  onCollapseSidebar={() => setSidebarCollapsed(true)}
               />
             </div>
-          </div>
-        )}
-        {!results && !loading && !error && (
-            <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in">
-                <div className="relative mb-8">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center shadow-lg">
-                    <FlaskConicalLucide className="w-12 h-12 text-slate-400 dark:text-slate-500" />
-                </div>
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center shadow-md animate-pulse">
-                    <Sparkles className="w-4 h-4 text-white" />
-                </div>
-                </div>
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">Ready to Explore</h3>
-                <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md">
-                Configure your search parameters in the panel above and discover metabolic pathways.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-slate-500 dark:text-slate-400">
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 bg-violet-500 rounded-full"></div>Multi-target search</div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div>Pathway analysis</div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>Interactive views</div>
-                </div>
+          ) : (
+            /* Collapsed State */
+            <div className="flex flex-col items-center justify-start h-full pt-6 px-2 space-y-6">
+              <button
+                onClick={() => setSidebarCollapsed(false)}
+                className="p-2.5 w-10 h-10 flex items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-600/30 text-violet-600 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-600/40 transition-all duration-200 shadow-sm hover:shadow-md"
+                title="Expand Search Panel"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {/* <div className="transform -rotate-90 origin-center text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap text-center">
+                Search Panel
+              </div> */}
             </div>
-        )}
-      </main>
+          )}
+        </aside>
+
+        {/* Main Content */}
+        <main className={`flex-1 min-w-0 transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-0' : ''} px-4 sm:px-6 lg:px-8 py-8`}>
+          <div className="max-w-full mx-auto">
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-24 animate-fade-in">
+                <div className="relative mb-8">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/25">
+                    <HexagonLucide className="w-10 h-10 text-white animate-[spin_3s_linear_infinite]" />
+                  </div>
+                  <div className="absolute inset-0 rounded-full border-4 border-violet-200/80 dark:border-violet-600/50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite] opacity-70"></div>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Analyzing Pathways</h3>
+                <p className="text-slate-600 dark:text-slate-400 mb-6">Processing your metabolic network queries...</p>
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 bg-violet-500 rounded-full animate-bounce"></div>
+                  <div className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="max-w-2xl mx-auto my-12 animate-fade-in">
+                <div className="bg-gradient-to-r from-red-50/80 to-rose-50/80 dark:from-red-800/30 dark:to-rose-800/30 border-2 border-red-200 dark:border-red-600/40 rounded-2xl p-8 text-center shadow-xl">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-500/30 mb-4">
+                    <Zap className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-red-700 dark:text-red-300 mb-2">Analysis Failed</h3>
+                  <p className="text-red-600 dark:text-red-400 mb-6">{error}</p>
+                  <button 
+                    onClick={() => setError(null)}
+                    className={`bg-red-600 text-white hover:bg-red-700 font-medium ${textButtonClassesApp}`}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+            {results && !loading && !error && (
+              <div className="animate-fade-in">
+                 <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="flex items-center gap-3">
+                      <Logo className="w-10 h-10" />
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 dark:from-violet-400 dark:to-purple-400 bg-clip-text text-transparent">NEBULA</h2>
+                        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Metabolic Network Explorer</p>
+                      </div>
+                    </div>
+                    <span className="text-sm sm:text-base font-normal text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 px-3 py-1 rounded-full">
+                      {processedResults?.length || 0} items
+                    </span>
+                  </div>
+                <div className="bg-white/80 dark:bg-slate-800/70 backdrop-blur-md rounded-2xl sm:rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
+                  <TabView 
+                    results={processedResults}
+                    setResults={setResults}
+                    selectedRows={selectedRows} 
+                    setSelectedRows={setSelectedRows} 
+                    combinedMode={combinedMode}
+                  />
+                </div>
+              </div>
+            )}
+            {!results && !loading && !error && (
+                <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in">
+                    <div className="relative mb-8">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center shadow-lg">
+                        <FlaskConicalLucide className="w-12 h-12 text-slate-400 dark:text-slate-500" />
+                    </div>
+                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center shadow-md animate-pulse">
+                        <Sparkles className="w-4 h-4 text-white" />
+                    </div>
+                    </div>
+                    <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">Ready to Explore</h3>
+                    <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md">
+                    Configure your search parameters in the panel on the left and discover metabolic pathways.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-2"><div className="w-2 h-2 bg-violet-500 rounded-full"></div>Multi-target search</div>
+                        <div className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div>Pathway analysis</div>
+                        <div className="flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>Interactive views</div>
+                    </div>
+                </div>
+            )}
+          </div>
+        </main>
+      </div>
 
       <footer className="relative z-10 mt-auto py-6 sm:py-8 px-4 sm:px-6 lg:px-8 border-t border-slate-200/80 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">

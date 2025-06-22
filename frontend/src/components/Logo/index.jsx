@@ -1,6 +1,6 @@
-export default function Logo() {
+export default function Logo({ className = "w-16 h-16" }) {
     return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" className="w-16 h-16">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" className={className}>
         <defs>
           <filter id="glow1" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
