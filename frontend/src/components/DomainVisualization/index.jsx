@@ -34,8 +34,9 @@ const DomainVisualization = ({
       });
     });
 
-    min = Math.max(0, min - 10);
-    max = max + 10;
+    // the real sequence length.
+    min = Math.max(0, min);
+    // max already represents the last residue position.
 
     return { min, max };
   };
@@ -64,7 +65,7 @@ const DomainVisualization = ({
 
   return (
     <div className="mt-2" ref={containerRef}>
-      <div className="relative h-32 bg-gray-100 rounded p-4">
+      <div className="relative h-24 bg-gray-100 rounded p-4">
         {/* Base protein line */}
         <div className="absolute top-8 left-4 h-1 bg-gray-300" style={{ width: 'calc(100% - 2rem)' }} />
 

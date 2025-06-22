@@ -14,10 +14,33 @@ import {
 import DomainVisualization from "../DomainVisualization";
 import { useMediaQuery } from 'react-responsive';
 
-// This function would be implemented in a real app with html2canvas
-const downloadAsImage = (ref, filename) => {
-  console.log(`Downloading ${filename} from ref`, ref);
-  // Implementation would use html2canvas in a real app
+// Download the referenced element as a high-resolution PNG using html2canvas.
+// Dynamically imports the library so the initial bundle stays lean.
+const downloadAsImage = async (ref, filename) => {
+  try {
+    if (!ref?.current) return;
+
+    // Lazy-load to avoid adding html2canvas into the first paint bundle.
+    const html2canvas = (await import("html2canvas")).default;
+
+    const canvas = await html2canvas(ref.current, {
+      scale: 2,           // increase resolution
+      useCORS: true,      // allow cross-origin images where possible
+      backgroundColor: null, // preserve transparent backgrounds
+    });
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  } catch (err) {
+    console.error("Failed to download image", err);
+  }
 };
 
 const DomainBadge = ({ type }) => {
@@ -66,7 +89,8 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
 
   return (
     <div 
-      className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md text-sm h-full flex flex-col
+      id={`domain-cell-${domain.domain_id}-${range.start}-${range.end}`}
+      className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md text-base min-w-[220px] sm:min-w-[260px] flex flex-col cursor-pointer
         ${isSelected ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
       onClick={() => onClick && onClick(domain, range)}
     >
@@ -158,7 +182,7 @@ const DomainGrid = ({
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+    <div className="flex gap-3 overflow-x-auto pt-2 pb-4">
       {sortedRanges.map((item, index) => (
         <DomainCell
           key={`domain-${item.domain.domain_id}-${item.range.start}-${index}`}
@@ -176,9 +200,14 @@ const DomainGrid = ({
 const ProteinStats = ({ proteinData }) => {
   if (!proteinData) return null;
   
+  const lengthVal = proteinData.sequence?.length || (() => {
+    const ends = (proteinData.domains || []).flatMap(d => d.ranges?.map(r => r.end) || []);
+    return ends.length ? Math.max(...ends) : "N/A";
+  })();
+
   const stats = [
     { label: "Accession", value: proteinData.primary_accession },
-    { label: "Length", value: proteinData.sequence?.length || "N/A" },
+    { label: "Length", value: lengthVal },
     { label: "Features", value: proteinData.features?.length || 0 },
     { label: "Domains", value: proteinData.domains?.length || 0 }
   ];
@@ -298,114 +327,37 @@ const VisualizationControls = ({ scale, setScale, onReset }) => {
 
 const DomainDetailPanel = ({ domain, range, proteinData, onClose }) => {
   if (!domain || !range || !proteinData) return null;
-  
-  const hierarchy = domain.f_id?.split(".") || [];
-  const bindingSites = proteinData.features?.filter(
-    feature => feature.location.start >= range.start && feature.location.end <= range.end
-  ) || [];
-  
+
+  const bindingSites = (proteinData.features || []).filter(
+    (f) => f.location.start >= range.start && f.location.end <= range.end
+  );
+
   return (
-    <div className="bg-white border rounded-lg p-5 shadow-lg">
-      <div className="flex justify-between items-center mb-4 border-b pb-3">
-        <h3 className="text-lg font-semibold text-gray-800">Domain Details</h3>
-        <button 
-          onClick={onClose}
-          className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-      
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-gray-50 p-3 rounded">
-            <div className="text-gray-500 text-sm mb-1">Domain ID</div>
-            <div className="font-medium">{domain.domain_id}</div>
-          </div>
-          <div className="bg-gray-50 p-3 rounded">
-            <div className="text-gray-500 text-sm mb-1">Range</div>
-            <div className="font-medium">{range.start}-{range.end}</div>
-            <div className="text-xs text-gray-500 mt-1">({range.end - range.start + 1} amino acids)</div>
-          </div>
-        </div>
-        
-        <div>
-          <h4 className="font-medium mb-3 text-gray-800">Hierarchy Classification</h4>
-          <div className="grid grid-cols-[1fr,2fr] gap-3 text-sm bg-gray-50 p-3 rounded">
-            <div className="text-gray-600 font-medium">Architecture:</div>
-            <div>{hierarchy[0] || "N/A"}</div>
-            
-            <div className="text-gray-600 font-medium">X-group:</div>
-            <div>{hierarchy[1] || "N/A"}</div>
-            
-            <div className="text-gray-600 font-medium">H-group:</div>
-            <div>{hierarchy[2] || "N/A"}</div>
-            
-            <div className="text-gray-600 font-medium">T-group:</div>
-            <div>{hierarchy[3] || "N/A"}</div>
-            
-            <div className="text-gray-600 font-medium">F-group:</div>
-            <div>{hierarchy[4] || "N/A"}</div>
-          </div>
-        </div>
-        
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="font-medium text-gray-800">Binding Sites</h4>
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-              {bindingSites.length} found
-            </span>
-          </div>
-          
-          {bindingSites.length > 0 ? (
-            <div className="border rounded overflow-hidden">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left border-b text-sm font-medium text-gray-700">Position</th>
-                    <th className="px-4 py-2 text-left border-b text-sm font-medium text-gray-700">Type</th>
-                    <th className="px-4 py-2 text-left border-b text-sm font-medium text-gray-700">Description</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {bindingSites.map((site, index) => (
-                    <tr key={`site-${index}`} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm">{site.location.start}</td>
-                      <td className="px-4 py-2 text-sm">{site.type || "N/A"}</td>
-                      <td className="px-4 py-2 text-sm max-w-xs truncate" title={site.description}>
-                        {site.description || "No description available"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-gray-500 text-sm bg-gray-50 p-4 rounded text-center">
-              No binding sites detected in this domain range
-            </div>
-          )}
-        </div>
-        
-        <div className="pt-3 border-t flex justify-between items-center">
-          <a
-            href={`http://prodata.swmed.edu/ecod/af2_pdb/domain/${proteinData.primary_accession}_F1_${domain.domain_id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline text-sm flex items-center gap-2 hover:bg-blue-50 px-3 py-1.5 rounded transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" />
-            View in ECOD Database
-          </a>
-          
-          <button
-            onClick={onClose}
-            className="text-gray-600 hover:text-gray-800 text-sm px-3 py-1.5 hover:bg-gray-100 rounded transition-colors"
-          >
-            Close details
-          </button>
+    <div className="bg-white border rounded-lg shadow-sm mt-2 p-3 max-h-96 overflow-y-auto">
+      <div className="flex justify-between items-center mb-2">
+        <h4 className="font-medium text-gray-800 text-sm">Domain Details</h4>
+        <div className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+          {bindingSites.length}
         </div>
       </div>
+
+      {bindingSites.length === 0 ? (
+        <div className="text-gray-500 text-xs text-center py-4">No binding sites detected.</div>
+      ) : (
+        <ul className="space-y-1 text-xs max-h-[8rem] overflow-y-auto pr-1">
+          {bindingSites.map((site, idx) => (
+            <li key={`site-${idx}`} className="flex justify-between gap-2 p-1 hover:bg-gray-50 rounded">
+              <span className="font-medium">{site.location.start}</span>
+              <span className="text-gray-600 truncate flex-1">{site.type || "N/A"}</span>
+              {site.description && (
+                <span className="text-gray-400 truncate max-w-[120px]" title={site.description}>
+                  {site.description}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };
@@ -424,6 +376,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
   const viewerRef = useRef(null);
   const containerRef = useRef(null);
   const isSmallScreen = useMediaQuery({ maxWidth: 768 });
+  const domainScrollToRef = useRef(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -457,13 +410,27 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
     if (data && selectedId) {
       const selected = data.find((item) => item.uniprot_kb_id === selectedId);
       setProteinData(selected);
-      
-      // Reset domain selection when protein changes
-      setSelectedDomain(null);
-      setSelectedRange(null);
-      setShowDomainDetails(false);
+
+      // Automatically select the first domain (and its first range) if available
+      if (selected?.domains?.length) {
+        const firstDomain = selected.domains[0];
+        const firstRange = firstDomain.ranges?.[0] || null;
+        setSelectedDomain(firstDomain);
+        setSelectedRange(firstRange);
+        setShowDomainDetails(true);
+      }
     }
   }, [data, selectedId]);
+
+  // Auto-scroll to the selected domain card when it changes
+  useEffect(() => {
+    if (selectedDomain && selectedRange) {
+      const el = document.getElementById(`domain-cell-${selectedDomain.domain_id}-${selectedRange.start}-${selectedRange.end}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'center' });
+      }
+    }
+  }, [selectedDomain, selectedRange]);
 
   const handleSelectDomain = (domain, range) => {
     setSelectedDomain(domain);
@@ -492,8 +459,8 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
   }
 
   return (
-    <Card className="w-full overflow-hidden border-gray-200">
-      <CardContent className="p-0">
+    <Card className="w-full max-w-screen-xl mx-auto overflow-hidden border-gray-200">
+      <CardContent ref={viewerRef} className="p-0">
         {/* Header Section */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -516,14 +483,15 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
               />
               
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDownload}
-                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 
-                          rounded-full transition-colors"
-                  title="Download View"
+                <a
+                  href={`https://www.uniprot.org/uniprotkb/${proteinData?.primary_accession}/entry`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                  title="Open in UniProt"
                 >
-                  <Download className="w-5 h-5" />
-                </button>
+                  <ExternalLink className="w-5 h-5" />
+                </a>
                 
                 {onClose && (
                   <button
@@ -569,80 +537,71 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
         )}
 
         {/* Main Content */}
-        <div className="p-4" ref={viewerRef}>
-          {proteinData && (
-            // <div className={`${isSmallScreen ? 'flex-col' : 'flex-row flex'} gap-6`}>
-            <div className="flex flex-col gap-3">
-              {/* Left Column - Visualization */}
-              {(!isSmallScreen || activeTab === "visualization") && (
-                // <div className={`${isSmallScreen ? 'w-full' : 'w-1/2'} space-y-4`}>
-                <div className="w-full space-y-4">
-                  <div className="border rounded-lg bg-white p-4 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-medium text-gray-800 text-lg">Protein Structure</h3>
-                      <VisualizationControls 
-                        scale={scale} 
-                        setScale={setScale} 
-                        onReset={resetView}
-                      />
-                    </div>
-                    
-                    <div className="relative" ref={containerRef}>
-                      <DomainVisualization
-                        proteinData={proteinData}
-                        selectedDomain={selectedDomain}
-                        setSelectedDomain={setSelectedDomain}
-                        selectedRange={selectedRange}
-                        setSelectedRange={setSelectedRange}
-                        containerRef={containerRef}
-                        scale={scale}
-                        setScale={setScale}
-                        onDomainClick={(domain, range) => {
-                          handleSelectDomain(domain, range);
-                        }}
-                      />
-                    </div>
+        {proteinData && (
+          <div className="p-4 grid gap-6 md:grid-cols-2">
+            {/* Left Column - Visualization */}
+            {(!isSmallScreen || activeTab === "visualization") && (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-medium text-gray-800 text-lg">Protein Structure</h3>
+                    {/* <VisualizationControls 
+                      scale={scale} 
+                      setScale={setScale} 
+                      onReset={resetView}
+                    /> */}
                   </div>
-                  
-                  {/* Domain Details Panel */}
-                  {showDomainDetails && (
-                    <DomainDetailPanel
-                      domain={selectedDomain}
-                      range={selectedRange}
+
+                  <div className="relative" ref={containerRef}>
+                    <DomainVisualization
                       proteinData={proteinData}
-                      onClose={() => setShowDomainDetails(false)}
+                      selectedDomain={selectedDomain}
+                      setSelectedDomain={setSelectedDomain}
+                      selectedRange={selectedRange}
+                      setSelectedRange={setSelectedRange}
+                      containerRef={containerRef}
+                      scale={scale}
+                      setScale={setScale}
+                      onDomainClick={handleSelectDomain}
                     />
-                  )}
-                </div>
-              )}
-              
-              {/* Right Column - Domains Grid */}
-              {(!isSmallScreen || activeTab === "domains") && (
-                // <div className={`${isSmallScreen ? 'w-full' : 'w-1/2'}`}>
-                <div className="w-full">
-                  <div className="border rounded-lg bg-white p-4 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-medium text-gray-800 text-lg">Domain Information</h3>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                        {proteinData.domains?.length || 0} domains
-                      </span>
-                    </div>
-                    
-                    <div className="overflow-auto max-h-[650px] pr-2">
-                      <DomainGrid 
-                        domains={proteinData.domains}
-                        proteinData={proteinData}
-                        selectedDomain={selectedDomain}
-                        selectedRange={selectedRange}
-                        onSelectDomain={handleSelectDomain}
-                      />
-                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+
+                {/* Domain Details Panel */}
+                {showDomainDetails && (
+                  <DomainDetailPanel
+                    domain={selectedDomain}
+                    range={selectedRange}
+                    proteinData={proteinData}
+                    onClose={() => setShowDomainDetails(false)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Right Column - Domains Grid */}
+            {(!isSmallScreen || activeTab === "domains") && (
+              <div className="space-y-4 self-end">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium text-gray-800 text-lg">Domain Information</h3>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    {proteinData.domains?.length || 0} domains
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto overflow-y-auto max-h-[650px] pr-1.5 pb-1 pt-1">
+                  <DomainGrid 
+                    domains={proteinData.domains}
+                    proteinData={proteinData}
+                    selectedDomain={selectedDomain}
+                    selectedRange={selectedRange}
+                    onSelectDomain={handleSelectDomain}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
