@@ -20,8 +20,8 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
 
   // New: help overlay visibility state
   const [showHelp, setShowHelp] = useState(false);
-  // New: color by generation toggle
-  const [colorByGeneration, setColorByGeneration] = useState(true);
+  // color by generation always on
+  const colorByGeneration = true;
 
   // Use custom hooks for state management
   const { 
@@ -112,10 +112,6 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
         case 'H':
           setShowHelp((prev) => !prev);
           break;
-        case 'c':
-        case 'C':
-          setColorByGeneration(prev => !prev);
-          break;
         case 'p':
         case 'P':
           setShowPhysics(prev => !prev);
@@ -133,7 +129,7 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, setColorByGeneration, setShowPhysics, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
+  }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, setShowPhysics, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
 
   // Expose imperative handlers for exporting/importing positions
   useImperativeHandle(ref, () => ({
@@ -142,11 +138,11 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
   }));
 
   return (
-    <div className="relative rounded-xl border border-gray-200 shadow" ref={containerRef}>
+    <div className="relative rounded-xl border border-gray-200 dark:border-slate-700 shadow bg-white dark:bg-slate-800" ref={containerRef}>
       {/* Main container */}
       <div 
         ref={wrapperRef}
-        className={`relative flex flex-col bg-gradient-to-br from-blue-50 to-indigo-50 transition-all duration-300 ${
+        className={`relative flex flex-col bg-neutral-100 dark:bg-slate-800 transition-all duration-300 ${
           isFullscreen ? 'min-h-screen' : ''
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}
@@ -199,8 +195,7 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
           handleDownloadSVG={handleDownloadSVG}
           togglePhysics={() => setShowPhysics(prev => !prev)}
           toggleHelp={() => setShowHelp(prev => !prev)}
-          colorByGeneration={colorByGeneration}
-          toggleColorByGen={() => setColorByGeneration(prev => !prev)}
+          /* colorByGeneration always true, palette button removed */
         />
 
         {/* Legend and Help Text */}

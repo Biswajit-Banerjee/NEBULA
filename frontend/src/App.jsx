@@ -8,6 +8,7 @@ import {
 import Logo from "./components/Logo"; 
 import TabView from "./components/TabView";
 import SearchPanel from "./components/SearchPanel";
+import ThemeToggle from "./components/ThemeProvider/ThemeToggle";
 
 const GRADIENT_COLORS_PALETTE = [
   'from-violet-500 to-purple-600', 'from-blue-500 to-cyan-500', 
@@ -273,11 +274,10 @@ function App() {
   }, [searchPairs, results, combinedMode]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-900 text-slate-800 dark:text-slate-200 flex flex-col relative overflow-x-hidden">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute -top-1/2 -right-1/2 w-full h-full bg-gradient-to-br from-violet-200/30 to-purple-200/30 dark:from-violet-800/30 dark:to-purple-800/30 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-1/2 -left-1/2 w-full h-full bg-gradient-to-tr from-blue-200/30 to-cyan-200/30 dark:from-blue-800/30 dark:to-cyan-800/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-      </div>
+    <div className="min-h-screen bg-neutral-100 dark:bg-[#282a36] text-slate-800 dark:text-[#f8f8f2] flex flex-col relative overflow-x-hidden">
+      {/* Theme Toggle */}
+      <ThemeToggle className="fixed top-4 right-4 z-50" />
+      {/* Background decorations removed for flat design */}
 
       <div className="flex flex-1 relative z-10">
         {/* Left Sidebar for Search Panel */}
@@ -325,7 +325,7 @@ function App() {
                   </div>
                   <div className="absolute inset-0 rounded-full border-4 border-violet-200/80 dark:border-violet-600/50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_infinite] opacity-70"></div>
                 </div>
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Analyzing Pathways</h3>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Analyzing Paths</h3>
                 <p className="text-slate-600 dark:text-slate-400 mb-6">Processing your metabolic network queries...</p>
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 bg-violet-500 rounded-full animate-bounce"></div>
@@ -380,18 +380,25 @@ function App() {
             )}
             {!results && !loading && !error && (
                 <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-in">
-                    <div className="relative mb-8">
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center shadow-lg">
-                        <FlaskConicalLucide className="w-12 h-12 text-slate-400 dark:text-slate-500" />
+                    <div className="relative mb-8 group">
+                      <div className="absolute inset-0 rounded-full blur-3xl opacity-30 group-hover:opacity-50 transition duration-700 bg-gradient-to-br from-purple-500/60 via-violet-600/60 to-indigo-600/60 dark:from-purple-700/40 dark:via-violet-700/40 dark:to-indigo-700/40"></div>
+                      <Logo className="w-28 h-28 relative z-10 drop-shadow-xl" />
                     </div>
-                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center shadow-md animate-pulse">
-                        <Sparkles className="w-4 h-4 text-white" />
-                    </div>
-                    </div>
-                    <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-3">Ready to Explore</h3>
-                    <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md">
-                    Configure your search parameters in the panel on the left and discover metabolic pathways.
+                    <h1 className="text-4xl sm:text-5xl font-extrabold bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-400 dark:via-purple-400 dark:to-indigo-400 leading-tight mb-4 drop-shadow-sm">
+                        NEBULA
+                    </h1>
+                    <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium mb-6 max-w-lg">
+                        Network&nbsp;of&nbsp;Enzymatic&nbsp;Biochemical&nbsp;Units, Links, and Associations
                     </p>
+                    <p className="text-slate-600 dark:text-slate-400 mb-10 max-w-xl text-lg sm:text-xl">
+                        Explore the vast universe of metabolism <br/> 
+                        Map enzymes, trace reactions and unveil biochemical <br/> 
+                        Stories hidden within the universe.
+                    </p>
+                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-4">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 4a1 1 0 01.894.553l4 8A1 1 0 0114 14H6a1 1 0 01-.894-1.447l4-8A1 1 0 0110 4z" /></svg>
+                      <span className="text-sm">Start by adding a target compound</span>
+                    </div>
                     <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-slate-500 dark:text-slate-400">
                         <div className="flex items-center gap-2"><div className="w-2 h-2 bg-violet-500 rounded-full"></div>Multi-target search</div>
                         <div className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div>Pathway analysis</div>

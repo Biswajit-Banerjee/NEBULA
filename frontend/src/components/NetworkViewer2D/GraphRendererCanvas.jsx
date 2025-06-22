@@ -5,22 +5,14 @@ import React, {
   forwardRef,
   useState,
   useCallback,
+  useContext,
 } from "react";
 import * as d3 from "d3";
 import { processData, applySpiral } from "./utils/graphProcessing";
 import { Lock, Unlock } from "lucide-react";
+import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 
-/*
-Canvas‐based 2-D graph renderer.
-Only UI / drawing code is moved to Canvas – the existing graph logic (data processing
-& d3-force simulation) stays untouched.  For performance we draw everything to a
-single <canvas>, achieving ~60 fps with tens-of-thousands of nodes.
 
-Extra feature – Ctrl-click on a reaction side-node collapses the upstream (for _r)
-or downstream (for _p) part of the network.  Collapsed state is persisted inside
-React state so it survives generation changes, (un)fullscreen and other view
-updates until the user toggles it off.
-*/
 
 const GraphRendererCanvas = forwardRef(
   (
@@ -33,10 +25,10 @@ const GraphRendererCanvas = forwardRef(
       isFullscreen,
       tension,
       repulsion,
-      colorByGeneration,
     },
     ref
   ) => {
+    const { dark } = useContext(ThemeContext);
     const canvasRef = useRef(null);
     const simulationRef = useRef(null);
     const zoomRef = useRef(null);
@@ -305,13 +297,13 @@ const GraphRendererCanvas = forwardRef(
       links.forEach((l) => {
         const lType = l.type;
         if (lType && lType.startsWith("ec")) {
-          ctx.strokeStyle = "#8B5CF6"; // violet
+          ctx.strokeStyle = dark ? "#c4b5fd" : "#8B5CF6";
           ctx.setLineDash([2 / t.k, 4 / t.k]);
         } else if (lType === "reaction") {
-          ctx.strokeStyle = "#9CA3AF"; // gray dashed
+          ctx.strokeStyle = dark ? "#CBD5E1" : "#9CA3AF";
           ctx.setLineDash([6 / t.k, 4 / t.k]);
         } else {
-          ctx.strokeStyle = "#9CA3AF";
+          ctx.strokeStyle = dark ? "#CBD5E1" : "#9CA3AF";
           ctx.setLineDash([]);
         }
 
@@ -330,7 +322,7 @@ const GraphRendererCanvas = forwardRef(
 
         if (l.stoichiometry && l.stoichiometry > 1) {
           ctx.save();
-          ctx.fillStyle = "#1F2937";
+          ctx.fillStyle = dark ? "#334155" : "#1F2937";
           //ctx.font = `${Math.max(8 / t.k, 6)}px Inter, sans-serif`;
           ctx.font = `6px Inter, sans-serif`;
           const midX = (src.x + trg.x) / 2;
@@ -358,7 +350,7 @@ const GraphRendererCanvas = forwardRef(
         ctx.beginPath();
 
         // Determine styles
-        if (colorByGeneration) {
+        {
           const { fill, stroke } = genColor(n.generation || 0);
           ctx.fillStyle = fill;
           ctx.strokeStyle = stroke;
@@ -366,26 +358,14 @@ const GraphRendererCanvas = forwardRef(
 
         switch (n.type) {
           case "compound":
-            if (!colorByGeneration) {
-              ctx.fillStyle = "hsl(200,100%,95%)";
-              ctx.strokeStyle = "hsl(200,60%,50%)";
-            }
             ctx.lineWidth = 1.5;
             ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
             break;
           case "ec":
-            if (!colorByGeneration) {
-              ctx.fillStyle = "#FFFFFF";
-              ctx.strokeStyle = "#7C3AED";
-            }
             ctx.lineWidth = 1.5;
             ctx.ellipse(n.x, n.y, 24, 14, 0, 0, Math.PI * 2);
             break;
           default:
-            if (!colorByGeneration) {
-              ctx.fillStyle = "#FEF9C3";
-              ctx.strokeStyle = collapsedRoots.has(n.id) ? "#EF4444" : "#F59E0B";
-            }
             ctx.lineWidth = collapsedRoots.has(n.id) ? 3 : 1.5;
             // rounded rectangle
             const rx = n.x - 20;
@@ -422,7 +402,7 @@ const GraphRendererCanvas = forwardRef(
         let label = n.label ?? n.id;
         if (/reaction-/.test(n.type)) label = label.split("_")[0];
 
-        ctx.fillStyle = "#374151"; // gray-700
+        ctx.fillStyle = dark ? "#1E293B" : "#374151";
         ctx.fillText(label, n.x, n.y);
       });
 
@@ -688,8 +668,8 @@ const GraphRendererCanvas = forwardRef(
         <button
           onClick={() => setNodesLocked((p) => !p)}
           className={`absolute bottom-4 left-4 p-2 rounded-full z-10 shadow-md hover:shadow-lg transition-all ${
-            nodesLocked ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200"
-          }`}
+             nodesLocked ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+           }`}
           title={nodesLocked ? "Unlock node positions" : "Lock node positions"}
         >
           {nodesLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}

@@ -46,12 +46,12 @@ const downloadAsImage = async (ref, filename) => {
 const DomainBadge = ({ type }) => {
   // Color mapping for different domain types
   const colors = {
-    A: "bg-red-100 text-red-800",
-    X: "bg-blue-100 text-blue-800",
-    H: "bg-green-100 text-green-800",
-    T: "bg-purple-100 text-purple-800",
-    F: "bg-amber-100 text-amber-800",
-    default: "bg-gray-100 text-gray-800"
+    A: "bg-red-100 dark:bg-red-600/20 text-red-800 dark:text-red-300",
+    X: "bg-blue-100 dark:bg-blue-600/20 text-blue-800 dark:text-blue-300",
+    H: "bg-green-100 dark:bg-green-600/20 text-green-800 dark:text-green-300",
+    T: "bg-purple-100 dark:bg-purple-600/20 text-purple-800 dark:text-purple-300",
+    F: "bg-amber-100 dark:bg-amber-600/20 text-amber-800 dark:text-amber-300",
+    default: "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
   };
   
   return (
@@ -91,13 +91,13 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
     <div 
       id={`domain-cell-${domain.domain_id}-${range.start}-${range.end}`}
       className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md text-base min-w-[220px] sm:min-w-[260px] flex flex-col cursor-pointer
-        ${isSelected ? "ring-2 ring-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+        ${isSelected ? "ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-500/20" : "hover:bg-gray-50 dark:hover:bg-slate-700"}`}
       onClick={() => onClick && onClick(domain, range)}
     >
       <div className="flex justify-between items-start mb-3">
         <div>
           <div className="font-semibold">{domain.domain_id}</div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             Position: {range.start}-{range.end}
           </div>
         </div>
@@ -105,7 +105,7 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
           href={`http://prodata.swmed.edu/ecod/af2_pdb/domain/${proteinData.primary_accession}_F1_${domain.domain_id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:text-blue-700 p-1 rounded-full hover:bg-blue-50"
+          className="text-blue-600 dark:text-blue-300 hover:text-blue-700 dark:hover:text-blue-400 p-1 rounded-full hover:bg-blue-50 dark:hover:bg-blue-600/20"
           title="View in ECOD"
           onClick={(e) => e.stopPropagation()}
         >
@@ -115,13 +115,13 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
 
       <div className="flex flex-col gap-2 flex-1">
         <div className="flex items-center gap-1">
-          <span className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded text-xs">
+          <span className="bg-indigo-100 dark:bg-indigo-600/20 text-indigo-800 dark:text-indigo-300 px-2 py-1 rounded text-xs">
             {bindingSites} {bindingSites === 1 ? "binding site" : "binding sites"}
           </span>
         </div>
         
         <div className="text-xs mt-1">
-          <div className="text-gray-700 font-medium mb-1">Hierarchy:</div>
+          <div className="text-gray-700 dark:text-gray-200 font-medium mb-1">Hierarchy:</div>
           <div className="grid grid-cols-[auto,1fr] gap-x-1 gap-y-1">
             <DomainBadge type="A" />
             <div className="truncate" title={architectureInfo}>{architectureInfo}</div>
@@ -153,7 +153,7 @@ const DomainGrid = ({
 }) => {
   if (!domains || !Array.isArray(domains) || domains.length === 0) {
     return (
-      <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed">
+      <div className="text-center py-6 bg-gray-50 dark:bg-slate-700 rounded-lg border border-dashed border-gray-200 dark:border-slate-600">
         <Info className="w-6 h-6 mx-auto mb-2 text-gray-400" />
         <p className="text-gray-500">No domain information available</p>
       </div>
@@ -234,9 +234,9 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
   return (
     <div className="relative">
       <button
-        className="border rounded-md py-1.5 px-3 text-sm bg-white hover:bg-gray-50 
-                 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none
-                 flex items-center justify-between gap-2 min-w-[200px]"
+        className="border rounded-md py-1.5 px-3 text-sm bg-white dark:bg-slate-700 hover:bg-gray-50 dark:hover:bg-slate-600 
+                 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-400 focus:border-blue-400 dark:border-slate-600 outline-none
+                 flex items-center justify-between gap-2 min-w-[200px] text-gray-800 dark:text-slate-100"
         onClick={() => setIsOpen(!isOpen)}
       >
         <span className="font-medium">{selected.uniprot_kb_id}</span>
@@ -244,12 +244,12 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
       </button>
       
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+        <div className="absolute z-10 mt-1 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-md shadow-lg max-h-60 overflow-auto">
           {data.map((item) => (
             <div
               key={item.uniprot_kb_id}
-              className={`px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 
-                        ${item.uniprot_kb_id === selectedId ? 'bg-blue-100' : ''}`}
+              className={`px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 dark:hover:bg-slate-700 
+                        ${item.uniprot_kb_id === selectedId ? 'bg-blue-100 dark:bg-blue-600/20' : ''} text-gray-700 dark:text-slate-100`}
               onClick={() => {
                 onChange(item.uniprot_kb_id);
                 setIsOpen(false);
@@ -292,22 +292,22 @@ const ErrorCard = ({ message, ecNumber }) => (
 const VisualizationControls = ({ scale, setScale, onReset }) => {
   return (
     <div className="flex items-center justify-end gap-2 my-2">
-      <div className="bg-white border rounded-lg shadow-sm flex items-center divide-x">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-sm flex items-center divide-x divide-gray-200 dark:divide-slate-600">
         <button 
           onClick={() => setScale(prev => Math.max(0.5, prev - 0.1))}
-          className="p-1.5 hover:bg-gray-50 rounded-l-lg"
+          className="p-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-l-lg"
           title="Zoom out"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
         
-        <div className="px-3 py-1 text-xs font-medium">
+        <div className="px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300">
           {Math.round(scale * 100)}%
         </div>
         
         <button 
           onClick={() => setScale(prev => Math.min(2, prev + 0.1))}
-          className="p-1.5 hover:bg-gray-50"
+          className="p-1.5 hover:bg-gray-50 dark:hover:bg-slate-700"
           title="Zoom in"
         >
           <ZoomIn className="w-4 h-4" />
@@ -315,7 +315,7 @@ const VisualizationControls = ({ scale, setScale, onReset }) => {
         
         <button 
           onClick={onReset}
-          className="p-1.5 hover:bg-gray-50 rounded-r-lg"
+          className="p-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-r-lg"
           title="Reset view"
         >
           <Maximize className="w-4 h-4" />
@@ -333,24 +333,24 @@ const DomainDetailPanel = ({ domain, range, proteinData, onClose }) => {
   );
 
   return (
-    <div className="bg-white border rounded-lg shadow-sm mt-2 p-3 max-h-96 overflow-y-auto">
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-sm mt-2 p-3 max-h-96 overflow-y-auto">
       <div className="flex justify-between items-center mb-2">
-        <h4 className="font-medium text-gray-800 text-sm">Domain Details</h4>
-        <div className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+        <h4 className="font-medium text-gray-800 dark:text-slate-100 text-sm">Domain Details</h4>
+        <div className="text-xs bg-blue-100 dark:bg-blue-600/30 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded">
           {bindingSites.length}
         </div>
       </div>
 
       {bindingSites.length === 0 ? (
-        <div className="text-gray-500 text-xs text-center py-4">No binding sites detected.</div>
+        <div className="text-gray-500 dark:text-gray-400 text-xs text-center py-4">No binding sites detected.</div>
       ) : (
         <ul className="space-y-1 text-xs max-h-[8rem] overflow-y-auto pr-1">
           {bindingSites.map((site, idx) => (
-            <li key={`site-${idx}`} className="flex justify-between gap-2 p-1 hover:bg-gray-50 rounded">
-              <span className="font-medium">{site.location.start}</span>
-              <span className="text-gray-600 truncate flex-1">{site.type || "N/A"}</span>
+            <li key={`site-${idx}`} className="flex justify-between gap-2 p-1 hover:bg-gray-50 dark:hover:bg-slate-700 rounded">
+              <span className="font-medium dark:text-slate-200">{site.location.start}</span>
+              <span className="text-gray-600 dark:text-gray-300 truncate flex-1">{site.type || "N/A"}</span>
               {site.description && (
-                <span className="text-gray-400 truncate max-w-[120px]" title={site.description}>
+                <span className="text-gray-400 dark:text-gray-400 truncate max-w-[120px]" title={site.description}>
                   {site.description}
                 </span>
               )}
@@ -462,12 +462,12 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
     <Card className="w-full max-w-screen-xl mx-auto overflow-hidden border-gray-200">
       <CardContent ref={viewerRef} className="p-0">
         {/* Header Section */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
+        <div className="bg-gray-100 dark:bg-slate-700 p-4 border-b dark:border-slate-600">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-gray-800">EC {ecNumber}</h2>
-                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-slate-100">EC {ecNumber}</h2>
+                <span className="bg-blue-100 dark:bg-blue-600/30 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded text-xs font-medium">
                   Protein View
                 </span>
               </div>
@@ -487,7 +487,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                   href={`https://www.uniprot.org/uniprotkb/${proteinData?.primary_accession}/entry`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                  className="p-2 text-gray-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-600/20 rounded-full transition-colors"
                   title="Open in UniProt"
                 >
                   <ExternalLink className="w-5 h-5" />
@@ -496,7 +496,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                 {onClose && (
                   <button
                     onClick={onClose}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 
+                    className="p-2 text-gray-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-600/20 
                             rounded-full transition-colors"
                     title="Close"
                   >
@@ -544,7 +544,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
               <div className="space-y-4">
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-medium text-gray-800 text-lg">Protein Structure</h3>
+                    <h3 className="font-medium text-gray-800 dark:text-slate-100 text-lg">Protein Structure</h3>
                     {/* <VisualizationControls 
                       scale={scale} 
                       setScale={setScale} 
@@ -583,8 +583,8 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
             {(!isSmallScreen || activeTab === "domains") && (
               <div className="space-y-4 self-end">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-medium text-gray-800 text-lg">Domain Information</h3>
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                  <h3 className="font-medium text-gray-800 dark:text-slate-100 text-lg">Domain Information</h3>
+                  <span className="text-xs text-gray-400 dark:text-slate-300 bg-gray-100 dark:bg-slate-600/40 px-2 py-1 rounded">
                     {proteinData.domains?.length || 0} domains
                   </span>
                 </div>

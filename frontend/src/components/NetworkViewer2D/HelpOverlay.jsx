@@ -4,24 +4,24 @@ import { X } from "lucide-react";
 const HelpOverlay = ({ onClose }) => {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+      <div className="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full p-6">
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+          className="absolute top-3 right-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           aria-label="Close help"
         >
           <X className="w-5 h-5" />
         </button>
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Viewer Help & Shortcuts</h2>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-4">Viewer Help & Shortcuts</h2>
 
-        <ul className="space-y-2 text-sm text-gray-700 list-disc list-inside">
+        <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
           <li><span className="font-medium">Drag</span> nodes to reposition them manually.</li>
           <li><span className="font-medium">Scroll</span> to zoom in and out.</li>
           <li><span className="font-medium">Ctrl + Click</span> on a reaction side-node to collapse / expand upstream or downstream pathways.</li>
         </ul>
 
-        <h3 className="mt-4 mb-2 font-medium text-gray-800">Toolbar actions</h3>
-        <ul className="space-y-1 text-sm text-gray-700 list-disc list-inside">
+        <h3 className="mt-4 mb-2 font-medium text-gray-800 dark:text-slate-100">Toolbar actions</h3>
+        <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
           <li><span className="font-medium">Zoom ±</span> – zoom controls.</li>
           <li><span className="font-medium">Reset View</span> – centre & fit graph.</li>
           <li><span className="font-medium">Reset Layout (R)</span> – re-run layout for current generation.</li>
@@ -31,8 +31,8 @@ const HelpOverlay = ({ onClose }) => {
           <li><span className="font-medium">Download</span> – export current view as SVG.</li>
         </ul>
 
-        <h3 className="mt-4 mb-2 font-medium text-gray-800">Keyboard shortcuts</h3>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700">
+        <h3 className="mt-4 mb-2 font-medium text-gray-800 dark:text-slate-100">Keyboard shortcuts</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 dark:text-gray-300">
           <span className="font-medium">+</span><span>Zoom in</span>
           <span className="font-medium">-</span><span>Zoom out</span>
           <span className="font-medium">0</span><span>Reset view</span>
@@ -45,7 +45,7 @@ const HelpOverlay = ({ onClose }) => {
           <span className="font-medium">H</span><span>Help</span>
         </div>
 
-        <p className="mt-6 text-xs text-gray-500 text-center">Made with ❤️ – enjoy exploring!</p>
+        <p className="mt-6 text-xs text-gray-500 dark:text-gray-400 text-center">Made with ❤️ – enjoy exploring!</p>
       </div>
     </div>
   );

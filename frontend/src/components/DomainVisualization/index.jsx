@@ -65,9 +65,9 @@ const DomainVisualization = ({
 
   return (
     <div className="mt-2" ref={containerRef}>
-      <div className="relative h-24 bg-gray-100 rounded p-4">
+      <div className="relative h-24 bg-gray-100 dark:bg-slate-700 rounded p-4">
         {/* Base protein line */}
-        <div className="absolute top-8 left-4 h-1 bg-gray-300" style={{ width: 'calc(100% - 2rem)' }} />
+        <div className="absolute top-8 left-4 h-1 bg-gray-300 dark:bg-slate-400" style={{ width: 'calc(100% - 2rem)' }} />
 
         {/* Domains */}
         {proteinData?.domains?.map((domain, idx) => (
@@ -105,8 +105,8 @@ const DomainVisualization = ({
                       width: `${width}px`,
                     }}
                   >
-                    <div className="truncate">{domain.domain_id}</div>
-                    <div className="text-gray-500">{range.start}-{range.end}</div>
+                    <div className="truncate text-slate-800 dark:text-slate-200">{domain.domain_id}</div>
+                    <div className="text-gray-500 dark:text-gray-400">{range.start}-{range.end}</div>
                   </div>
                 </div>
               );
@@ -133,14 +133,14 @@ const DomainVisualization = ({
         })}
 
         {/* Domain range scale */}
-        <div className="absolute bottom-0 left-4 right-4 text-xs text-gray-500">
+        <div className="absolute bottom-0 left-4 right-4 text-xs text-gray-500 dark:text-gray-400">
           <div className="absolute -bottom-4 left-0">{minPosition}</div>
           <div className="absolute -bottom-4 right-0">{maxPosition}</div>
         </div>
       </div>
       
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-6 text-xs">
+      <div className="flex flex-wrap gap-4 mt-6 text-xs text-gray-700 dark:text-gray-300">
         {proteinData?.domains?.map((domain, idx) => (
           <div key={`legend-${idx}`} className="flex items-center">
             <div 

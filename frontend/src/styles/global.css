@@ -10,14 +10,14 @@
   }
 
   body {
-    @apply font-sans bg-neutral-50 text-neutral-800; /* Uses font-sans defined in tailwind.config.js */
+    @apply font-sans bg-neutral-50 text-neutral-800 dark:bg-[#282a36] dark:text-[#f8f8f2]; /* Dracula palette */
     min-height: 100vh;
     margin: 0;
   }
 
   /* Basic styling for headings for consistency if not overridden by utilities */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold text-neutral-900;
+    @apply font-semibold text-neutral-900 dark:text-[#f8f8f2];
   }
 
   h1 { @apply text-3xl md:text-4xl; }
@@ -30,8 +30,8 @@
   }
 
   a {
-    /* Corrected classes: */
-    @apply text-primary hover:text-primary-dark transition-colors duration-150;
+    /* Light & dark link styles */
+    @apply text-primary hover:text-primary-dark transition-colors duration-150 dark:text-[#8be9fd] dark:hover:text-[#ff79c6];
   }
 
   /* Optional: Subtle custom scrollbar for a more modern feel (Webkit browsers) */

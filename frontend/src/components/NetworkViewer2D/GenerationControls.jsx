@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RefreshCcw, Download, SlidersHorizontal, Palette, Maximize, Minimize, HelpCircle } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RefreshCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle } from 'lucide-react';
 
 const GenerationControls = ({
   currentGeneration,
@@ -19,27 +19,24 @@ const GenerationControls = ({
   handleDownloadSVG,
   togglePhysics,
   toggleHelp,
-  colorByGeneration,
-  toggleColorByGen,
 }) => {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
   
   // Unified button style
   const btnBase =
-    'p-2 rounded-md text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-40';
+    'p-2 rounded-md text-gray-700 dark:text-slate-200 transition hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-600 disabled:opacity-40';
 
   const clusterGap = 'flex items-center gap-2';
 
   return (
-    <div className={`absolute bottom-0 left-0 w-full z-30 bg-white/70 backdrop-blur-md shadow-inner`}>    
+    <div className={`absolute bottom-0 left-0 w-full z-30 bg-white/70 dark:bg-slate-800/80 backdrop-blur-md shadow-inner`}>    
       <div className="w-full px-3 py-2 flex items-center justify-between flex-wrap gap-y-2">
 
         {/* Left cluster – view tools */}
         <div className={clusterGap}>
           <button onClick={handleZoomIn} className={btnBase} title="Zoom in" aria-label="Zoom in"><ZoomIn className="w-4 h-4"/></button>
           <button onClick={handleZoomOut} className={btnBase} title="Zoom out" aria-label="Zoom out"><ZoomOut className="w-4 h-4"/></button>
-          <button onClick={resetSpiral} className={btnBase} title="Reset layout for current generation" aria-label="Reset layout"><RefreshCcw className="w-4 h-4"/></button>
-          <button onClick={toggleColorByGen} className={`${btnBase} ${colorByGeneration ? 'bg-indigo-50 text-indigo-600' : ''}`} title="Toggle generation colours" aria-label="Toggle generation colours"><Palette className="w-4 h-4"/></button>
+          <button onClick={resetSpiral} className={btnBase} title="Reset layout" aria-label="Reset layout"><RefreshCcw className="w-4 h-4"/></button>
         </div>
 
         {/* Centre cluster – generation navigation & slider */}
@@ -49,8 +46,8 @@ const GenerationControls = ({
             <div className="relative">
               <button onClick={()=>setShowSpeedControl(prev=>!prev)} className={btnBase} title="Animation speed" aria-label="Animation speed"><Clock className="w-4 h-4"/></button>
               {showSpeedControl && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white shadow-lg rounded-lg p-3 w-40 z-50">
-                  <p className="text-xs text-gray-500 mb-2 font-medium">Transition Speed</p>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white dark:bg-slate-800 shadow-lg rounded-lg p-3 w-40 z-50">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 font-medium">Transition Speed</p>
                   <input type="range" min="1" max="10" step="1" value={transitionSpeed} onChange={(e)=>setTransitionSpeed(parseInt(e.target.value))} className="w-full accent-indigo-600" />
                 </div>
               )}
@@ -60,7 +57,7 @@ const GenerationControls = ({
             <button onClick={togglePlay} className={btnBase} aria-label={isPlaying? 'Pause':'Play'}>{isPlaying? <Pause className="w-4 h-4"/> : <Play className="w-4 h-4"/>}</button>
             <button onClick={stepForward} disabled={currentGeneration===maxGeneration} className={btnBase} aria-label="Next generation"><SkipForward className="w-4 h-4"/></button>
 
-            <span className="text-sm font-medium text-gray-700 select-none">Gen <span className="text-indigo-600">{currentGeneration}</span>/<span>{maxGeneration}</span></span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200 select-none">Gen <span className="text-indigo-600 dark:text-indigo-400">{currentGeneration}</span>/<span>{maxGeneration}</span></span>
           </div>
           <input type="range" min="0" max={maxGeneration} value={currentGeneration} onChange={(e)=>setCurrentGeneration(parseInt(e.target.value))} className="w-full accent-indigo-600" />
         </div>

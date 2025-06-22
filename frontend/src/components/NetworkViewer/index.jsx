@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle, useContext } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import styled from 'styled-components';
 import * as d3 from 'd3';
 import { forwardRef as forwardRefReact, useRef as useRefReact } from 'react';
+import { ThemeContext } from '../ThemeProvider/ThemeProvider';
 
 // =============================================================================
 // Styled Components
@@ -29,9 +30,21 @@ const Container = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(ellipse at center, #1a2130 0%, #090a0f 100%);
+  background: ${props => props.$dark ? 'radial-gradient(ellipse at center, #1a2130 0%, #090a0f 100%)' : '#F9FAFB'};
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  
+  /* Vignette overlay for enhanced depth perception */
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none; /* make overlay non-interactive */
+    border-radius: inherit;
+    background: ${props => props.$dark
+      ? 'radial-gradient(circle at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.65) 100%)'
+      : 'radial-gradient(circle at center, rgba(255,255,255,0) 60%, rgba(0,0,0,0.25) 100%)'};
+  }
   
   &:fullscreen {
     border-radius: 0;
@@ -43,21 +56,21 @@ const ControlPanel = styled.div`
   bottom: 20px;
   left: 20px;
   z-index: 10;
-  background: rgba(30, 39, 51, 0.85);
+  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.85)'};
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: #e0e0e0;
+  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
   display: flex;
   flex-direction: column;
   gap: 10px;
   max-width: 300px;
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
 
   &:hover {
-    background: rgba(40, 49, 61, 0.9);
+    background: ${props => props.$dark ? 'rgba(40,49,61,0.9)' : 'rgba(255,255,255,0.9)'};
   }
 `;
 
@@ -106,8 +119,8 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  background: ${props => props.$active ? 'rgba(74, 159, 255, 0.2)' : 'rgba(60, 70, 90, 0.5)'};
-  color: ${props => props.$active ? '#4a9fff' : '#d0d0d0'};
+  background: ${props => props.$active ? 'rgba(74,159,255,0.2)' : (props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)')};
+  color: ${props => props.$active ? '#4a9fff' : (props.$dark ? '#d0d0d0' : '#374151')};
   border: 1px solid ${props => props.$active ? 'rgba(74, 159, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
   border-radius: 6px;
   padding: 8px 12px;
@@ -120,8 +133,7 @@ const Button = styled.button`
   justify-content: center;
   
   &:hover {
-    background: rgba(80, 100, 130, 0.7);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: ${props => props.$active ? 'rgba(74,159,255,0.35)' : (props.$dark ? 'rgba(40,49,61,0.9)' : 'rgba(226,232,240,1)')};
   }
   
   &:active {
@@ -138,18 +150,18 @@ const OptionsPanel = styled.div`
   top: 20px;
   right: 20px;
   z-index: 10;
-  background: rgba(30, 39, 51, 0.85);
+  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: #e0e0e0;
+  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
   display: flex;
   flex-direction: column;
   gap: 12px;
   max-width: 240px;
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
 `;
 
 const Option = styled.div`
@@ -270,13 +282,27 @@ const TopLeftButtonGroup = styled.div`
 `;
 
 const ControlButton = styled.button`
-  background: ${props => props.$active ? 'rgba(74, 159, 255, 0.3)' : 'rgba(30, 39, 51, 0.85)'};
+  background: ${({ $active, $dark }) =>
+    $active
+      ? $dark
+        ? 'rgba(74, 159, 255, 0.3)'
+        : 'rgba(96, 165, 250, 0.3)'
+      : $dark
+      ? 'rgba(30, 39, 51, 0.85)'
+      : 'rgba(255, 255, 255, 0.85)'};
   backdrop-filter: blur(6px);
   padding: 8px 12px;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: ${props => props.$active ? '#fff' : '#e0e0e0'};
-  border: 1px solid ${props => props.$active ? 'rgba(74, 159, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  color: ${({ $active, $dark }) =>
+    $active ? '#fff' : $dark ? '#e0e0e0' : '#374151'};
+  border: 1px solid
+    ${({ $active, $dark }) =>
+      $active
+        ? 'rgba(74, 159, 255, 0.5)'
+        : $dark
+        ? 'rgba(255, 255, 255, 0.1)'
+        : 'rgba(0, 0, 0, 0.05)'};
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -284,11 +310,18 @@ const ControlButton = styled.button`
   justify-content: center;
   gap: 6px;
   font-size: 13px;
-  
+
   &:hover {
-    background: ${props => props.$active ? 'rgba(74, 159, 255, 0.4)' : 'rgba(40, 49, 61, 0.9)'};
+    background: ${({ $active, $dark }) =>
+      $active
+        ? $dark
+          ? 'rgba(74, 159, 255, 0.4)'
+          : 'rgba(96, 165, 250, 0.4)'
+        : $dark
+        ? 'rgba(40, 49, 61, 0.9)'
+        : 'rgba(243, 244, 246, 1)'};
   }
-  
+
   svg {
     width: 16px;
     height: 16px;
@@ -300,22 +333,22 @@ const AxisControls = styled.div`
   bottom: 20px;
   right: 20px;
   z-index: 20;
-  background: rgba(30, 39, 51, 0.85);
+  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: #e0e0e0;
+  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
 `;
 
 const AxisButton = styled.button`
-  background: rgba(60, 70, 90, 0.5);
-  color: #d0d0d0;
+  background: ${props => props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)'};
+  color: ${props => props.$dark ? '#d0d0d0' : '#374151'};
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 8px;
@@ -326,8 +359,8 @@ const AxisButton = styled.button`
   touch-action: none; /* Prevent scrolling when holding button on touchscreens */
   
   &:hover {
-    background: rgba(80, 100, 130, 0.7);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: ${props => props.$dark ? 'rgba(80,100,130,0.7)' : 'rgba(226,232,240,1)'};
+    border-color: rgba(0, 0, 0, 0.1);
   }
   
   &:active {
@@ -468,6 +501,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const fgRef = useRef();
   const containerRef = useRef();
+  const { dark } = useContext(ThemeContext);
 
   // =============================================================================
   // Data Processing Functions
@@ -1129,6 +1163,28 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     };
   }, [playInterval]);
 
+  // Effect to adjust graph size immediately when fullscreen toggles
+  useEffect(() => {
+    if (!fgRef.current) return;
+    const updateDims = () => {
+      const w = isFullscreen ? window.innerWidth : containerRef.current?.clientWidth || 800;
+      const h = isFullscreen ? window.innerHeight : (typeof height === 'string' ? parseInt(height) : height);
+      // API differences – width/height may be getter/setter fn or prop
+      if (typeof fgRef.current.width === 'function') {
+        fgRef.current.width(w);
+      } else {
+        fgRef.current.width = w;
+      }
+      if (typeof fgRef.current.height === 'function') {
+        fgRef.current.height(h);
+      } else {
+        fgRef.current.height = h;
+      }
+      fgRef.current.refresh?.();
+    };
+    updateDims();
+  }, [isFullscreen]);
+
   // =============================================================================
   // User Interaction Functions
   // =============================================================================
@@ -1169,16 +1225,26 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     }
   };
 
-  // Toggle fullscreen
+  const dispatchResize = () => window.dispatchEvent(new Event('resize'));
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`);
-      });
-      setIsFullscreen(true);
+      containerRef.current.requestFullscreen()
+        .then(() => {
+          setIsFullscreen(true);
+          dispatchResize();
+        })
+        .catch(err => console.error(`Error attempting to enable fullscreen: ${err.message}`));
     } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+      document.exitFullscreen()
+        .then(() => {
+          setIsFullscreen(false);
+          dispatchResize();
+        })
+        .catch(() => {
+          setIsFullscreen(false);
+          dispatchResize();
+        });
     }
   };
   
@@ -1393,7 +1459,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
   // Control panel UI
   const renderControlPanel = () => (
-    <ControlPanel>
+    <ControlPanel $dark={dark}>
       <SliderContainer>
         <SliderLabel>
           <span>Generation</span>
@@ -1449,7 +1515,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
   // Options panel UI
   const renderOptionsPanel = () => (
-    <OptionsPanel>
+    <OptionsPanel $dark={dark}>
       <Option>
         <OptionLabel htmlFor="hideLabels">Hide Labels</OptionLabel>
         <Toggle>
@@ -1635,9 +1701,9 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   }));
 
   return (
-    <Container ref={containerRef} style={{ height }}>
+    <Container ref={containerRef} style={{ width: '100%', height: '100%' }}>
       <TopLeftButtonGroup>
-        <ControlButton onClick={toggleFullscreen}>
+        <ControlButton onClick={toggleFullscreen} $dark={dark}>
           {isFullscreen ? (
             <>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1655,7 +1721,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           )}
         </ControlButton>
         
-        <ControlButton onClick={toggleNodesLocked} $active={nodesLocked}>
+        <ControlButton onClick={toggleNodesLocked} $active={nodesLocked} $dark={dark}>
           {nodesLocked ? (
             <>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1692,7 +1758,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         linkDirectionalArrowLength={linkDirectionalArrowLength}
         linkColor={linkColor}
         linkOpacity={0.8}
-        backgroundColor="rgba(0,0,0,0)"
+        backgroundColor={dark ? "#1a2130" : "#FFFFFF"}
         linkDirectionalParticleSpeed={0.1}
         linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
         enableNodeDrag={!nodesLocked}
@@ -1716,7 +1782,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       {renderControlPanel()}
       {renderOptionsPanel()}
       
-      <AxisControls>
+      <AxisControls $dark={dark}>
         <AxisButton 
           className="x-axis" 
           onMouseDown={() => handleAxisControl('x', 'neg')}
@@ -1794,7 +1860,7 @@ const NetworkViewerContainer = forwardRefReact(({ results, height }, ref) => {
   }));
 
   return (
-    <div style={{ width: '100%', height }}>
+    <div style={{ width: '100%', height: '100%' }}>
       {results && results.length > 0 ? (
         <NetworkViewer3D ref={innerRef} results={results} height={height} />
       ) : (

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Table2, Network, Layers } from 'lucide-react';
 import ResultTable from '../ResultTable';
-import NetworkViewerContainer from '../NetworkViewer';
-import NetworkViewer2D from '../NetworkViewer2D';
+
+// Lazy-load heavy viewer bundles so they don't block initial paint
+const LazyNetworkViewer3D = lazy(() => import('../NetworkViewer'));
+const LazyNetworkViewer2D = lazy(() => import('../NetworkViewer2D'));
 
 const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode, network2dRef, network3dRef }) => {
   const [activeTab, setActiveTab] = useState('table');
@@ -24,13 +26,13 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
   return (
     <div className="flex flex-col">
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
         <button
           onClick={() => setActiveTab('table')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'table'
-              ? 'text-blue-600'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'text-blue-600 dark:text-purple-400'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -46,8 +48,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
           onClick={() => setActiveTab('network2d')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'network2d'
-              ? 'text-blue-600'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'text-blue-600 dark:text-purple-400'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -63,8 +65,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
           onClick={() => setActiveTab('network3d')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'network3d'
-              ? 'text-blue-600'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'text-blue-600 dark:text-purple-400'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -79,23 +81,19 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
 
       {/* Tab Content */}
       <div className="tab-content">
-        {/* 3D Viewer – always mounted to preserve state */}
-        <div style={{ display: activeTab === 'network3d' ? 'block' : 'none' }}>
-          <NetworkViewerContainer 
-            ref={network3dRef}
-            results={filteredResults} 
-            height="600px" 
-          />
-        </div>
+        {/* Heavy viewers load on demand */}
+        {activeTab === 'network3d' && (
+          <Suspense fallback={<div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading 3D viewer…</div>}>
+            {/* wrapper ensures ref forwarding */}
+            <LazyNetworkViewer3D ref={network3dRef} results={filteredResults} height="600px" />
+          </Suspense>
+        )}
 
-        {/* 2D Viewer – always mounted to preserve state */}
-        <div style={{ display: activeTab === 'network2d' ? 'block' : 'none' }}>
-          <NetworkViewer2D
-            ref={network2dRef}
-            results={filteredResults}
-            height="600px"
-          />
-        </div>
+        {activeTab === 'network2d' && (
+          <Suspense fallback={<div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading 2D viewer…</div>}>
+            <LazyNetworkViewer2D ref={network2dRef} results={filteredResults} height="600px" />
+          </Suspense>
+        )}
         {activeTab === 'table' && (
           <ResultTable
             results={results}

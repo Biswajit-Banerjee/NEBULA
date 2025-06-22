@@ -135,18 +135,21 @@ const AutocompleteInput = ({
         onFocus={handleInputFocus}
         onBlur={handleInputBlur}
         disabled={disabled || !Array.isArray(compoundData)} // Disable if no data
-        className={className || "w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-shadow text-sm"}
+        className={
+          className ||
+          "w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 focus:ring-2 focus:ring-blue-400 dark:focus:ring-purple-500 focus:border-transparent transition-shadow text-sm"
+        }
         autoComplete="off"
       />
       {isDropdownVisible && suggestions.length > 0 && (
-        <ul className="absolute z-20 w-full bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1 text-left">
+        <ul className="absolute z-20 w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1 text-left">
           {suggestions.map(suggestion => (
             // Ensure suggestion itself and its properties are valid before rendering
             suggestion && suggestion.compound_id && suggestion.name ? (
               <li
                 key={suggestion.compound_id}
                 onMouseDown={() => handleSuggestionClick(suggestion)}
-                className="px-3 py-2 hover:bg-slate-100 cursor-pointer text-sm"
+                className="px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm text-slate-700 dark:text-slate-100"
               >
                 {suggestion.name} ({suggestion.compound_id})
               </li>

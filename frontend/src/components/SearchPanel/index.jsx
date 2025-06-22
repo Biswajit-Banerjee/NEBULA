@@ -336,7 +336,7 @@ const SearchPanel = ({
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Explore Pathways
+                  Explore
                 </>
               )}
             </button>
