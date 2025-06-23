@@ -276,7 +276,7 @@ function App() {
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-[#282a36] text-slate-800 dark:text-[#f8f8f2] flex flex-col relative overflow-x-hidden">
       {/* Theme Toggle */}
-      <ThemeToggle className="absolute top-4 right-4" />
+      <ThemeToggle className="absolute top-4 right-4 z-50" />
       {/* Background decorations removed for flat design */}
 
       <div className="flex flex-1 relative z-10">
