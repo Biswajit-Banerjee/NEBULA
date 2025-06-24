@@ -16,19 +16,26 @@ export const processData = (data, currentGen) => {
     const uniqueNodes = new Map();
   
     // Helper function to add node if it doesn't exist yet
-    const addUniqueNode = (id, type, generation, props = {}) => {
+    const addUniqueNode = (id, type, generation, props = {}, pairIndex = null) => {
       if (!uniqueNodes.has(id)) {
         const node = {
           id,
           type,
           generation,
+          pairIndices: pairIndex !== null ? [pairIndex] : [],
           ...props,
         };
         nodes.push(node);
         uniqueNodes.set(id, node);
         return node;
       }
-      return uniqueNodes.get(id);
+  
+      // If node already exists, merge the pair metadata
+      const existing = uniqueNodes.get(id);
+      if (pairIndex !== null && !existing.pairIndices.includes(pairIndex)) {
+        existing.pairIndices.push(pairIndex);
+      }
+      return existing;
     };
   
     // First pass: Add all compounds for the current generation
@@ -41,7 +48,7 @@ export const processData = (data, currentGen) => {
               addUniqueNode(compound, "compound", parseInt(gen), {
                 label: compound,
                 isVisible: true,
-              });
+              }, reaction.pairIndex ?? null);
             }
           }
         );
@@ -98,7 +105,8 @@ export const processData = (data, currentGen) => {
           {
             label: reaction.reaction,
             reaction: reaction,
-          }
+          },
+          reaction.pairIndex ?? null
         );
   
         // Only add product nodes if we're at the target generation or higher
@@ -112,7 +120,8 @@ export const processData = (data, currentGen) => {
             {
               label: reaction.reaction,
               reaction: reaction,
-            }
+            },
+            reaction.pairIndex ?? null
           );
   
           // Add link between reaction nodes
@@ -121,6 +130,7 @@ export const processData = (data, currentGen) => {
             target: productNodeId,
             type: "reaction",
             generation: targetGen,
+            pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
           });
   
           // Add EC nodes if present and we're at target generation
@@ -139,7 +149,7 @@ export const processData = (data, currentGen) => {
                   label: ec,
                   ec: ec,
                   generation: targetGen,
-                });
+                }, reaction.pairIndex ?? null);
   
                 // Create connections only if they don't already exist
                 const existingInLink = links.find(
@@ -155,6 +165,7 @@ export const processData = (data, currentGen) => {
                     target: ecNodeId,
                     type: "ec-in",
                     generation: targetGen,
+                    pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
                   });
                 }
   
@@ -164,6 +175,7 @@ export const processData = (data, currentGen) => {
                     target: productNodeId,
                     type: "ec-out",
                     generation: targetGen,
+                    pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
                   });
                 }
               }
@@ -180,6 +192,7 @@ export const processData = (data, currentGen) => {
                 type: "product",
                 stoichiometry: product.stoichiometry,
                 generation: targetGen,
+                pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
               });
             }
           });
@@ -195,6 +208,7 @@ export const processData = (data, currentGen) => {
               type: "substrate",
               stoichiometry: reactant.stoichiometry,
               generation: sourceGen,
+              pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
             });
           }
         });

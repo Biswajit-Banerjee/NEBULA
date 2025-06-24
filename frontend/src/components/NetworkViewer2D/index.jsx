@@ -8,7 +8,7 @@ import useFullscreen from "./hooks/useFullscreen";
 import PhysicsControls from "./PhysicsControls";
 import HelpOverlay from "./HelpOverlay";
 
-const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
+const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -21,6 +21,8 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
 
   // New: help overlay visibility state
   const [showHelp, setShowHelp] = useState(false);
+  // Overlay visibility state
+  const [showOverlay, setShowOverlay] = useState(false);
   // color by generation always on
   const colorByGeneration = true;
 
@@ -96,6 +98,18 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
   // Make sure we have array data to pass to the GraphRenderer
   const safeResults = Array.isArray(results) ? results : [];
 
+  // Map pair index to rgba color string
+  const pairColorMap = React.useMemo(() => {
+    const map = {};
+    searchPairs.forEach((p, idx) => {
+      const hex = p.color || '#94a3b8';
+      const alpha = p.alpha !== undefined ? p.alpha : 1;
+      const aHex = Math.round(alpha*255).toString(16).padStart(2,'0');
+      map[idx] = `${hex}${aHex}`;
+    });
+    return map;
+  }, [searchPairs]);
+
   // Keyboard shortcuts for common actions
   useEffect(() => {
     const handler = (e) => {
@@ -159,6 +173,10 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
     }
   };
 
+  const toggleOverlay = () => {
+    setShowOverlay(prev => !prev);
+  };
+
   return (
     <div className="relative rounded-xl border border-gray-200 dark:border-slate-700 shadow bg-white dark:bg-slate-800" ref={containerRef}>
       {/* Main container */}
@@ -195,6 +213,8 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
             tension={tension}
             repulsion={repulsion}
             colorByGeneration={colorByGeneration}
+            pairColorMap={pairColorMap}
+            showOverlay={showOverlay}
           />
         </div>
 
@@ -221,6 +241,8 @@ const NetworkViewer2D = forwardRef(({ results, height = "600px" }, ref) => {
           toggleHelp={() => setShowHelp(prev => !prev)}
           startRotate={startRotate}
           stopRotate={stopRotate}
+          toggleOverlay={toggleOverlay}
+          overlayOn={showOverlay}
         />
 
         {/* Legend and Help Text */}

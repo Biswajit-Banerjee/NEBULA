@@ -22,6 +22,7 @@ const ResultTable = ({
   selectedRows: externalSelectedRows = null,
   setSelectedRows: setExternalSelectedRows = null,
   combinedMode = false,
+  searchPairs = [],
 }) => {
   // Use internal state if no external state is provided
   const [internalSelectedRows, setInternalSelectedRows] = useState(new Set());
@@ -156,25 +157,28 @@ const ResultTable = ({
 
     const neutralBg = isDark ? 'rgba(255,255,255,0.05)' : 'white';
 
-    // In combined mode, a row might have multiple colors
-    if (combinedMode && row.pairColors && row.pairColors.length > 0) {
-      if (row.pairColors.length > 1) {
-        return {
-          borderLeft: `4px solid ${row.pairColors[0]}`,
-          backgroundColor: neutralBg,
-        };
-      } else {
-        return {
-          borderLeft: `4px solid ${row.pairColors[0]}`,
-          backgroundColor: `${row.pairColors[0]}10`,
-        };
-      }
+    const colorForPair = (idx) => {
+      const p = searchPairs[idx];
+      if (!p) return null;
+      const hex = p.color || '#94a3b8';
+      const alpha = p.alpha !== undefined ? p.alpha : 1;
+      const aHex = Math.round(alpha*255).toString(16).padStart(2,'0');
+      return `${hex}${aHex}`;
+    };
+
+    if (combinedMode && row.pairIndices && row.pairIndices.length) {
+      const col0 = colorForPair(row.pairIndices[0]);
+      return {
+        borderLeft: `4px solid ${col0}`,
+        backgroundColor: row.pairIndices.length===1 ? `${col0}20` : neutralBg,
+      };
     }
 
-    if (row.pairColor) {
+    if (row.pairIndex !== undefined) {
+      const col = colorForPair(row.pairIndex);
       return {
-        borderLeft: `4px solid ${row.pairColor}`,
-        backgroundColor: `${row.pairColor}10`,
+        borderLeft: `4px solid ${col}`,
+        backgroundColor: `${col}20`,
       };
     }
 
@@ -263,18 +267,12 @@ const ResultTable = ({
   };
 
   // Render multi-color indicator for combined mode
-  const MultiColorIndicator = ({ colors }) => {
-    if (!colors || colors.length === 0) return null;
-
+  const MultiColorIndicator = ({ pairIndices }) => {
+    if (!pairIndices || pairIndices.length === 0) return null;
+    const cols = pairIndices.map(colorForPair);
     return (
       <div className="flex items-center h-5 gap-0.5">
-        {colors.map((color, index) => (
-          <div
-            key={index}
-            className="w-2 h-full rounded-sm"
-            style={{ backgroundColor: color }}
-          />
-        ))}
+        {cols.map((c,i)=>(<div key={i} className="w-2 h-full rounded-sm" style={{backgroundColor:c}}/>))}
       </div>
     );
   };
@@ -408,8 +406,8 @@ const ResultTable = ({
                   </td>
                   {combinedMode && (
                     <td className="w-10 px-2">
-                      {row.pairColors && (
-                        <MultiColorIndicator colors={row.pairColors} />
+                      {row.pairIndices && (
+                        <MultiColorIndicator pairIndices={row.pairIndices} />
                       )}
                     </td>
                   )}

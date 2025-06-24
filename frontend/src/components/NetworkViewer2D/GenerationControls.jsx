@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RotateCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle, Lock, Unlock } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RotateCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle, Lock, Unlock, Layers } from 'lucide-react';
 
 const GenerationControls = ({
   currentGeneration,
@@ -23,6 +23,8 @@ const GenerationControls = ({
   stopRotate,
   togglePhysicsSim,
   physicsOff,
+  toggleOverlay,
+  overlayOn,
 }) => {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
   
@@ -40,6 +42,14 @@ const GenerationControls = ({
         <div className={clusterGap}>
           <button onClick={handleZoomIn} className={btnBase} title="Zoom in" aria-label="Zoom in"><ZoomIn className="w-4 h-4"/></button>
           <button onClick={handleZoomOut} className={btnBase} title="Zoom out" aria-label="Zoom out"><ZoomOut className="w-4 h-4"/></button>
+          <button
+            onClick={toggleOverlay}
+            className={btnBase}
+            title={overlayOn ? "Hide path overlay" : "Show path overlay"}
+            aria-label="Toggle path overlay"
+          >
+            <Layers className="w-4 h-4" />
+          </button>
           <button
             onClick={resetSpiral}
             onMouseDown={startRotate}

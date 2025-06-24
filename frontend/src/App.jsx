@@ -168,7 +168,6 @@ function App() {
             pairIndex: i, 
             pairSource: pair.source.trim() || 'any',
             pairTarget: pair.target.trim(),
-            pairColor: pair.color 
           }));
           allResults = [...allResults, ...pairResults];
         } else {
@@ -213,10 +212,9 @@ function App() {
     filteredResults.forEach(result => {
       const key = `${result.reaction}-${result.source}-${result.target}-${result.equation}`;
       if (!uniqueRows[key]) {
-        uniqueRows[key] = { ...result, pairColors: [result.pairColor].filter(Boolean), pairIndices: [result.pairIndex].filter(idx => idx !== undefined) };
+        uniqueRows[key] = { ...result, pairIndices: [result.pairIndex].filter(idx => idx !== undefined) };
         combined.push(uniqueRows[key]);
       } else {
-        if (result.pairColor && !uniqueRows[key].pairColors.includes(result.pairColor)) uniqueRows[key].pairColors.push(result.pairColor);
         if (result.pairIndex !== undefined && !uniqueRows[key].pairIndices.includes(result.pairIndex)) uniqueRows[key].pairIndices.push(result.pairIndex);
       }
     });
@@ -363,6 +361,7 @@ function App() {
                     combinedMode={combinedMode}
                     network2dRef={network2dRef}
                     network3dRef={network3dRef}
+                    searchPairs={searchPairs}
                   />
                 </div>
               </div>

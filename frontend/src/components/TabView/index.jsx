@@ -6,7 +6,7 @@ import ResultTable from '../ResultTable';
 const LazyNetworkViewer3D = lazy(() => import('../NetworkViewer'));
 const LazyNetworkViewer2D = lazy(() => import('../NetworkViewer2D'));
 
-const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode, network2dRef, network3dRef }) => {
+const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedMode, network2dRef, network3dRef, searchPairs }) => {
   const [activeTab, setActiveTab] = useState('table');
   const [filteredResults, setFilteredResults] = useState(results);
 
@@ -91,7 +91,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
 
         {activeTab === 'network2d' && (
           <Suspense fallback={<div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading 2D viewer…</div>}>
-            <LazyNetworkViewer2D ref={network2dRef} results={filteredResults} height="600px" />
+            <LazyNetworkViewer2D ref={network2dRef} results={filteredResults} searchPairs={searchPairs} height="600px" />
           </Suspense>
         )}
         {activeTab === 'table' && (
@@ -102,6 +102,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
             setFilteredResults={setFilteredResults}
             selectedRows={selectedRows}
             setSelectedRows={setSelectedRows}
+            searchPairs={searchPairs}
           />
         )}
       </div>

@@ -25,6 +25,8 @@ const GraphRendererCanvas = forwardRef(
       isFullscreen,
       tension,
       repulsion,
+      pairColorMap = {},
+      showOverlay = false,
     },
     ref
   ) => {
@@ -139,6 +141,95 @@ const GraphRendererCanvas = forwardRef(
       const t = transformRef.current;
       ctx.translate(t.x, t.y);
       ctx.scale(t.k, t.k);
+
+      /* ---------------------------------------------------------- */
+      /* Path overlay – per node & edge highlight                   */
+      /* ---------------------------------------------------------- */
+
+      if (showOverlay) {
+        const alphaEdge = 0.25;
+        const alphaNode = 0.35;
+
+        const hexToRgba = (hex, alpha = 0.3) => {
+          let h = hex.replace("#", "");
+          if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+          const bigint = parseInt(h, 16);
+          const r = (bigint >> 16) & 255;
+          const g = (bigint >> 8) & 255;
+          const b = bigint & 255;
+          return `rgba(${r},${g},${b},${alpha})`;
+        };
+
+        // Highlight edges first (so nodes overlay edges)
+        graph.links.forEach((l) => {
+          if (!l.pairIndices || l.pairIndices.length === 0) return;
+          const srcId = l.source?.id || l.source;
+          const trgId = l.target?.id || l.target;
+          if (hiddenIds.has(srcId) || hiddenIds.has(trgId)) return;
+          const src = nodes.find((n) => n.id === srcId);
+          const trg = nodes.find((n) => n.id === trgId);
+          if (!src || !trg) return;
+
+          l.pairIndices.forEach((pi) => {
+            const col = pairColorMap[pi];
+            if (!col) return;
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.lineWidth = Math.max(6 / t.k, 3);
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(trg.x, trg.y);
+            ctx.stroke();
+            ctx.restore();
+          });
+        });
+
+        // Highlight nodes
+        nodes.forEach((n) => {
+          if (!n.pairIndices || n.pairIndices.length === 0) return;
+          if (hiddenIds.has(n.id)) return;
+
+          n.pairIndices.forEach((pi) => {
+            const col = pairColorMap[pi];
+            if (!col) return;
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.lineWidth = Math.max(6 / t.k, 3);
+            const pad = 4; // expansion around original size
+            switch (n.type) {
+              case "compound":
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, 18 + pad, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+              case "ec":
+                ctx.beginPath();
+                ctx.ellipse(n.x, n.y, 24 + pad, 14 + pad, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+              default:
+                const rx = n.x - 20 - pad;
+                const ry = n.y - 12 - pad;
+                const rw = 40 + pad * 2;
+                const rh = 24 + pad * 2;
+                const radius = 6;
+                ctx.beginPath();
+                ctx.moveTo(rx + radius, ry);
+                ctx.lineTo(rx + rw - radius, ry);
+                ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
+                ctx.lineTo(rx + rw, ry + rh - radius);
+                ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
+                ctx.lineTo(rx + radius, ry + rh);
+                ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
+                ctx.lineTo(rx, ry + radius);
+                ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+                ctx.stroke();
+            }
+            ctx.restore();
+          });
+        });
+      }
 
       const links = graph.links.filter((l) => {
         const sId = l.source?.id || l.source;
@@ -261,7 +352,12 @@ const GraphRendererCanvas = forwardRef(
       });
 
       ctx.restore();
-    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots]);
+    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay]);
+
+    // Use effect to redraw when overlay toggled or graph updated
+    useEffect(() => {
+      draw(graph.nodes);
+    }, [showOverlay, graph, draw]);
 
     useEffect(() => {
       if (!graph.nodes.length) return;
