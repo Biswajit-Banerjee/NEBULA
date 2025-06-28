@@ -423,10 +423,20 @@ const GraphRendererCanvas = forwardRef(
 
       // Remove hidden nodes from simulation arrays
       const visibleNodes = nodesCopy.filter((n) => !hiddenIds.has(n.id));
+
+      // Visible links corresponding to visible nodes
       const visibleLinks = linksCopy.filter((l) => {
         const sId = l.source?.id || l.source;
         const tId = l.target?.id || l.target;
         return !hiddenIds.has(sId) && !hiddenIds.has(tId);
+      });
+
+      // Fix positions of nodes from earlier generations so they remain stable
+      visibleNodes.forEach((n) => {
+        if ((n.generation || 0) < currentGeneration && !nodesLocked) {
+          n.fx = n.x;
+          n.fy = n.y;
+        }
       });
 
       // Initial positions – reuse previous if simulation exists
@@ -470,8 +480,8 @@ const GraphRendererCanvas = forwardRef(
             (typeof height === "string" ? parseInt(height) : height) / 2
           )
         )
-        .alpha(1)
-        .alphaDecay(0.02)
+        .alpha(0.5) // gentler start to avoid "explosion" effect
+        .alphaDecay(0.05)
         .on("tick", () => draw(sim.nodes()));
 
       if (nodesLocked) {
@@ -770,17 +780,71 @@ const GraphRendererCanvas = forwardRef(
         setNodesLocked((prev) => {
           const next = !prev;
           const simNodes = simulationRef.current?.nodes?.() || [];
+
           if (next) {
-            // Locking: fix current positions
+            /* ------------- Locking: snap nodes to nearest grid ------------- */
+
+            // Determine grid spacing based on largest node footprint
+            const spacing = (() => {
+              let max = 0;
+              simNodes.forEach((n) => {
+                let size;
+                switch (n.type) {
+                  case "compound":
+                    size = 36; // diameter
+                    break;
+                  case "ec":
+                    size = 48; // ellipse width
+                    break;
+                  default:
+                    size = 40; // rectangle width
+                }
+                if (size > max) max = size;
+              });
+              return max || 40;
+            })();
+
+            // Helper to find nearest free grid coordinate
+            const occupied = new Set();
+            const findFreeCell = (gx, gy) => {
+              if (!occupied.has(`${gx},${gy}`)) return [gx, gy];
+              let r = 1;
+              while (r < 100) {
+                for (let dx = -r; dx <= r; dx++) {
+                  for (let dy = -r; dy <= r; dy++) {
+                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // perimeter only
+                    const key = `${gx + dx},${gy + dy}`;
+                    if (!occupied.has(key)) return [gx + dx, gy + dy];
+                  }
+                }
+                r++;
+              }
+              return [gx, gy]; // fallback
+            };
+
             simNodes.forEach((n) => {
-              n.fx = n.x;
-              n.fy = n.y;
+              const gx = Math.round(n.x / spacing);
+              const gy = Math.round(n.y / spacing);
+              const [fxg, fyg] = findFreeCell(gx, gy);
+              occupied.add(`${fxg},${fyg}`);
+              const snappedX = fxg * spacing;
+              const snappedY = fyg * spacing;
+              n.x = snappedX;
+              n.y = snappedY;
+              n.fx = snappedX;
+              n.fy = snappedY;
             });
+
             simulationRef.current?.stop();
           } else {
-            // Unlocking: keep previous fixes; simulation can reheat slightly
+            // Unlocking: allow movement again
+            simNodes.forEach((n) => {
+              delete n.fx;
+              delete n.fy;
+            });
             simulationRef.current?.alpha(0.7).restart();
           }
+
           draw(simNodes);
           return next;
         });
