@@ -143,6 +143,61 @@ const GraphRendererCanvas = forwardRef(
       ctx.scale(t.k, t.k);
 
       /* ---------------------------------------------------------- */
+      /* Grid overlay – drawn in world coordinates so it scales    */
+      /* ---------------------------------------------------------- */
+
+      // Dynamically determine grid cell size so that a node fits neatly
+      const nodeGridSize = (() => {
+        let max = 0;
+        nodes.forEach((n) => {
+          let size;
+          switch (n.type) {
+            case "compound":
+              size = 36; // diameter 18 * 2
+              break;
+            case "ec":
+              size = 48; // width (rx 24 * 2)
+              break;
+            default:
+              size = 40; // rectangle width
+          }
+          if (size > max) max = size;
+        });
+        return max || 40; // fallback
+      })();
+
+      const gridSpacing = nodeGridSize;
+      const gridColor = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+
+      ctx.save();
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = 1 / t.k; // keep 1px regardless of zoom
+
+      // Compute visible bounds in world coords
+      const viewMinX = (-t.x) / t.k;
+      const viewMinY = (-t.y) / t.k;
+      const viewMaxX = viewMinX + w / t.k;
+      const viewMaxY = viewMinY + h / t.k;
+
+      // Align grid start to spacing
+      const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
+      const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
+
+      for (let x = startX; x <= viewMaxX; x += gridSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(x, viewMinY);
+        ctx.lineTo(x, viewMaxY);
+        ctx.stroke();
+      }
+      for (let y = startY; y <= viewMaxY; y += gridSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(viewMinX, y);
+        ctx.lineTo(viewMaxX, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      /* ---------------------------------------------------------- */
       /* Path overlay – per node & edge highlight                   */
       /* ---------------------------------------------------------- */
 
@@ -650,11 +705,13 @@ const GraphRendererCanvas = forwardRef(
         const width = maxX - minX;
         const heightSvg = maxY - minY;
 
-        // Helper to map canvas colors
+        // Helper to derive node colours exactly as in canvas rendering
         const getNodeStyle = (n) => {
-          if (n.type === 'compound') return { fill: 'hsl(200,100%,95%)', stroke: 'hsl(200,60%,50%)' };
-          if (n.type === 'ec') return { fill: '#FFFFFF', stroke: '#7C3AED' };
-          return { fill: '#FEF9C3', stroke: '#F59E0B' };
+          const hue = maxGeneration ? ((n.generation || 0) / (maxGeneration + 1)) * 320 : 200;
+          return {
+            fill: `hsl(${hue}, 70%, 90%)`,
+            stroke: `hsl(${hue}, 70%, 45%)`,
+          };
         };
 
         const svgParts = [];
@@ -670,7 +727,12 @@ const GraphRendererCanvas = forwardRef(
           let dash = '';
           if (l.type && l.type.startsWith('ec')) dash = '2 4';
           else if (l.type === 'reaction') dash = '6 4';
-          const stroke = l.type && l.type.startsWith('ec') ? '#8B5CF6' : '#9CA3AF';
+
+          let stroke;
+          if (l.type && l.type.startsWith('ec')) stroke = dark ? '#c4b5fd' : '#8B5CF6';
+          else if (l.type === 'reaction') stroke = dark ? '#CBD5E1' : '#9CA3AF';
+          else stroke = dark ? '#CBD5E1' : '#9CA3AF';
+
           svgParts.push(`<line x1="${src.x}" y1="${src.y}" x2="${trg.x}" y2="${trg.y}" stroke="${stroke}" stroke-width="1" stroke-linecap="round" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`);
         });
 
@@ -688,7 +750,8 @@ const GraphRendererCanvas = forwardRef(
           // label
           let label = n.label ?? n.id;
           if (/reaction-/.test(n.type)) label = label.split('_')[0];
-          svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="#374151" font-family="Inter, sans-serif">${label}</text>`);
+          const textColor = dark ? '#1E293B' : '#374151';
+          svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="${textColor}" font-family="Inter, sans-serif">${label}</text>`);
         });
 
         svgParts.push('</svg>');
