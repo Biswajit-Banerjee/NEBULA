@@ -1,55 +1,61 @@
-import React from "react";
-import { X } from "lucide-react";
+import React from 'react';
+import { X } from 'lucide-react';
 
-const HelpOverlay = ({ onClose }) => {
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full p-6">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          aria-label="Close help"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-4">Viewer Help & Shortcuts</h2>
+const HelpOverlay = ({ onClose }) => (
+  <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+      <button
+        onClick={onClose}
+        className="absolute top-3 right-3 rounded p-1 text-gray-500 hover:bg-indigo-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-slate-700 dark:hover:text-gray-200"
+        aria-label="Close help"
+      >
+        <X className="h-5 w-5" />
+      </button>
 
-        <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
-          <li><span className="font-medium">Drag</span> nodes to reposition them manually.</li>
-          <li><span className="font-medium">Scroll</span> to zoom in and out.</li>
-          <li><span className="font-medium">Ctrl + Click</span> on a reaction side-node to collapse / expand upstream or downstream pathways.</li>
+      <div className="max-h-[80vh] overflow-y-auto p-6">
+        <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-slate-100">Viewer Help & Shortcuts</h2>
+
+        <ul className="list-inside list-disc space-y-2 text-sm text-gray-700 dark:text-gray-300">
+          <li>
+            <span className="font-medium">Drag</span> nodes to reposition them.
+          </li>
+          <li>
+            <span className="font-medium">Scroll</span> to zoom in and out.
+          </li>
+          <li>
+            <span className="font-medium">Ctrl + Click</span> on a reaction side-node to collapse / expand pathways.
+          </li>
         </ul>
 
-        <h3 className="mt-4 mb-2 font-medium text-gray-800 dark:text-slate-100">Toolbar actions</h3>
-        <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
-          <li><span className="font-medium">Zoom ±</span> – zoom controls.</li>
-          <li><span className="font-medium">Reset View</span> – centre & fit graph.</li>
-          <li><span className="font-medium">Rotate Layout (R)</span> – re-run layout; hold the button to rotate graph.</li>
-          <li><span className="font-medium">Colour by Generation (C)</span> – toggle pastel gradient per generation.</li>
-          <li><span className="font-medium">Physics Panel (P)</span> – show/hide simulation sliders.</li>
-          <li><span className="font-medium">Disable Physics</span> – freeze simulation for large graphs.</li>
-          <li><span className="font-medium">Fullscreen (F)</span> – immerse the visualization.</li>
-          <li><span className="font-medium">Download</span> – export current view as SVG.</li>
+        <h3 className="mt-6 mb-2 font-medium text-gray-800 dark:text-slate-100">Toolbar actions</h3>
+        <ul className="list-inside list-disc space-y-1 text-sm text-gray-700 dark:text-gray-300">
+          <li>Zoom ± – change zoom</li>
+          <li>Rotate (R) – re-run layout or hold to spin</li>
+          <li>Physics (P) – open physics panel</li>
+          <li>Lock – freeze/unfreeze simulation</li>
+          <li>Fullscreen (F) – immersive mode</li>
+          <li>Download – export view as SVG</li>
         </ul>
 
-        <h3 className="mt-4 mb-2 font-medium text-gray-800 dark:text-slate-100">Keyboard shortcuts</h3>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700 dark:text-gray-300">
+        <h3 className="mt-6 mb-2 font-medium text-gray-800 dark:text-slate-100">Keyboard shortcuts</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-gray-700 dark:text-gray-300">
           <span className="font-medium">+</span><span>Zoom in</span>
           <span className="font-medium">-</span><span>Zoom out</span>
           <span className="font-medium">0</span><span>Reset view</span>
-          <span className="font-medium">Space</span><span>Play/Pause generations</span>
+          <span className="font-medium">Space</span><span>Play/Pause</span>
           <span className="font-medium">← / →</span><span>Step generation</span>
-          <span className="font-medium">R</span><span>Rotate / reset layout</span>
-          <span className="font-medium">C</span><span>Toggle Sadist mode</span>
-          <span className="font-medium">P</span><span>Show/Hide physics panel</span>
-          <span className="font-medium">F</span><span>Toggle fullscreen</span>
+          <span className="font-medium">R</span><span>Rotate layout</span>
+          <span className="font-medium">P</span><span>Physics panel</span>
+          <span className="font-medium">F</span><span>Fullscreen</span>
           <span className="font-medium">H</span><span>Help</span>
         </div>
 
-        <p className="mt-6 text-xs text-gray-500 dark:text-gray-400 text-center">Made with ❤️ – enjoy exploring!</p>
+        <p className="mt-8 text-center text-xs text-gray-500 dark:text-gray-400">
+          Made with ❤️ – enjoy exploring!
+        </p>
       </div>
     </div>
-  );
-};
+  </div>
+);
 
 export default HelpOverlay; 

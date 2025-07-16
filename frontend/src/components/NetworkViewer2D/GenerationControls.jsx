@@ -1,5 +1,45 @@
 import React, { useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Clock, ZoomIn, ZoomOut, RotateCcw, Download, SlidersHorizontal, Maximize, Minimize, HelpCircle, Lock, Unlock, Layers } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Clock,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Download,
+  SlidersHorizontal,
+  Maximize,
+  Minimize,
+  HelpCircle,
+  Lock,
+  Unlock,
+  Layers,
+} from 'lucide-react';
+
+// ✨ NEW: extracted reusable IconButton to ensure consistent styling & built-in tooltip
+const tooltipBase =
+  'absolute z-20 -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-xs font-medium pointer-events-none transition opacity-0 group-hover:opacity-100 whitespace-nowrap';
+
+const IconButton = ({ title, disabled, children, ...rest }) => (
+  <button
+    type="button"
+    className="group relative p-2 rounded-md hover:bg-indigo-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 disabled:opacity-40 disabled:pointer-events-none"
+    disabled={disabled}
+    aria-label={title}
+    {...rest}
+  >
+    {children}
+    {/* Tooltip */}
+    <span
+      className={`${tooltipBase} bg-gray-900 text-white dark:bg-gray-800`}
+      role="tooltip"
+    >
+      {title}
+    </span>
+  </button>
+);
 
 const GenerationControls = ({
   currentGeneration,
@@ -27,81 +67,97 @@ const GenerationControls = ({
   overlayOn,
 }) => {
   const [showSpeedControl, setShowSpeedControl] = useState(false);
-  
-  // Unified button style
-  const btnBase =
-    'p-2 rounded-md text-gray-700 dark:text-slate-200 transition hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-600 disabled:opacity-40';
-
-  const clusterGap = 'flex items-center gap-2';
 
   return (
-    <div className={`absolute bottom-0 left-0 w-full z-30 bg-white/70 dark:bg-slate-800/80 backdrop-blur-md shadow-inner`}>    
-      <div className="w-full px-3 py-2 flex items-center justify-between flex-wrap gap-y-2">
-
-        {/* Left cluster – view tools */}
-        <div className={clusterGap}>
-          <button onClick={handleZoomIn} className={btnBase} title="Zoom in" aria-label="Zoom in"><ZoomIn className="w-4 h-4"/></button>
-          <button onClick={handleZoomOut} className={btnBase} title="Zoom out" aria-label="Zoom out"><ZoomOut className="w-4 h-4"/></button>
-          <button
-            onClick={toggleOverlay}
-            className={btnBase}
-            title={overlayOn ? "Hide path overlay" : "Show path overlay"}
-            aria-label="Toggle path overlay"
-          >
-            <Layers className="w-4 h-4" />
-          </button>
-          <button
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col gap-2 p-3 sm:p-4">
+      {/* Top toolbar */}
+      <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-md px-4 py-2 shadow-lg border border-gray-200 dark:border-slate-700">
+        {/* View cluster */}
+        <div className="flex items-center gap-2">
+          <IconButton title="Zoom in" onClick={handleZoomIn}><ZoomIn className="w-5 h-5" /></IconButton>
+          <IconButton title="Zoom out" onClick={handleZoomOut}><ZoomOut className="w-5 h-5" /></IconButton>
+          <IconButton title={overlayOn ? 'Hide path overlay' : 'Show path overlay'} onClick={toggleOverlay}>
+            <Layers className="w-5 h-5" />
+          </IconButton>
+          {/* Rotate / reset view.  Click resets, hold rotates (implemented upstream) */}
+          <IconButton
+            title="Rotate layout (hold to spin)"
             onClick={resetSpiral}
             onMouseDown={startRotate}
             onMouseUp={stopRotate}
             onMouseLeave={stopRotate}
-            className={btnBase}
-            title="Rotate layout"
-            aria-label="Rotate layout"
           >
-            <RotateCcw className="w-4 h-4"/>
-          </button>
-          <button
+            <RotateCcw className="w-5 h-5" />
+          </IconButton>
+          <IconButton
+            title={physicsOff ? 'Unlock physics' : 'Lock physics'}
             onClick={togglePhysicsSim}
-            className={btnBase}
-            title={physicsOff ? "Unlock physics" : "Lock physics"}
-            aria-label="Toggle physics simulation"
           >
-            {physicsOff ? <Unlock className="w-4 h-4"/> : <Lock className="w-4 h-4"/>}
-          </button>
+            {physicsOff ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+          </IconButton>
         </div>
 
-        {/* Centre cluster – generation navigation & slider */}
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="flex items-center justify-center gap-2">
-            {/* Speed control button */}
-            <div className="relative">
-              <button onClick={()=>setShowSpeedControl(prev=>!prev)} className={btnBase} title="Animation speed" aria-label="Animation speed"><Clock className="w-4 h-4"/></button>
-              {showSpeedControl && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white dark:bg-slate-800 shadow-lg rounded-lg p-3 w-40 z-50">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 font-medium">Transition Speed</p>
-                  <input type="range" min="1" max="10" step="1" value={transitionSpeed} onChange={(e)=>setTransitionSpeed(parseInt(e.target.value))} className="w-full accent-indigo-600" />
-                </div>
-              )}
-            </div>
-
-            <button onClick={stepBackward} disabled={currentGeneration===0} className={btnBase} aria-label="Previous generation"><SkipBack className="w-4 h-4"/></button>
-            <button onClick={togglePlay} className={btnBase} aria-label={isPlaying? 'Pause':'Play'}>{isPlaying? <Pause className="w-4 h-4"/> : <Play className="w-4 h-4"/>}</button>
-            <button onClick={stepForward} disabled={currentGeneration===maxGeneration} className={btnBase} aria-label="Next generation"><SkipForward className="w-4 h-4"/></button>
-
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200 select-none">Gen <span className="text-indigo-600 dark:text-indigo-400">{currentGeneration}</span>/<span>{maxGeneration}</span></span>
+        {/* Generation controls */}
+        <div className="flex items-center gap-2">
+          {/* Speed popover */}
+          <div className="relative">
+            <IconButton title="Animation speed" onClick={() => setShowSpeedControl((p) => !p)}>
+              <Clock className="w-5 h-5" />
+            </IconButton>
+            {showSpeedControl && (
+              <div className="absolute bottom-full left-1/2 z-40 mb-3 w-44 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Transition Speed</p>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={transitionSpeed}
+                  onChange={(e) => setTransitionSpeed(parseInt(e.target.value))}
+                  className="w-full accent-indigo-600"
+                />
+              </div>
+            )}
           </div>
-          <input type="range" min="0" max={maxGeneration} value={currentGeneration} onChange={(e)=>setCurrentGeneration(parseInt(e.target.value))} className="w-full accent-indigo-600" />
+
+          <IconButton title="Previous generation" onClick={stepBackward} disabled={currentGeneration === 0}>
+            <SkipBack className="w-5 h-5" />
+          </IconButton>
+
+          <IconButton title={isPlaying ? 'Pause' : 'Play'} onClick={togglePlay}>
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+          </IconButton>
+
+          <IconButton title="Next generation" onClick={stepForward} disabled={currentGeneration === maxGeneration}>
+            <SkipForward className="w-5 h-5" />
+          </IconButton>
+
+          <span className="select-none text-sm font-medium text-gray-700 dark:text-gray-200">
+            Gen <span className="text-indigo-600 dark:text-indigo-400">{currentGeneration}</span>/{maxGeneration}
+          </span>
         </div>
 
-        {/* Right cluster – misc tools */}
-        <div className={`${clusterGap} justify-end`}>
-          <button onClick={togglePhysics} className={btnBase} title="Physics controls" aria-label="Physics"><SlidersHorizontal className="w-4 h-4"/></button>
-          <button onClick={handleDownloadSVG} className={btnBase} title="Download SVG" aria-label="Download"><Download className="w-4 h-4"/></button>
-          <button onClick={toggleFullscreen} className={btnBase} title={isFullscreen? 'Exit fullscreen':'Enter fullscreen'} aria-label="Fullscreen">{isFullscreen? <Minimize className="w-4 h-4"/> : <Maximize className="w-4 h-4"/>}</button>
-          <button onClick={toggleHelp} className={btnBase} title="Help" aria-label="Help"><HelpCircle className="w-4 h-4"/></button>
+        {/* Right tools */}
+        <div className="flex items-center gap-2">
+          <IconButton title="Physics controls" onClick={togglePhysics}><SlidersHorizontal className="w-5 h-5" /></IconButton>
+          <IconButton title="Download SVG" onClick={handleDownloadSVG}><Download className="w-5 h-5" /></IconButton>
+          <IconButton title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>
+            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+          </IconButton>
+          <IconButton title="Help" onClick={toggleHelp}><HelpCircle className="w-5 h-5" /></IconButton>
         </div>
+      </div>
 
+      {/* Generation slider – full width under toolbar */}
+      <div className="pointer-events-auto rounded-lg bg-white/60 dark:bg-slate-800/60 backdrop-blur-md px-4 py-2 shadow-inner border border-gray-200 dark:border-slate-700">
+        <input
+          type="range"
+          min="0"
+          max={maxGeneration}
+          value={currentGeneration}
+          onChange={(e) => setCurrentGeneration(parseInt(e.target.value))}
+          className="w-full accent-indigo-600"
+        />
       </div>
     </div>
   );

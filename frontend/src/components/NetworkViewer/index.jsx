@@ -1185,6 +1185,45 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     updateDims();
   }, [isFullscreen]);
 
+  /* ------------------------------------------------------------------ */
+  /* Spherical grid overlay (concave, follows theme)                    */
+  /* ------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (!fgRef.current) return;
+
+    const scene = fgRef.current.scene();
+    if (!scene) return;
+
+    // Remove previous grid if present (e.g., theme changed or graph resized)
+    const existing = scene.getObjectByName('concaveGrid');
+    if (existing) scene.remove(existing);
+
+    // Use a very large radius so users never "reach" the sphere boundary
+    const radius = 100000; // effectively infinite for interactive purposes
+
+    // Build wireframe sphere
+    const segments = 32;
+    const rings = 24;
+    const sphereGeom = new THREE.SphereGeometry(radius, segments, rings);
+    const wireGeom = new THREE.WireframeGeometry(sphereGeom);
+    const material = new THREE.LineBasicMaterial({
+      color: dark ? 0xffffff : 0x000000,
+      transparent: true,
+      opacity: 0.07
+    });
+    const grid = new THREE.LineSegments(wireGeom, material);
+    grid.name = 'concaveGrid';
+    grid.scale.set(-1, 1, 1); // flip so lines are rendered from inside the sphere
+    grid.renderOrder = -1; // ensure drawn behind nodes
+    scene.add(grid);
+
+    // Cleanup when component unmounts or dependencies change
+    return () => {
+      scene.remove(grid);
+    };
+  }, [dark]);
+
   // =============================================================================
   // User Interaction Functions
   // =============================================================================

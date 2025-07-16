@@ -24,7 +24,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Frontend URL
+    allow_origins=["*"],  # Allow all origins for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -392,6 +392,13 @@ async def get_ec_domains(ec_number: str):
             status_code=500,
             detail="Failed to fetch domain data"
         )
+
+# After all API routes are declared, mount the React build (or any static files) at the root path
+from fastapi.staticfiles import StaticFiles
+from app import STATIC_DIR
+
+# Serve frontend static files
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
 
 # Startup Event
 @app.on_event("startup")
