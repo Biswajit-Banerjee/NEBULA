@@ -11,7 +11,7 @@ export default function ThemeToggle({ className = "" }) {
       role="switch"
       aria-checked={dark}
       className={`flex items-center cursor-pointer w-11 h-6 rounded-full transition-colors duration-300 p-0.5 shadow-inner ${
-        dark ? "bg-purple-600" : "bg-gray-300"
+        dark ? "bg-violet-500/80" : "bg-slate-300"
       } ${className}`}
       title={dark ? "Switch to Day mode" : "Switch to Night mode"}
     >
@@ -21,9 +21,9 @@ export default function ThemeToggle({ className = "" }) {
         }`}
       >
         {dark ? (
-          <Moon className="w-3 h-3 text-purple-600" />
+          <Moon className="w-3 h-3 text-violet-500" />
         ) : (
-          <Sun className="w-3 h-3 text-yellow-400" />
+          <Sun className="w-3 h-3 text-amber-400" />
         )}
       </div>
     </div>

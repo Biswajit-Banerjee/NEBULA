@@ -8,7 +8,7 @@ const ECDetails = ({ ec }) => {
     <>
       <button
         onClick={() => setIsDialogOpen(true)}
-        className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-600/20 hover:bg-blue-200 dark:hover:bg-blue-600/30 rounded transition duration-150"
+        className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-300/80 bg-blue-50/80 dark:bg-blue-600/15 hover:bg-blue-100/80 dark:hover:bg-blue-600/25 rounded transition duration-150"
       >
         {ec}
       </button>

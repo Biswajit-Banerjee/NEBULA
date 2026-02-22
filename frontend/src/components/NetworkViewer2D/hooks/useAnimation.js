@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration) {
+function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration = 0) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [transitionSpeed, setTransitionSpeed] = useState(2); // Default 2 seconds
   const playIntervalRef = useRef(null);
@@ -58,7 +58,7 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration) {
 
     // About to start playing
     if (currentGeneration >= maxGeneration) {
-      setCurrentGeneration(0);
+      setCurrentGeneration(minGeneration);
     } else {
       // Immediate advance for instant feedback
       setCurrentGeneration((prev) => Math.min(prev + 1, maxGeneration));
@@ -84,7 +84,7 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration) {
   };
 
   const stepBackward = () => {
-    if (currentGeneration > 0) {
+    if (currentGeneration > minGeneration) {
       // Set the transition flag to prevent rapid stepping
       transitionInProgressRef.current = true;
       

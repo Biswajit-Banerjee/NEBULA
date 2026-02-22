@@ -65,7 +65,7 @@ const DomainVisualization = ({
 
   return (
     <div className="mt-2" ref={containerRef}>
-      <div className="relative h-24 bg-gray-100 dark:bg-slate-700 rounded p-4">
+      <div className="relative h-24 bg-gray-100/60 dark:bg-slate-700/50 rounded p-4">
         {/* Base protein line */}
         <div className="absolute top-8 left-4 h-1 bg-gray-300 dark:bg-slate-400" style={{ width: 'calc(100% - 2rem)' }} />
 
@@ -83,7 +83,7 @@ const DomainVisualization = ({
                 <div key={`domain-container-${idx}-${rangeIdx}`} className="relative">
                   <div
                     className={`absolute rounded cursor-pointer transition-all
-                      ${isSelected ? 'ring-2 ring-offset-1 ring-blue-500' : 'hover:opacity-90'}`}
+                      ${isSelected ? 'ring-2 ring-offset-1 ring-blue-400/70' : 'hover:opacity-90'}`}
                     style={{
                       left: `${left}px`,
                       width: `${width}px`,
@@ -121,7 +121,7 @@ const DomainVisualization = ({
           return (
             <div
               key={`feature-${idx}`}
-              className="absolute w-1 h-3 bg-red-500"
+              className="absolute w-1 h-3 bg-red-400/80 dark:bg-red-400/70"
               style={{
                 left: `${left}px`,
                 width: `${width}px`,
@@ -140,7 +140,7 @@ const DomainVisualization = ({
       </div>
       
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-6 text-xs text-gray-700 dark:text-gray-300">
+      <div className="flex flex-wrap gap-4 mt-6 text-xs text-gray-600 dark:text-slate-400">
         {proteinData?.domains?.map((domain, idx) => (
           <div key={`legend-${idx}`} className="flex items-center">
             <div 
@@ -151,7 +151,7 @@ const DomainVisualization = ({
           </div>
         ))}
         <div className="flex items-center">
-          <div className="w-3 h-3 bg-red-500 mr-1.5" />
+          <div className="w-3 h-3 bg-red-400/80 dark:bg-red-400/70 mr-1.5" />
           <span>Binding Sites</span>
         </div>
       </div>

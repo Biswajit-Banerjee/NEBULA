@@ -26,12 +26,14 @@ class EcodDomain:
     domain_id: str
     f_id: str
     ranges: List[DomainRange]
+    family_id: str = ""
 
 @dataclass
 class UniProtEntry:
     primary_accession: str
     uniprot_kb_id: str
     features: List[Feature]
+    organism_code: str = ""
     domains: List[EcodDomain] = None
 
 def parse_range(range_str: str) -> List[DomainRange]:
@@ -63,7 +65,7 @@ def parse_feature(feature_data: Dict) -> Feature:
         description=feature_data.get('description', '')
     )
 
-def parse_uniprot_entry(entry_data: Dict) -> UniProtEntry:
+def parse_uniprot_entry(entry_data: Dict, organism_code: str = "") -> UniProtEntry:
     """Parse single UniProt entry from API response"""
     name = ""
     
@@ -79,7 +81,8 @@ def parse_uniprot_entry(entry_data: Dict) -> UniProtEntry:
     return UniProtEntry(
         primary_accession=entry_data['primaryAccession'],
         uniprot_kb_id=f"{name} ({entry_data['uniProtkbId']})",
-        features=[parse_feature(f) for f in entry_data['features']]
+        features=[parse_feature(f) for f in entry_data['features']],
+        organism_code=organism_code
     )
     
 def get_uniprot_entries(ec_id: str, min_results:int = 10) -> List[UniProtEntry]:
@@ -131,19 +134,97 @@ def get_uniprot_entries(ec_id: str, min_results:int = 10) -> List[UniProtEntry]:
         
     return result
 
+def fetch_uniprot_by_accession(accession: str) -> Optional[Dict]:
+    """Fetch a single UniProt entry by accession ID"""
+    url = f"https://rest.uniprot.org/uniprotkb/{accession}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return None
+
+def list_accessions_for_ec(ec_id: str, gene_mapper: Dict) -> List[Dict]:
+    """
+    Instantly list all accessions for an EC number from the precomputed gene_mapper.
+    No network calls — just a dictionary lookup.
+    
+    Returns:
+        List of dicts with 'accession' and 'organism_code' keys
+    """
+    prefix = f"{ec_id}:"
+    result = []
+    for key, accessions in gene_mapper.items():
+        if not key.startswith(prefix):
+            continue
+        organism_code = key[len(prefix):]
+        for accession in accessions:
+            result.append({"accession": accession, "organism_code": organism_code})
+    return result
+
+def get_single_uniprot_entry(accession: str, organism_code: str = "") -> Optional[UniProtEntry]:
+    """
+    Fetch and parse a single UniProt entry by accession.
+    
+    Returns:
+        A UniProtEntry or None if fetch/parse fails
+    """
+    entry_data = fetch_uniprot_by_accession(accession)
+    if entry_data is None:
+        return None
+    try:
+        return parse_uniprot_entry(entry_data, organism_code=organism_code)
+    except KeyError:
+        return None
+
+def get_uniprot_entries_from_mapper(ec_id: str, gene_mapper: Dict) -> List[UniProtEntry]:
+    """
+    Look up UniProt accessions from precomputed gene_mapper and fetch each entry
+    by direct accession instead of broad EC search.
+    
+    Args:
+        ec_id: EC number (e.g. "1.1.1.38")
+        gene_mapper: dict with keys like "ec:organism" and values as list of accessions
+    
+    Returns:
+        List of UniProtEntry objects
+    """
+    prefix = f"{ec_id}:"
+    result = []
+    
+    for key, accessions in gene_mapper.items():
+        if not key.startswith(prefix):
+            continue
+        organism_code = key[len(prefix):]
+        
+        for accession in accessions:
+            entry_data = fetch_uniprot_by_accession(accession)
+            if entry_data is None:
+                continue
+            try:
+                entry = parse_uniprot_entry(entry_data, organism_code=organism_code)
+                result.append(entry)
+            except KeyError:
+                continue
+    
+    return result
+
 def filter_important_features(entry: UniProtEntry) -> UniProtEntry:
     """Filter only Active site and Binding site features"""
     important_types = {'Active site', 'Binding site'}
     entry.features = [f for f in entry.features if f.type in important_types]
     return entry
 
-def integrate_ecod_data(entries: List[UniProtEntry], ecod_df: pd.DataFrame) -> List[UniProtEntry]:
+def integrate_ecod_data(entries: List[UniProtEntry], ecod_df: pd.DataFrame, domain_df: pd.DataFrame = None) -> List[UniProtEntry]:
     """
     Integrate ECOD domain information with UniProt entries
     
     Args:
         entries: List of UniProt entries
-        ecod_file: Path to ECOD domains CSV file
+        ecod_df: DataFrame from ecod_domains.csv (has descriptive f_id)
+        domain_df: Optional DataFrame from domains.csv (has numeric f_id)
     
     Returns:
         Updated list of UniProt entries with domain information
@@ -156,16 +237,30 @@ def integrate_ecod_data(entries: List[UniProtEntry], ecod_df: pd.DataFrame) -> L
         entry_domains = ecod_df[ecod_df['uniprot_id'] == entry.primary_accession]
         
         if entry_domains.empty:
+            # Entry has no ECOD domains, but should still be included in results
+            modified_entries.append(entry)
             continue
             
         # Convert ECOD data to domain objects
         entry.domains = []
         for _, domain in entry_domains.iterrows():
             ranges = parse_range(domain['range'])
+            
+            # Look up numeric family_id from domains.csv
+            numeric_fid = ""
+            if domain_df is not None:
+                match = domain_df[
+                    (domain_df['accession'] == entry.primary_accession) &
+                    (domain_df['domain_id'] == domain['domain_id'])
+                ]
+                if not match.empty:
+                    numeric_fid = str(match.iloc[0]['f_id'])
+            
             entry.domains.append(EcodDomain(
                 domain_id=domain['domain_id'],
                 f_id=domain['f_id'],
-                ranges=ranges
+                ranges=ranges,
+                family_id=numeric_fid
             ))
         
         # Match features to domains

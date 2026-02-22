@@ -26,22 +26,44 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   // color by generation always on
   const colorByGeneration = true;
 
+  // Mask slider: lower bound of visible generation range
+  const [minVisibleGeneration, setMinVisibleGeneration] = useState(0);
+
   // Use custom hooks for state management
   const { 
     graphData, 
     currentGeneration, 
     setCurrentGeneration, 
-    maxGeneration 
+    maxGeneration,
+    minGeneration
   } = useGraphData(results);
+
+  // Reset mask slider when data changes
+  React.useEffect(() => {
+    setMinVisibleGeneration(minGeneration);
+  }, [minGeneration]);
   
   const { 
     isPlaying, 
     togglePlay, 
-    stepForward, 
-    stepBackward,
+    stepForward: rawStepForward, 
+    stepBackward: rawStepBackward,
     transitionSpeed,
     setTransitionSpeed
-  } = useAnimation(currentGeneration, setCurrentGeneration, maxGeneration);
+  } = useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration);
+
+  // Wrapped step callbacks that maintain minVisibleGeneration <= currentGeneration
+  const stepBackward = React.useCallback(() => {
+    if (currentGeneration > minGeneration) {
+      const next = currentGeneration - 1;
+      setCurrentGeneration(next);
+      if (minVisibleGeneration > next) setMinVisibleGeneration(next);
+    }
+  }, [currentGeneration, minGeneration, minVisibleGeneration, setCurrentGeneration, setMinVisibleGeneration]);
+
+  const stepForward = React.useCallback(() => {
+    rawStepForward();
+  }, [rawStepForward]);
   
   const { 
     isFullscreen, 
@@ -206,6 +228,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             ref={graphRendererRef}
             data={safeResults}
             currentGeneration={currentGeneration}
+            minVisibleGeneration={minVisibleGeneration}
             maxGeneration={maxGeneration}
             containerRef={containerRef}
             height={height}
@@ -223,6 +246,9 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
           currentGeneration={currentGeneration}
           setCurrentGeneration={setCurrentGeneration}
           maxGeneration={maxGeneration}
+          minGeneration={minGeneration}
+          minVisibleGeneration={minVisibleGeneration}
+          setMinVisibleGeneration={setMinVisibleGeneration}
           isPlaying={isPlaying}
           togglePlay={togglePlay}
           stepForward={stepForward}

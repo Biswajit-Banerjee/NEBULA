@@ -186,9 +186,9 @@ const ResultTable = ({
   };
 
   const ColumnManager = () => (
-    <div className="absolute right-0 top-12 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-600 p-4 z-50 min-w-[200px] animate-fade-in">
-      <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2 text-sm">
-        <LayoutGrid className="w-4 h-4 text-emerald-600" />
+    <div className="absolute right-0 top-12 bg-white/95 dark:bg-slate-800/95 rounded-xl shadow-lg border border-gray-200/70 dark:border-slate-600/40 p-4 z-50 min-w-[200px] animate-fade-in">
+      <h3 className="font-semibold text-slate-600 dark:text-slate-300 mb-3 flex items-center gap-2 text-sm">
+        <LayoutGrid className="w-4 h-4 text-emerald-500" />
         Column Visibility
       </h3>
       <div className="space-y-2">
@@ -208,14 +208,14 @@ const ResultTable = ({
                 className={`w-5 h-5 rounded-md flex items-center justify-center 
                 ${
                   isVisible
-                    ? "bg-emerald-500 border-emerald-500"
-                    : "bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600"
+                    ? "bg-emerald-400 border-emerald-400"
+                    : "bg-white dark:bg-slate-700 border-2 border-slate-200/70 dark:border-slate-600/50"
                 }`}
               >
                 {isVisible && <CheckCircle2 className="w-3 h-3 text-white" />}
               </div>
             </div>
-            <span className="text-sm text-slate-600 dark:text-slate-300 group-hover:text-emerald-700 transition-colors capitalize">
+            <span className="text-sm text-slate-600 dark:text-slate-300 group-hover:text-emerald-600 transition-colors capitalize">
               {key.replace(/_/g, " ")}
             </span>
           </label>
@@ -229,27 +229,27 @@ const ResultTable = ({
       <div className="flex items-center gap-4">
         {selectedRows.size > 0 ? (
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-700 px-3 py-1">
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-300 px-3 py-1">
               {selectedRows.size} item{selectedRows.size !== 1 ? "s" : ""}{" "}
               selected
             </span>
             <button
               onClick={handleKeepSelected}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-600/30 transition-all text-sm font-medium border border-emerald-100 dark:border-emerald-600/40"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-50/80 dark:bg-emerald-600/15 text-emerald-600 dark:text-emerald-300/80 rounded-lg hover:bg-emerald-100/80 dark:hover:bg-emerald-600/25 transition-all text-sm font-medium border border-emerald-100/80 dark:border-emerald-600/30"
             >
               <CheckCircle2 className="w-4 h-4" />
               Keep Selection
             </button>
             <button
               onClick={handleRemoveSelected}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-600/20 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-600/30 transition-all text-sm font-medium border border-blue-100 dark:border-blue-600/40"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-50/80 dark:bg-blue-600/15 text-blue-600 dark:text-blue-300/80 rounded-lg hover:bg-blue-100/80 dark:hover:bg-blue-600/25 transition-all text-sm font-medium border border-blue-100/80 dark:border-blue-600/30"
             >
               <XCircle className="w-4 h-4" />
               Delete Selection
             </button>
             <button
               onClick={() => setSelectedRows(new Set())} 
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-all text-sm font-medium border border-slate-100 dark:border-slate-600"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100/70 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-600/50 transition-all text-sm font-medium border border-slate-100/80 dark:border-slate-600/40"
               title="Clear selection"
             >
               <CircleDashed className="w-4 h-4" />
@@ -278,15 +278,15 @@ const ResultTable = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-      <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-700/50">
+    <div className="bg-white/90 dark:bg-slate-800/80 rounded-xl shadow-sm border border-slate-100/80 dark:border-slate-700/40 overflow-hidden">
+      <div className="p-4 border-b border-slate-100/80 dark:border-slate-700/40 flex justify-between items-center bg-slate-50/60 dark:bg-slate-700/30">
         <SelectionActions />
         <div className="flex items-center gap-2">
           {/* Filter Button & Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowFilterMenu(!showFilterMenu)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg transition-all text-slate-600 hover:text-blue-700"
+              className="p-2 hover:bg-slate-100/70 dark:hover:bg-slate-600/50 rounded-lg transition-all text-slate-500 hover:text-blue-500"
             >
               <Filter className="w-5 h-5" />
             </button>
@@ -306,7 +306,7 @@ const ResultTable = ({
           <div className="relative">
             <button
               onClick={() => setShowColumnManager(!showColumnManager)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg transition-all text-slate-600 hover:text-emerald-700"
+              className="p-2 hover:bg-slate-100/70 dark:hover:bg-slate-600/50 rounded-lg transition-all text-slate-500 hover:text-emerald-500"
             >
               <Settings2 className="w-5 h-5" />
             </button>
@@ -318,7 +318,7 @@ const ResultTable = ({
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+          <thead className="bg-slate-50/60 dark:bg-slate-800/60 border-b border-slate-100/80 dark:border-slate-700/40">
             <tr>
               <th className="w-8 px-4 py-3">
                 <div className="flex items-center justify-center">
@@ -336,8 +336,8 @@ const ResultTable = ({
                     ${
                       selectedRows.size === filteredResults.length &&
                       filteredResults.length > 0
-                        ? "bg-emerald-500"
-                        : "bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600"
+                        ? "bg-emerald-400"
+                        : "bg-white dark:bg-slate-700 border-2 border-slate-200/70 dark:border-slate-600/50"
                     }`}
                   >
                     {selectedRows.size === filteredResults.length &&
@@ -359,14 +359,14 @@ const ResultTable = ({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+          <tbody className="divide-y divide-slate-100/80 dark:divide-slate-700/40">
             {filteredResults?.map((row, index) => (
               <React.Fragment key={index}>
                 <tr
                   className={`
-                    hover:bg-slate-50 dark:hover:bg-slate-700 transition-all
-                    ${selectedRows.has(index) ? "bg-blue-50 dark:bg-blue-500/10" : ""}
-                    ${expandedRows.has(index) ? "!bg-indigo-50 dark:!bg-indigo-500/10" : ""}
+                    hover:bg-slate-50/70 dark:hover:bg-slate-700/40 transition-all
+                    ${selectedRows.has(index) ? "bg-blue-50/60 dark:bg-blue-500/8" : ""}
+                    ${expandedRows.has(index) ? "!bg-indigo-50/60 dark:!bg-indigo-500/8" : ""}
                   `}
                   style={getRowStyles(row)}
                 >
@@ -382,8 +382,8 @@ const ResultTable = ({
                         className={`w-5 h-5 rounded-md flex items-center justify-center 
                         ${
                           selectedRows.has(index)
-                            ? "bg-emerald-500"
-                            : "bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600"
+                            ? "bg-emerald-400"
+                            : "bg-white dark:bg-slate-700 border-2 border-slate-200/70 dark:border-slate-600/50"
                         }`}
                       >
                         {selectedRows.has(index) && (
@@ -395,7 +395,7 @@ const ResultTable = ({
                   <td className="w-8 px-2">
                     <button
                       onClick={() => toggleRowExpansion(index, row)}
-                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-md transition-all text-slate-500 hover:text-emerald-700"
+                      className="p-1 hover:bg-slate-100/70 dark:hover:bg-slate-600/40 rounded-md transition-all text-slate-500 hover:text-emerald-500"
                     >
                       {expandedRows.has(index) ? (
                         <ChevronDown className="w-4 h-4" />
@@ -416,7 +416,7 @@ const ResultTable = ({
                   ))}
                 </tr>
                 {expandedRows.has(index) && (
-                  <tr className="bg-indigo-50 dark:bg-indigo-500/10">
+                  <tr className="bg-indigo-50/50 dark:bg-indigo-500/8">
                     <td
                       colSpan={
                         visibleColumns.length + 2 + (combinedMode ? 1 : 0)
@@ -425,23 +425,23 @@ const ResultTable = ({
                     >
                       {loadingDetails[row.reaction] ? (
                         <div className="flex justify-center py-8">
-                          <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-500 border-t-transparent"></div>
+                          <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-400 border-t-transparent"></div>
                         </div>
                       ) : (
                         <div className="space-y-6">
-                          <div className="flex items-center gap-2 text-slate-700">
+                          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
                             <span className="font-medium">
                               Reaction Details
                             </span>
-                            <div className="flex-1 h-px bg-indigo-200"></div>
+                            <div className="flex-1 h-px bg-indigo-200/60 dark:bg-indigo-500/20"></div>
                           </div>
 
                           {/* Definition */}
-                          <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-indigo-100 dark:border-slate-600 shadow-sm">
-                            <span className="text-slate-400 text-sm font-medium">
+                          <div className="bg-white/80 dark:bg-slate-800/60 p-5 rounded-lg border border-indigo-100/60 dark:border-slate-600/30 shadow-sm">
+                            <span className="text-slate-400 dark:text-slate-500 text-sm font-medium">
                               KEGG Definition
                             </span>
-                            <p className="mt-2 text-slate-500 font-medium">
+                            <p className="mt-2 text-slate-500 dark:text-slate-400 font-medium">
                               {reactionDetails[row.reaction] ||
                                 "No definition available"}
                             </p>
@@ -449,11 +449,11 @@ const ResultTable = ({
 
                           {/* Reaction Image */}
                           {reactionImages[row.reaction] && (
-                            <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-indigo-100 dark:border-slate-600 shadow-sm">
-                              <span className="text-slate-600 text-sm font-medium">
+                            <div className="bg-white/80 dark:bg-slate-800/60 p-5 rounded-lg border border-indigo-100/60 dark:border-slate-600/30 shadow-sm">
+                              <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">
                                 KEGG Reaction Diagram
                               </span>
-                              <div className="mt-3 flex justify-center bg-gray-50 p-4 rounded-lg">
+                              <div className="mt-3 flex justify-center bg-gray-50/70 dark:bg-slate-700/40 p-4 rounded-lg">
                                 <img
                                   src={reactionImages[row.reaction]}
                                   alt={`Reaction diagram for ${row.reaction}`}

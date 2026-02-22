@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle, useContext } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
-import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import styled from 'styled-components';
 import * as d3 from 'd3';
-import { forwardRef as forwardRefReact, useRef as useRefReact } from 'react';
 import { ThemeContext } from '../ThemeProvider/ThemeProvider';
+import GenerationControls from '../NetworkViewer2D/GenerationControls';
 
 // =============================================================================
 // Styled Components
@@ -14,7 +13,7 @@ import { ThemeContext } from '../ThemeProvider/ThemeProvider';
 // API fetch function
 const fetchNodeData = async (nodeType, nodeId) => {
   try {
-    const response = await fetch(`http://localhost:8000/api/${nodeType}/${nodeId}`);
+    const response = await fetch(`/api/${nodeType}/${nodeId}`);
     if (!response.ok) {
       throw new Error(`Error fetching ${nodeType} data: ${response.statusText}`);
     }
@@ -131,11 +130,13 @@ const Button = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
-  
+  gap: 6px;
+  font-size: 13px;
+
   &:hover {
     background: ${props => props.$active ? 'rgba(74,159,255,0.35)' : (props.$dark ? 'rgba(40,49,61,0.9)' : 'rgba(226,232,240,1)')};
   }
-  
+
   &:active {
     transform: translateY(1px);
   }
@@ -478,6 +479,87 @@ const NodeInfoPre = styled.pre`
   overflow-y: auto;
 `;
 
+// Search bar styles
+const SearchContainer = styled.div`
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
+  backdrop-filter: blur(6px);
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+  border-radius: 10px;
+  padding: 8px 10px;
+`;
+
+const SearchInput = styled.input`
+  border: none;
+  outline: none;
+  background: transparent;
+  color: ${props => props.$dark ? '#e5e7eb' : '#111827'};
+  min-width: 220px;
+  font-size: 13px;
+`;
+
+const SearchBtn = styled.button`
+  background: ${props => props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)'};
+  color: ${props => props.$dark ? '#d0d0d0' : '#374151'};
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+`;
+
+// Help overlay styles
+const HelpOverlayBackdrop = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+  display: ${props => props.$visible ? 'flex' : 'none'};
+  align-items: center;
+  justify-content: center;
+`;
+
+const HelpOverlayCard = styled.div`
+  background: ${props => props.$dark ? 'rgba(30,39,51,0.95)' : 'rgba(255,255,255,0.98)'};
+  color: ${props => props.$dark ? '#e5e7eb' : '#374151'};
+  padding: 20px;
+  border-radius: 12px;
+  width: 520px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};
+`;
+
+const HelpTitle = styled.h3`
+  margin: 0 0 10px 0;
+  color: ${props => props.$dark ? '#fff' : '#111827'};
+`;
+
+const HelpList = styled.ul`
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  font-size: 13px;
+`;
+
+const HelpKey = styled.code`
+  background: ${props => props.$dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};
+  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'};
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-right: 8px;
+  display: inline-block;
+`;
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -487,6 +569,8 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [currentGeneration, setCurrentGeneration] = useState(0);
   const [maxGeneration, setMaxGeneration] = useState(0);
+  const [minGeneration, setMinGeneration] = useState(0);
+  const [minVisibleGeneration, setMinVisibleGeneration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playInterval, setPlayInterval] = useState(null);
   const [hideLabels, setHideLabels] = useState(false);
@@ -499,9 +583,28 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const [nodeApiData, setNodeApiData] = useState(null);
   const [nodeInfoVisible, setNodeInfoVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [repulsion, setRepulsion] = useState(120);
+  const [linkDistance, setLinkDistance] = useState(50);
+  const [playSpeed, setPlaySpeed] = useState(1500);
   const fgRef = useRef();
   const containerRef = useRef();
+  const rotateIntervalRef = useRef(null);
   const { dark } = useContext(ThemeContext);
+  const [showOptions, setShowOptions] = useState(false);
+  const [hoverNode, setHoverNode] = useState(null);
+  const [hoverLink, setHoverLink] = useState(null);
+  const [neighborsMap, setNeighborsMap] = useState(new Map());
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // 2D-like transition speed (1..10) mapped to ms play speed
+  const [transitionSpeed, setTransitionSpeed] = useState(5);
+  useEffect(() => {
+    const ms = 200 + (10 - transitionSpeed) * 280; // 10->200ms, 1->~2720ms
+    setPlaySpeed(ms);
+  }, [transitionSpeed]);
 
   // =============================================================================
   // Data Processing Functions
@@ -548,30 +651,44 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       // Process reactants (left side)
       const reactantItems = reactantsStr.split('+').map(item => {
         const trimmed = item.trim();
-        // Match coefficient and compound ID
-        const matches = trimmed.match(/^(\d*)([A-Za-z0-9]+)$/);
+        // Match coefficient and KEGG compound ID (C##### or Z##### format)
+        const matches = trimmed.match(/^(\d*)((?:C|Z)\d{5})$/i);
         if (matches) {
           return {
             id: matches[2],
             coefficient: matches[1] ? parseInt(matches[1]) : 1
           };
         }
-        // Handle edge cases
+        // Handle edge cases - try generic pattern for other compound formats
+        const genericMatch = trimmed.match(/^(\d*)([A-Za-z0-9_\-]+)$/);
+        if (genericMatch) {
+          return {
+            id: genericMatch[2],
+            coefficient: genericMatch[1] ? parseInt(genericMatch[1]) : 1
+          };
+        }
         return { id: trimmed, coefficient: 1 };
       });
       
       // Process products (right side)
       const productItems = productsStr.split('+').map(item => {
         const trimmed = item.trim();
-        // Match coefficient and compound ID
-        const matches = trimmed.match(/^(\d*)([A-Za-z0-9]+)$/);
+        // Match coefficient and KEGG compound ID (C##### or Z##### format)
+        const matches = trimmed.match(/^(\d*)((?:C|Z)\d{5})$/i);
         if (matches) {
           return {
             id: matches[2],
             coefficient: matches[1] ? parseInt(matches[1]) : 1
           };
         }
-        // Handle edge cases
+        // Handle edge cases - try generic pattern for other compound formats
+        const genericMatch = trimmed.match(/^(\d*)([A-Za-z0-9_\-]+)$/);
+        if (genericMatch) {
+          return {
+            id: genericMatch[2],
+            coefficient: genericMatch[1] ? parseInt(genericMatch[1]) : 1
+          };
+        }
         return { id: trimmed, coefficient: 1 };
       });
       
@@ -718,8 +835,10 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       return { nodes: [], links: [] };
     }
 
+    const minVis = minVisibleGeneration || 0;
+
     // For generation 0, show only compound nodes with generation 0
-    if (currentGeneration === 0) {
+    if (currentGeneration === 0 && minVis === 0) {
       const filteredNodes = graphData.nodes.filter(
         node => node.type === 'compound' && node.generation === 0
       );
@@ -730,15 +849,14 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       };
     }
     
-    // For other generations, apply specific filtering based on current generation
-    // First, get nodes up to current generation
+    // Filter nodes within the visible generation range [minVis, currentGeneration]
     let nodesForGeneration = graphData.nodes.filter(node => {
-      if (node.type === 'compound') return node.generation <= currentGeneration;
+      if (node.type === 'compound') return node.generation >= minVis && node.generation <= currentGeneration;
       if (node.type === 'reaction') {
-        if (node.subtype === 'reactant') return node.generation <= currentGeneration;
-        if (node.subtype === 'product') return node.generation <= currentGeneration;
+        if (node.subtype === 'reactant') return node.generation >= minVis && node.generation <= currentGeneration;
+        if (node.subtype === 'product') return node.generation >= minVis && node.generation <= currentGeneration;
       }
-      if (node.type === 'ec') return node.generation <= currentGeneration;
+      if (node.type === 'ec') return node.generation >= minVis && node.generation <= currentGeneration;
       return false;
     });
     
@@ -750,12 +868,13 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     // Get IDs of all nodes for this generation
     const nodeIds = new Set(nodesForGeneration.map(node => node.id));
     
-    // Filter links that connect nodes in this generation
+    // Filter links within the visible generation range
     const linksForGeneration = graphData.links.filter(link => {
       const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
       const targetId = typeof link.target === 'object' ? link.target.id : link.target;
       
       return (
+        link.generation >= minVis &&
         link.generation <= currentGeneration && 
         nodeIds.has(sourceId) && 
         nodeIds.has(targetId)
@@ -766,7 +885,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       nodes: nodesForGeneration,
       links: linksForGeneration
     };
-  }, [graphData, currentGeneration, hideEC]);
+  }, [graphData, currentGeneration, minVisibleGeneration, hideEC]);
 
   // =============================================================================
   // Graph Rendering Callbacks
@@ -784,8 +903,14 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     ];
     
     const generationIndex = node.generation % colors.length;
-    return colors[generationIndex];
-  }, []);
+    const base = colors[generationIndex];
+
+    if (!hoverNode) return base;
+    if (node.id === hoverNode.id) return base;
+    const neigh = neighborsMap.get(hoverNode.id);
+    if (neigh && neigh.has(node.id)) return base;
+    return dark ? '#2a3342' : '#e5e7eb';
+  }, [hoverNode, neighborsMap, dark]);
 
   // Generate node geometries based on node type
   const getNodeGeometry = useCallback((node) => {
@@ -938,7 +1063,11 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const linkColor = useCallback((link) => {
     // For dashed and dotted links, use the provided color
     if (link.type === 'dashed' || link.type === 'dotted') {
-      return link.color;
+      if (!hoverNode) return link.color;
+      const s = typeof link.source === 'object' ? link.source.id : link.source;
+      const t = typeof link.target === 'object' ? link.target.id : link.target;
+      if (s === hoverNode?.id || t === hoverNode?.id) return link.color;
+      return dark ? '#394556' : '#d1d5db';
     }
     
     // For solid links, generate a gradient color based on source and target generations
@@ -951,12 +1080,21 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       ];
       
       const sourceIndex = link.sourceGeneration % colors.length;
-      return colors[sourceIndex]; // Using source node color for simplicity
+      const c = colors[sourceIndex]; // Using source node color for simplicity
+      if (!hoverNode) return c;
+      const s = typeof link.source === 'object' ? link.source.id : link.source;
+      const t = typeof link.target === 'object' ? link.target.id : link.target;
+      if (s === hoverNode?.id || t === hoverNode?.id) return c;
+      return dark ? '#394556' : '#d1d5db';
     }
     
     // Fallback to provided color or default
-    return link.color || '#ffffff';
-  }, []);
+    if (!hoverNode) return link.color || '#ffffff';
+    const s = typeof link.source === 'object' ? link.source.id : link.source;
+    const t = typeof link.target === 'object' ? link.target.id : link.target;
+    if (s === hoverNode?.id || t === hoverNode?.id) return link.color || '#ffffff';
+    return dark ? '#394556' : '#d1d5db';
+  }, [hoverNode, dark]);
 
   // =============================================================================
   // Effect Hooks
@@ -968,15 +1106,21 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     
     setLoading(true);
     
-    // Find maximum generation from compound_generation values
+    // Find min/max generation from compound_generation values
     let maxGen = 0;
+    let minGen = Infinity;
     results.forEach(reaction => {
       Object.values(reaction.compound_generation).forEach(gen => {
         if (gen > maxGen) maxGen = gen;
+        if (gen < minGen) minGen = gen;
       });
     });
     
+    const effectiveMin = Math.max(0, minGen === Infinity ? 0 : minGen);
+    setMinGeneration(effectiveMin);
     setMaxGeneration(maxGen);
+    setCurrentGeneration(effectiveMin);
+    setMinVisibleGeneration(effectiveMin);
     
     // Generate the graph data for all generations
     const { nodes, links } = processGraphData(results);
@@ -989,12 +1133,13 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       if (fgRef.current) {
         // Ensure simulation and forces are properly initialized
         if (fgRef.current.d3Force('charge')) {
-          fgRef.current.d3Force('charge').strength(-120);
+          fgRef.current.d3Force('charge').strength(-repulsion);
         }
         
         if (fgRef.current.d3Force('link')) {
           fgRef.current.d3Force('link').distance(link => {
-            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+            const base = linkDistance;
+            return link.type === 'dashed' ? base * 1.6 : (link.type === 'dotted' ? base * 1.2 : base);
           });
         }
         
@@ -1086,18 +1231,20 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         }
         
         if (!fgRef.current.d3Force('charge')) {
-          fgRef.current.d3Force('charge', d3.forceManyBody().strength(-120));
+          fgRef.current.d3Force('charge', d3.forceManyBody().strength(-repulsion));
         } else {
-          fgRef.current.d3Force('charge').strength(-120);
+          fgRef.current.d3Force('charge').strength(-repulsion);
         }
         
         if (!fgRef.current.d3Force('link')) {
           fgRef.current.d3Force('link', d3.forceLink().distance(link => {
-            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+            const base = linkDistance;
+            return link.type === 'dashed' ? base * 1.6 : (link.type === 'dotted' ? base * 1.2 : base);
           }));
         } else {
           fgRef.current.d3Force('link').distance(link => {
-            return link.type === 'dashed' ? 80 : (link.type === 'dotted' ? 60 : 50);
+            const base = linkDistance;
+            return link.type === 'dashed' ? base * 1.6 : (link.type === 'dotted' ? base * 1.2 : base);
           });
         }
         
@@ -1110,7 +1257,59 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       fgRef.current.d3ReheatSimulation();
     }, 300);
     
-  }, [layoutMode, graphData.nodes]);
+  }, [layoutMode, graphData.nodes, repulsion, linkDistance]);
+
+  // Update forces if physics sliders change while in force layout
+  useEffect(() => {
+    if (!fgRef.current) return;
+    if (layoutMode !== 'force') return;
+    if (fgRef.current.d3Force('charge')) {
+      fgRef.current.d3Force('charge').strength(-repulsion);
+    }
+    if (fgRef.current.d3Force('link')) {
+      fgRef.current.d3Force('link').distance(link => {
+        const base = linkDistance;
+        return link.type === 'dashed' ? base * 1.6 : (link.type === 'dotted' ? base * 1.2 : base);
+      });
+    }
+    fgRef.current.d3ReheatSimulation();
+  }, [repulsion, linkDistance, layoutMode]);
+
+  // Build neighbors map for hover highlighting based on currently filtered data
+  useEffect(() => {
+    const map = new Map();
+    filteredData.links.forEach((l) => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (!map.has(s)) map.set(s, new Set());
+      if (!map.has(t)) map.set(t, new Set());
+      map.get(s).add(t);
+      map.get(t).add(s);
+    });
+    setNeighborsMap(map);
+  }, [filteredData]);
+
+  // Dynamically update node mesh colors on hover for highlight/dimming
+  useEffect(() => {
+    const api = fgRef.current;
+    if (!api) return;
+    const dataGetter = api.graphData;
+    const data = typeof dataGetter === 'function' ? dataGetter() : dataGetter;
+    const nodesArr = (data && data.nodes) ? data.nodes : [];
+    nodesArr.forEach((n) => {
+      const mesh = n.__threeObj;
+      if (!mesh || !mesh.material) return;
+      const color = getNodeColor(n);
+      if (mesh.material.color) {
+        mesh.material.color.set(color);
+      }
+      // Update glow child if present
+      if (mesh.children && mesh.children[0] && mesh.children[0].material && mesh.children[0].material.color) {
+        mesh.children[0].material.color.set(color);
+      }
+    });
+    api.refresh?.();
+  }, [hoverNode, neighborsMap, dark, getNodeColor]);
 
   // Effect to handle window resize
   useEffect(() => {
@@ -1199,6 +1398,8 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     const existing = scene.getObjectByName('concaveGrid');
     if (existing) scene.remove(existing);
 
+    if (!showGrid) return; // don't add if toggled off
+
     // Use a very large radius so users never "reach" the sphere boundary
     const radius = 100000; // effectively infinite for interactive purposes
 
@@ -1222,7 +1423,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     return () => {
       scene.remove(grid);
     };
-  }, [dark]);
+  }, [dark, showGrid, graphData]);
 
   // =============================================================================
   // User Interaction Functions
@@ -1243,7 +1444,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           setPlayInterval(null);
           return gen;
         });
-      }, 1500);
+      }, Math.max(200, playSpeed));
       
       setPlayInterval(interval);
       setIsPlaying(true);
@@ -1257,10 +1458,12 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     }
   };
 
-  // Step backward one generation
+  // Step backward one generation — drag minVisibleGeneration down if needed
   const stepBackward = () => {
-    if (currentGeneration > 0) {
-      setCurrentGeneration(currentGeneration - 1);
+    if (currentGeneration > minGeneration) {
+      const next = currentGeneration - 1;
+      setCurrentGeneration(next);
+      if (minVisibleGeneration > next) setMinVisibleGeneration(next);
     }
   };
 
@@ -1292,12 +1495,17 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     setNodesLocked(!nodesLocked);
     
     if (fgRef.current) {
+      const getGraphData = () => {
+        const dataGetter = fgRef.current.graphData;
+        return typeof dataGetter === 'function' ? dataGetter() : dataGetter || { nodes: [], links: [] };
+      };
       // If locking nodes, simply freeze the simulation in place
       if (!nodesLocked) {
         // Stop simulation completely
-        if (fgRef.current.graphData().nodes.length > 0) {
+        const gd = getGraphData();
+        if (gd && gd.nodes && gd.nodes.length > 0) {
           // Fix nodes in their current positions
-          fgRef.current.graphData().nodes.forEach(node => {
+          gd.nodes.forEach(node => {
             node.fx = node.x;
             node.fy = node.y;
             node.fz = node.z;
@@ -1306,8 +1514,9 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         }
       } else {
         // Unfreeze nodes - remove fixed positions
-        if (fgRef.current.graphData().nodes.length > 0) {
-          fgRef.current.graphData().nodes.forEach(node => {
+        const gd2 = getGraphData();
+        if (gd2 && gd2.nodes && gd2.nodes.length > 0) {
+          gd2.nodes.forEach(node => {
             node.fx = undefined;
             node.fy = undefined;
             node.fz = undefined;
@@ -1329,11 +1538,16 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     
     if (axis === 'center') {
       // Center and fit all objects in view
-      if (fgRef.current.graphData().nodes.length > 0) {
+      const getGraphData = () => {
+        const dataGetter = fgRef.current.graphData;
+        return typeof dataGetter === 'function' ? dataGetter() : dataGetter || { nodes: [], links: [] };
+      };
+      const gd = getGraphData();
+      if (gd && gd.nodes && gd.nodes.length > 0) {
         // Calculate the bounding box of all nodes
         const box = new THREE.Box3();
         
-        fgRef.current.graphData().nodes.forEach(node => {
+        gd.nodes.forEach(node => {
           if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
             box.expandByPoint(new THREE.Vector3(node.x, node.y, node.z));
           }
@@ -1492,6 +1706,164 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     return connections;
   };
 
+  // Zoom helpers
+  const zoom = (factor) => {
+    if (!fgRef.current) return;
+    const camera = fgRef.current.camera();
+    const controls = fgRef.current.controls();
+    const offset = camera.position.clone().sub(controls.target);
+    offset.multiplyScalar(factor);
+    camera.position.copy(controls.target.clone().add(offset));
+    controls.update();
+  };
+  const handleZoomIn = () => zoom(0.9);
+  const handleZoomOut = () => zoom(1.1);
+
+  const handleDownloadPNG = () => {
+    if (!fgRef.current) return;
+    const renderer = fgRef.current.renderer?.();
+    const canvas = renderer?.domElement;
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'network-3d.png';
+    a.click();
+  };
+
+  const fitToView = () => handleAxisControl('center');
+
+  // Hold-to-rotate camera, similar to 2D rotate controls
+  const startRotate = () => {
+    if (!fgRef.current) return;
+    if (rotateIntervalRef.current) {
+      clearInterval(rotateIntervalRef.current);
+      rotateIntervalRef.current = null;
+    }
+    const step = () => {
+      const camera = fgRef.current.camera();
+      const controls = fgRef.current.controls();
+      const offset = camera.position.clone().sub(controls.target);
+      const radius = Math.sqrt(offset.x*offset.x + offset.z*offset.z);
+      const theta = Math.atan2(offset.x, offset.z) + (Math.PI/90); // faster than auto-rotate
+      const y = offset.y;
+      camera.position.x = controls.target.x + radius * Math.sin(theta);
+      camera.position.z = controls.target.z + radius * Math.cos(theta);
+      camera.position.y = controls.target.y + y;
+      controls.update();
+    };
+    rotateIntervalRef.current = setInterval(step, 30);
+  };
+  const stopRotate = () => {
+    if (rotateIntervalRef.current) {
+      clearInterval(rotateIntervalRef.current);
+      rotateIntervalRef.current = null;
+    }
+  };
+
+  // Auto-rotate
+  useEffect(() => {
+    if (!autoRotate) {
+      if (rotateIntervalRef.current) {
+        clearInterval(rotateIntervalRef.current);
+        rotateIntervalRef.current = null;
+      }
+      return;
+    }
+    if (!fgRef.current) return;
+    const step = () => {
+      const camera = fgRef.current.camera();
+      const controls = fgRef.current.controls();
+      const offset = camera.position.clone().sub(controls.target);
+      const radius = Math.sqrt(offset.x*offset.x + offset.z*offset.z);
+      const theta = Math.atan2(offset.x, offset.z) + (Math.PI/360); // slow rotation
+      const y = offset.y; // keep current height
+      camera.position.x = controls.target.x + radius * Math.sin(theta);
+      camera.position.z = controls.target.z + radius * Math.cos(theta);
+      camera.position.y = controls.target.y + y;
+      controls.update();
+    };
+    rotateIntervalRef.current = setInterval(step, 30);
+    return () => {
+      if (rotateIntervalRef.current) clearInterval(rotateIntervalRef.current);
+      rotateIntervalRef.current = null;
+    };
+  }, [autoRotate]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey) return;
+      switch (e.key) {
+        case '+':
+        case '=':
+          handleZoomIn();
+          break;
+        case '-':
+        case '_':
+          handleZoomOut();
+          break;
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowRight':
+          stepForward();
+          break;
+        case 'ArrowLeft':
+          stepBackward();
+          break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
+        case 'h':
+        case 'H':
+          setShowHelp(v => !v);
+          break;
+        case 'r':
+        case 'R':
+          setAutoRotate(v => !v);
+          break;
+        case '0':
+          fitToView();
+          break;
+        case 'o':
+        case 'O':
+          setShowGrid(v => !v);
+          break;
+        case 's':
+        case 'S':
+          handleDownloadPNG();
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [togglePlay, stepForward, stepBackward]);
+
+  // Visibility accessors to robustly hide EC nodes/links
+  const nodeVisible = useCallback((node) => {
+    if (!hideEC) return true;
+    return node.type !== 'ec' && !String(node.id || '').startsWith('EC_');
+  }, [hideEC]);
+
+  const linkVisible = useCallback((link) => {
+    if (!hideEC) return true;
+    const getId = (end) => (typeof end === 'object' ? end.id : end);
+    const getType = (end) => (typeof end === 'object' ? end.type : undefined);
+    const sId = getId(link.source);
+    const tId = getId(link.target);
+    const sType = getType(link.source);
+    const tType = getType(link.target);
+    const sIsEc = sType === 'ec' || String(sId || '').startsWith('EC_');
+    const tIsEc = tType === 'ec' || String(tId || '').startsWith('EC_');
+    return !(sIsEc || tIsEc);
+  }, [hideEC]);
+
   // =============================================================================
   // UI Component Rendering
   // =============================================================================
@@ -1501,22 +1873,55 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     <ControlPanel $dark={dark}>
       <SliderContainer>
         <SliderLabel>
-          <span>Generation</span>
+          <span>Generation (To)</span>
           <span>{currentGeneration} / {maxGeneration}</span>
         </SliderLabel>
         <Slider
           type="range"
-          min={0}
+          min={minGeneration}
           max={maxGeneration}
           value={currentGeneration}
-          onChange={e => setCurrentGeneration(parseInt(e.target.value))}
+          onChange={e => {
+            const val = parseInt(e.target.value);
+            setCurrentGeneration(val);
+            if (minVisibleGeneration > val) setMinVisibleGeneration(val);
+          }}
+        />
+      </SliderContainer>
+
+      <SliderContainer>
+        <SliderLabel>
+          <span>Generation (From)</span>
+          <span>{minVisibleGeneration} / {currentGeneration}</span>
+        </SliderLabel>
+        <Slider
+          type="range"
+          min={minGeneration}
+          max={currentGeneration}
+          value={minVisibleGeneration}
+          onChange={e => setMinVisibleGeneration(parseInt(e.target.value))}
+        />
+      </SliderContainer>
+
+      <SliderContainer>
+        <SliderLabel>
+          <span>Play Speed (ms)</span>
+          <span>{playSpeed}</span>
+        </SliderLabel>
+        <Slider
+          type="range"
+          min={200}
+          max={3000}
+          step={100}
+          value={playSpeed}
+          onChange={e => setPlaySpeed(parseInt(e.target.value))}
         />
       </SliderContainer>
       
       <ButtonGroup>
         <Button 
           onClick={stepBackward}
-          disabled={currentGeneration === 0}
+          disabled={currentGeneration === minGeneration}
           $iconOnly={true}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -1534,7 +1939,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
             </svg> Pause</>
           ) : (
             <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>
+              <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696L11.596 8.697a.802.802 0 0 1 0 1.393z"/>
             </svg> Play</>
           )}
         </Button>
@@ -1545,7 +1950,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           $iconOnly={true}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM4.5 7.5a.5.5 0 0 0 0 1h5.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L10.293 7.5H4.5z"/>
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm3.5 7.5a.5.5 0 0 1 0 1H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5z"/>
           </svg>
         </Button>
       </ButtonGroup>
@@ -1580,6 +1985,19 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           <ToggleSlider />
         </Toggle>
       </Option>
+
+      <Option>
+        <OptionLabel htmlFor="showGrid">Show Grid</OptionLabel>
+        <Toggle>
+          <ToggleInput
+            id="showGrid"
+            type="checkbox"
+            checked={showGrid}
+            onChange={() => setShowGrid(v => !v)}
+          />
+          <ToggleSlider />
+        </Toggle>
+      </Option>
       
       <Option>
         <OptionLabel htmlFor="layoutMode">Layout</OptionLabel>
@@ -1593,6 +2011,33 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           <option value="globe">Globe (Atomic)</option>
         </Select>
       </Option>
+
+      {layoutMode === 'force' && (
+        <>
+          <Option>
+            <OptionLabel>Repulsion</OptionLabel>
+            <Slider
+              type="range"
+              min={0}
+              max={800}
+              step={10}
+              value={repulsion}
+              onChange={e => setRepulsion(parseInt(e.target.value))}
+            />
+          </Option>
+          <Option>
+            <OptionLabel>Link Distance</OptionLabel>
+            <Slider
+              type="range"
+              min={20}
+              max={160}
+              step={5}
+              value={linkDistance}
+              onChange={e => setLinkDistance(parseInt(e.target.value))}
+            />
+          </Option>
+        </>
+      )}
     </OptionsPanel>
   );
 
@@ -1607,7 +2052,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     return (
       <NodeInfoPanel $visible={nodeInfoVisible}>
         <CloseButton onClick={() => setNodeInfoVisible(false)}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
@@ -1741,139 +2186,55 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
   return (
     <Container ref={containerRef} style={{ width: '100%', height: '100%' }}>
-      <TopLeftButtonGroup>
-        <ControlButton onClick={toggleFullscreen} $dark={dark}>
-          {isFullscreen ? (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
-              </svg>
-              Exit Fullscreen
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-              </svg>
-              Fullscreen
-            </>
-          )}
-        </ControlButton>
-        
-        <ControlButton onClick={toggleNodesLocked} $active={nodesLocked} $dark={dark}>
-          {nodesLocked ? (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              Unlock Nodes
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              Lock Nodes
-            </>
-          )}
-        </ControlButton>
-      </TopLeftButtonGroup>
       
-      <ForceGraph3D
-        ref={fgRef}
-        graphData={filteredData}
-        nodeThreeObject={nodeThreeObject}
-        nodeThreeObjectExtend={nodeThreeObjectExtend}
-        nodeColor={getNodeColor}
-        nodeLabel={nodeLabel}
-        nodeRelSize={2}
-        linkThreeObject={linkThreeObject}
-        linkPositionAttribute={linkPositionAttribute}
-        linkWidth={linkWidth}
-        linkDirectionalParticles={linkDirectionalParticles}
-        linkDirectionalParticleWidth={linkDirectionalParticleWidth}
-        linkDirectionalArrowLength={linkDirectionalArrowLength}
-        linkColor={linkColor}
-        linkOpacity={0.8}
-        backgroundColor={dark ? "#1a2130" : "#FFFFFF"}
-        linkDirectionalParticleSpeed={0.1}
-        linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
-        enableNodeDrag={!nodesLocked}
-        enableNavigationControls={true}
-        showNavInfo={false}
-        controlType="orbit"
-        warmupTicks={500}
-        cooldownTicks={500}
-        width={isFullscreen ? window.innerWidth : undefined}
-        height={isFullscreen ? window.innerHeight : undefined}
-        onNodeClick={handleNodeClick}
-        onNodeDragEnd={handleNodeDragEnd}
-        onEngineStop={() => {
-          // Save node positions after layout stabilizes
-          if (fgRef.current) {
-            fgRef.current.d3ReheatSimulation();
-          }
-        }}
-      />
-      
-      {renderControlPanel()}
-      {renderOptionsPanel()}
-      
-      <AxisControls $dark={dark}>
-        <AxisButton 
-          className="x-axis" 
-          onMouseDown={() => handleAxisControl('x', 'neg')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('x', 'neg')}
-          onTouchEnd={handleAxisControlEnd}
-        >X-</AxisButton>
-        <AxisButton 
-          className="y-axis" 
-          onMouseDown={() => handleAxisControl('y', 'neg')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('y', 'neg')}
-          onTouchEnd={handleAxisControlEnd}
-        >Y-</AxisButton>
-        <AxisButton 
-          className="z-axis" 
-          onMouseDown={() => handleAxisControl('z', 'neg')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('z', 'neg')}
-          onTouchEnd={handleAxisControlEnd}
-        >Z-</AxisButton>
-        <AxisButton 
-          className="x-axis" 
-          onMouseDown={() => handleAxisControl('x', 'pos')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('x', 'pos')}
-          onTouchEnd={handleAxisControlEnd}
-        >X+</AxisButton>
-        <AxisButton 
-          className="y-axis" 
-          onMouseDown={() => handleAxisControl('y', 'pos')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('y', 'pos')}
-          onTouchEnd={handleAxisControlEnd}
-        >Y+</AxisButton>
-        <AxisButton 
-          className="z-axis" 
-          onMouseDown={() => handleAxisControl('z', 'pos')}
-          onMouseUp={handleAxisControlEnd}
-          onMouseLeave={handleAxisControlEnd}
-          onTouchStart={() => handleAxisControl('z', 'pos')}
-          onTouchEnd={handleAxisControlEnd}
-        >Z+</AxisButton>
-        <AxisButton $center onClick={() => handleAxisControl('center')} style={{ gridColumn: '1 / span 3' }}>
-          Fit To View
-        </AxisButton>
-      </AxisControls>
+      {filteredData.nodes.length > 0 ? (
+        <ForceGraph3D
+          ref={fgRef}
+          graphData={filteredData}
+          nodeThreeObject={nodeThreeObject}
+          nodeThreeObjectExtend={nodeThreeObjectExtend}
+          nodeColor={getNodeColor}
+          nodeLabel={nodeLabel}
+          nodeRelSize={2}
+          linkThreeObject={linkThreeObject}
+          linkPositionAttribute={linkPositionAttribute}
+          linkWidth={linkWidth}
+          linkDirectionalParticles={linkDirectionalParticles}
+          linkDirectionalParticleWidth={linkDirectionalParticleWidth}
+          linkDirectionalArrowLength={linkDirectionalArrowLength}
+          linkColor={linkColor}
+          linkOpacity={0.8}
+          backgroundColor={dark ? "#1a2130" : "#FFFFFF"}
+          linkDirectionalParticleSpeed={0.1}
+          linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
+          enableNodeDrag={!nodesLocked}
+          enableNavigationControls={true}
+          showNavInfo={false}
+          controlType="orbit"
+          warmupTicks={500}
+          cooldownTicks={500}
+          cooldownTime={8000}
+          width={isFullscreen ? window.innerWidth : undefined}
+          height={isFullscreen ? window.innerHeight : undefined}
+          onNodeClick={handleNodeClick}
+          onNodeDragEnd={handleNodeDragEnd}
+          onNodeHover={(n) => setHoverNode(n || null)}
+          onLinkHover={(l) => setHoverLink(l || null)}
+          onEngineStop={() => {}}
+        />
+      ) : (
+        <div style={{
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          width: '100%', height: '100%',
+          backgroundColor: dark ? '#1a2130' : '#FFFFFF',
+          color: dark ? '#abb4c5' : '#64748b',
+          fontSize: '14px',
+        }}>
+          Initializing 3D graph…
+        </div>
+      )}
+
+      {showOptions && renderOptionsPanel()}
       
       {renderNodeInfoPanel()}
       
@@ -1881,6 +2242,110 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         <Spinner />
         <div>Loading Network Data...</div>
       </LoadingOverlay>
+
+      {/* Search bar */}
+      <SearchContainer $dark={dark}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <SearchInput
+          $dark={dark}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search node by ID..."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const q = searchQuery.trim();
+              if (!q) return;
+              const nodes = filteredData.nodes;
+              let target = nodes.find(n => n.id === q) || nodes.find(n => String(n.id).startsWith(q)) || nodes.find(n => String(n.id).includes(q));
+              if (!target) return;
+              const lookAt = { x: target.x || 0, y: target.y || 0, z: target.z || 0 };
+              const distance = 80;
+              const dest = { x: lookAt.x + distance, y: lookAt.y + distance, z: lookAt.z + distance };
+              const api = fgRef.current;
+              if (api && typeof api.cameraPosition === 'function') {
+                api.cameraPosition(dest, lookAt, 1500);
+              } else if (api) {
+                const camera = api.camera();
+                const controls = api.controls();
+                camera.position.set(dest.x, dest.y, dest.z);
+                controls.target.set(lookAt.x, lookAt.y, lookAt.z);
+                controls.update();
+              }
+              setHoverNode(target);
+            }
+          }}
+        />
+        <SearchBtn $dark={dark} onClick={() => {
+          const q = searchQuery.trim();
+          if (!q) return;
+          const nodes = filteredData.nodes;
+          let target = nodes.find(n => n.id === q) || nodes.find(n => String(n.id).startsWith(q)) || nodes.find(n => String(n.id).includes(q));
+          if (!target) return;
+          const lookAt = { x: target.x || 0, y: target.y || 0, z: target.z || 0 };
+          const distance = 80;
+          const dest = { x: lookAt.x + distance, y: lookAt.y + distance, z: lookAt.z + distance };
+          const api = fgRef.current;
+          if (api && typeof api.cameraPosition === 'function') {
+            api.cameraPosition(dest, lookAt, 1500);
+          } else if (api) {
+            const camera = api.camera();
+            const controls = api.controls();
+            camera.position.set(dest.x, dest.y, dest.z);
+            controls.target.set(lookAt.x, lookAt.y, lookAt.z);
+            controls.update();
+          }
+          setHoverNode(target);
+        }}>Go</SearchBtn>
+      </SearchContainer>
+
+      {/* 2D-style generation seek bar and toolbar */}
+      <GenerationControls
+        currentGeneration={currentGeneration}
+        setCurrentGeneration={setCurrentGeneration}
+        maxGeneration={maxGeneration}
+        minGeneration={minGeneration}
+        minVisibleGeneration={minVisibleGeneration}
+        setMinVisibleGeneration={setMinVisibleGeneration}
+        isPlaying={isPlaying}
+        togglePlay={togglePlay}
+        stepForward={stepForward}
+        stepBackward={stepBackward}
+        transitionSpeed={transitionSpeed}
+        setTransitionSpeed={setTransitionSpeed}
+        isFullscreen={isFullscreen}
+        handleZoomIn={handleZoomIn}
+        handleZoomOut={handleZoomOut}
+        resetSpiral={fitToView}
+        toggleFullscreen={toggleFullscreen}
+        handleDownloadSVG={handleDownloadPNG}
+        togglePhysics={() => setShowOptions(v => !v)}
+        toggleHelp={() => setShowHelp(v => !v)}
+        startRotate={startRotate}
+        stopRotate={stopRotate}
+        togglePhysicsSim={toggleNodesLocked}
+        physicsOff={nodesLocked}
+        toggleOverlay={() => setShowGrid(v => !v)}
+        overlayOn={showGrid}
+      />
+      
+      {/* Help overlay */}
+      <HelpOverlayBackdrop $visible={showHelp} onClick={() => setShowHelp(false)}>
+        <HelpOverlayCard $dark={dark} onClick={e => e.stopPropagation()}>
+          <HelpTitle $dark={dark}>Keyboard Shortcuts</HelpTitle>
+          <HelpList>
+            <li><HelpKey $dark={dark}>+</HelpKey>Zoom In</li>
+            <li><HelpKey $dark={dark}>-</HelpKey>Zoom Out</li>
+            <li><HelpKey $dark={dark}>Space</HelpKey>Play/Pause generations</li>
+            <li><HelpKey $dark={dark}>←</HelpKey>Step Back</li>
+            <li><HelpKey $dark={dark}>→</HelpKey>Step Forward</li>
+            <li><HelpKey $dark={dark}>F</HelpKey>Toggle Fullscreen</li>
+            <li><HelpKey $dark={dark}>R</HelpKey>Toggle Auto-Rotate</li>
+            <li><HelpKey $dark={dark}>0</HelpKey>Fit To View</li>
+            <li><HelpKey $dark={dark}>O</HelpKey>Toggle Grid</li>
+            <li><HelpKey $dark={dark}>S</HelpKey>Download PNG</li>
+          </HelpList>
+        </HelpOverlayCard>
+      </HelpOverlayBackdrop>
     </Container>
   );
 });
@@ -1889,8 +2354,8 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 // Container Component
 // =============================================================================
 
-const NetworkViewerContainer = forwardRefReact(({ results, height }, ref) => {
-  const innerRef = useRefReact();
+const NetworkViewerContainer = forwardRef(({ results, height }, ref) => {
+  const innerRef = useRef();
 
   // Expose imperative API by delegating to the inner 3D viewer
   useImperativeHandle(ref, () => ({

@@ -26,13 +26,13 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
   return (
     <div className="flex flex-col">
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700">
+      <div className="flex border-b border-slate-200/70 dark:border-slate-600/40">
         <button
           onClick={() => setActiveTab('table')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'table'
-              ? 'text-blue-600 dark:text-purple-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'text-blue-500 dark:text-purple-400/80'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -40,7 +40,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
             <span>Tabular View</span>
           </div>
           {activeTab === 'table' && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-400"></div>
           )}
         </button>
 
@@ -48,8 +48,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
           onClick={() => setActiveTab('network2d')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'network2d'
-              ? 'text-blue-600 dark:text-purple-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'text-blue-500 dark:text-purple-400/80'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -57,7 +57,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
             <span>2D Network</span>
           </div>
           {activeTab === 'network2d' && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-400"></div>
           )}
         </button>
 
@@ -65,8 +65,8 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
           onClick={() => setActiveTab('network3d')}
           className={`px-6 py-4 font-medium transition-colors relative ${
             activeTab === 'network3d'
-              ? 'text-blue-600 dark:text-purple-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'text-blue-500 dark:text-purple-400/80'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -74,7 +74,7 @@ const TabView = ({ results, setResults, selectedRows, setSelectedRows, combinedM
             <span>3D Network</span>
           </div>
           {activeTab === 'network3d' && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600"></div>
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-400"></div>
           )}
         </button>
       </div>

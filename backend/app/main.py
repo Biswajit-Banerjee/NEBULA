@@ -1,11 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
 from pathlib import Path
 import re
 import requests
 
+from app import STATIC_DIR
 from app.core.viewer import MetabolicViewer
 
 # Set up logging
@@ -24,8 +26,8 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for production
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=False,  # Must be False when using wildcard origins
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -76,13 +78,14 @@ async def get_backtrace(target: str, source: str=''):
 @app.get("/api/search")
 async def search(type: str, query: str):
     """
-    Perform backtrace analysis for a target compound
+    Search for compound data by KEGG compound ID
     
     Args:
-        target (str): Target compound ID
+        type (str): Search type (currently only 'compound' supported)
+        query (str): KEGG compound ID to search for
         
     Returns:
-        dict: Backtrace analysis results
+        dict: Search results including compound pathway data
     """
     try:
         if not re.match(r'^C\d{5}$', query):
@@ -105,6 +108,75 @@ async def search(type: str, query: str):
         raise HTTPException(
             status_code=500,
             detail="Failed to process backtrace request"
+        )
+
+@app.get("/api/reaction/backtrace")
+async def get_reaction_backtrace(reaction: str):
+    """
+    Perform backtrace analysis starting from a reaction ID.
+    Finds the reaction's product compounds and backtraces them.
+
+    Args:
+        reaction (str): KEGG reaction ID (e.g. R00217)
+
+    Returns:
+        dict: Backtrace results in the same format as compound backtrace
+    """
+    try:
+        if not re.match(r'^R\d{5}$', reaction):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid reaction ID format. Must start with 'R' followed by 5 digits."
+            )
+
+        result = await viewer.get_reaction_backtrace(reaction)
+
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in reaction backtrace API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process reaction backtrace request"
+        )
+
+@app.get("/api/ec/reactions")
+async def get_ec_reactions(ec: str):
+    """
+    List all reactions where a given EC number is present.
+
+    Args:
+        ec (str): Enzyme Commission number (format: N.N.N.N)
+
+    Returns:
+        dict: Reactions in the same format as compound backtrace results
+    """
+    try:
+        if not re.match(r'^\d+(\.\d+){3}$', ec):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid EC number format. Must be in format N.N.N.N (e.g., 1.1.1.1)"
+            )
+
+        result = await viewer.get_ec_reactions(ec)
+
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in EC reactions API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process EC reactions request"
         )
 
 @app.get("/api/compound/{compound_id}")
@@ -303,11 +375,18 @@ async def get_ec_data(ec_number: str):
     Get EC number data
     
     Args:
-        ec_number (str): Enzyme Commission number
+        ec_number (str): Enzyme Commission number (format: N.N.N.N)
         
     Returns:
         dict: EC number information including domain data
     """
+    # Validate EC number format (e.g., 1.1.1.1)
+    if not re.match(r'^\d+(\.\d+){3}$', ec_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid EC number format. Must be in format N.N.N.N (e.g., 1.1.1.1)"
+        )
+    
     try:
         result = await viewer.get_ec_data(ec_number)
         if result.get('error'):
@@ -326,10 +405,10 @@ async def get_ec_data(ec_number: str):
         )
 
 @app.get("/api/download/csv")
-async def download_csv():
+async def download_csv(background_tasks: BackgroundTasks):
     """Download results as CSV file"""
     try:
-        return await viewer.download_csv()
+        return await viewer.download_csv(background_tasks)
     except Exception as e:
         logger.error(f"Error in CSV download: {e}")
         raise HTTPException(
@@ -343,11 +422,18 @@ async def get_ec_uniprot_data(ec_number: str):
     Get UniProt entries for an EC number
     
     Args:
-        ec_number (str): Enzyme Commission number
+        ec_number (str): Enzyme Commission number (format: N.N.N.N)
         
     Returns:
         dict: UniProt entries with their features
     """
+    # Validate EC number format (e.g., 1.1.1.1)
+    if not re.match(r'^\d+(\.\d+){3}$', ec_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid EC number format. Must be in format N.N.N.N (e.g., 1.1.1.1)"
+        )
+    
     try:
         result = await viewer.get_ec_uniprot_data(ec_number)
         if result.get('error'):
@@ -371,11 +457,18 @@ async def get_ec_domains(ec_number: str):
     Get integrated domain data for an EC number
     
     Args:
-        ec_number (str): Enzyme Commission number
+        ec_number (str): Enzyme Commission number (format: N.N.N.N)
         
     Returns:
         dict: EC domain information including UniProt and ECOD data
     """
+    # Validate EC number format (e.g., 1.1.1.1)
+    if not re.match(r'^\d+(\.\d+){3}$', ec_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid EC number format. Must be in format N.N.N.N (e.g., 1.1.1.1)"
+        )
+    
     try:
         result = await viewer.get_ec_domains(ec_number)
         if result.get('error'):
@@ -393,9 +486,43 @@ async def get_ec_domains(ec_number: str):
             detail="Failed to fetch domain data"
         )
 
-# After all API routes are declared, mount the React build (or any static files) at the root path
-from fastapi.staticfiles import StaticFiles
-from app import STATIC_DIR
+@app.get("/api/ec/{ec_number}/accessions")
+async def list_ec_accessions(ec_number: str):
+    """
+    Instantly list all UniProt accessions for an EC number.
+    No external API calls — pure local lookup from gene_mapper.
+    """
+    if not re.match(r'^\d+(\.\d+){3}$', ec_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid EC number format. Must be in format N.N.N.N (e.g., 1.1.1.1)"
+        )
+    try:
+        result = viewer.list_ec_accessions(ec_number)
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+        return result
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error listing accessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list accessions")
+
+@app.get("/api/accession/{accession}/domains")
+async def get_accession_domains(accession: str, organism_code: str = ""):
+    """
+    Fetch domain data for a single UniProt accession.
+    """
+    try:
+        result = await viewer.get_single_accession_domains(accession, organism_code)
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+        return result
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error fetching accession domains: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch accession domain data")
 
 # Serve frontend static files
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
@@ -412,6 +539,7 @@ async def startup_event():
             "generations.csv",
             "domains.csv",
             "ecod_domains.csv",
+            "gene_mapper.json",
         ]
         
         base_dir = Path(__file__).parent.parent

@@ -53,7 +53,7 @@ const ReactionTooltip = ({ equation }) => {
   return (
     <div className="relative inline-block">
       <div
-        className="text-sm text-gray-700 cursor-help"
+        className="text-sm text-gray-600 dark:text-slate-300 cursor-help"
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
@@ -61,26 +61,26 @@ const ReactionTooltip = ({ equation }) => {
       </div>
 
       {showTooltip && (
-        <div className="absolute z-50 w-96 p-4 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 -translate-x-1/2 left-1/2">
+        <div className="absolute z-50 w-96 p-4 mt-2 bg-white/95 dark:bg-slate-800/95 rounded-lg shadow-xl border border-gray-200/70 dark:border-slate-600/40 -translate-x-1/2 left-1/2">
           {!isValidReactionId ? (
-            <div className="text-gray-600">
+            <div className="text-gray-500 dark:text-slate-400">
               No KEGG reaction ID found in equation
             </div>
           ) : loading ? (
             <div className="flex items-center justify-center py-2">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent" />
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-400 dark:border-blue-400/70 border-t-transparent" />
             </div>
           ) : error ? (
-            <div className="text-red-500">Error loading reaction data</div>
+            <div className="text-red-500 dark:text-red-400/80">Error loading reaction data</div>
           ) : data ? (
             <div className="space-y-3">
-              <div className="font-medium border-b pb-2">
-                <span className="text-gray-500 text-sm">Definition: </span>
-                <span>{data.definition}</span>
+              <div className="font-medium border-b border-slate-200/70 dark:border-slate-600/40 pb-2">
+                <span className="text-gray-400 dark:text-slate-500 text-sm">Definition: </span>
+                <span className="dark:text-slate-200">{data.definition}</span>
               </div>
               <div className="text-sm">
-                <span className="text-gray-500">Equation: </span>
-                <span className="font-mono">{data.equation}</span>
+                <span className="text-gray-400 dark:text-slate-500">Equation: </span>
+                <span className="font-mono dark:text-slate-300">{data.equation}</span>
               </div>
             </div>
           ) : null}

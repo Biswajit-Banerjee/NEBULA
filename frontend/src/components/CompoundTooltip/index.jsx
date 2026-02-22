@@ -53,7 +53,7 @@ const CompoundTooltip = ({ compoundId }) => {
         href={`https://www.genome.jp/entry/${compoundId}`}
         target="_blank"
         rel="noopener noreferrer"
-        className={`text-sm ${isValidKeggId ? 'text-blue-600 hover:text-blue-800' : 'text-gray-600 cursor-not-allowed'}`}
+        className={`text-sm ${isValidKeggId ? 'text-blue-500 dark:text-blue-400/80 hover:text-blue-600 dark:hover:text-blue-300' : 'text-gray-500 dark:text-slate-400 cursor-not-allowed'}`}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         onClick={(e) => !isValidKeggId && e.preventDefault()}
@@ -62,19 +62,19 @@ const CompoundTooltip = ({ compoundId }) => {
       </a>
 
       {showTooltip && (
-        <div className="absolute z-50 w-64 p-4 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 transform -translate-x-1/2 left-1/2">
+        <div className="absolute z-50 w-64 p-4 mt-2 bg-white/95 dark:bg-slate-800/95 rounded-lg shadow-xl border border-gray-200/70 dark:border-slate-600/40 transform -translate-x-1/2 left-1/2">
           {!isValidKeggId ? (
-            <div className="text-gray-600">Compound not available in KEGG database</div>
+            <div className="text-gray-500 dark:text-slate-400">Compound not available in KEGG database</div>
           ) : loading ? (
             <div className="flex items-center justify-center py-2">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent"></div>
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-400 dark:border-blue-400/70 border-t-transparent"></div>
             </div>
           ) : error ? (
-            <div className="text-red-500">Error loading compound data</div>
+            <div className="text-red-500 dark:text-red-400/80">Error loading compound data</div>
           ) : data ? (
             <div className="space-y-2">
-              <div className="font-medium">{data.name}</div>
-              <div className="text-sm text-gray-600">
+              <div className="font-medium dark:text-slate-200">{data.name}</div>
+              <div className="text-sm text-gray-500 dark:text-slate-400">
                 <div>Formula: {data.formula}</div>
                 <div>Exact Mass: {data.exact_mass}</div>
                 <div>Molecular Weight: {data.mol_weight}</div>

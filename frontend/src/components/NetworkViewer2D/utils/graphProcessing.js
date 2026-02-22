@@ -3,10 +3,11 @@
 /**
  * Process data for visualization based on current generation
  * @param {Array} data - Raw results data
- * @param {number} currentGen - Current generation to display
+ * @param {number} currentGen - Current generation to display (upper bound)
+ * @param {number} minVisibleGen - Minimum visible generation (lower bound, default 0)
  * @returns {Object} Object with nodes and links arrays
  */
-export const processData = (data, currentGen) => {
+export const processData = (data, currentGen, minVisibleGen = 0) => {
     // Check if data is valid and iterable
     if (!data || !Array.isArray(data) || data.length === 0)
       return { nodes: [], links: [] };
@@ -43,8 +44,8 @@ export const processData = (data, currentGen) => {
       if (reaction.compound_generation) {
         Object.entries(reaction.compound_generation).forEach(
           ([compound, gen]) => {
-            // Only add if the generation is <= current selected generation
-            if (parseInt(gen) <= currentGen) {
+            // Only add if the generation is within visible range
+            if (parseInt(gen) <= currentGen && parseInt(gen) >= minVisibleGen) {
               addUniqueNode(compound, "compound", parseInt(gen), {
                 label: compound,
                 isVisible: true,
@@ -71,8 +72,8 @@ export const processData = (data, currentGen) => {
           }
         }
   
-        // Skip reactions where target generation is higher than current
-        if (targetGen > currentGen) return;
+        // Skip reactions outside the visible generation range
+        if (targetGen > currentGen || targetGen < minVisibleGen) return;
   
         // Parse equation to get reactants and products
         const parts = reaction.equation.split("=>").map((s) => s.trim());

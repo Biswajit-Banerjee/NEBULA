@@ -4,8 +4,8 @@ import { Search, X, Filter as FilterIcon, CheckCircle2, XCircle, Layers } from '
 // Assuming these are available from a shared utils.js or defined elsewhere.
 // For standalone example, I'll define them here.
 const GRADIENT_COLORS_PALETTE = [
-  'from-violet-500 to-purple-600', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-600', 'from-amber-500 to-orange-500',
+  'from-violet-400 to-purple-500', 'from-blue-400 to-cyan-400',
+  'from-emerald-400 to-teal-500', 'from-amber-400 to-orange-400',
 ];
 
 const getRandomGradientForUI = () => {
@@ -81,14 +81,14 @@ const FilterMenu = ({
   const primaryButtonGradient = GRADIENT_COLORS_PALETTE[2]
 
   return (
-    <div className="w-72 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="w-72 bg-white/95 dark:bg-slate-800/95 rounded-2xl shadow-xl border border-slate-200/70 dark:border-slate-600/40 overflow-hidden">
       <div className="p-4 sm:p-5"> {/* Reduced padding */}
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
             <div className={`p-1.5 rounded-lg bg-gradient-to-br ${GRADIENT_COLORS_PALETTE[1]} opacity-20 dark:opacity-30`}> {/* Smaller icon bg */}
-              <FilterIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" /> {/* Smaller icon */}
+              <FilterIcon className="w-4 h-4 text-violet-500 dark:text-violet-400/80" /> {/* Smaller icon */}
             </div>
-            <h3 className="text-base sm:text-md font-semibold text-slate-800 dark:text-slate-100">Filter & Select</h3> {/* Shorter title */}
+            <h3 className="text-base sm:text-md font-semibold text-slate-700 dark:text-slate-200">Filter & Select</h3> {/* Shorter title */}
           </div>
           <button
             onClick={onClose}
@@ -131,7 +131,7 @@ const FilterMenu = ({
               <button
                 onClick={() => setIsRegexMode(!isRegexMode)}
                 className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-0.5 rounded hover:bg-slate-200/70 dark:hover:bg-slate-600/70 transition-colors ${
-                  isRegexMode ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400 dark:text-slate-500'
+                  isRegexMode ? 'text-violet-500 dark:text-violet-400/80' : 'text-slate-400 dark:text-slate-500'
                 }`}
                 title={isRegexMode ? 'Regex mode (Case Insensitive)' : 'Toggle regex mode (Case Insensitive)'}
               >

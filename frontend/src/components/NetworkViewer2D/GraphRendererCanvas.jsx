@@ -19,6 +19,7 @@ const GraphRendererCanvas = forwardRef(
     {
       data,
       currentGeneration,
+      minVisibleGeneration = 0,
       maxGeneration,
       containerRef,
       height = 600,
@@ -108,9 +109,9 @@ const GraphRendererCanvas = forwardRef(
     /* ------------------------------------------------------------------ */
     useEffect(() => {
       if (!Array.isArray(data)) return;
-      const processed = processData(data, currentGeneration);
+      const processed = processData(data, currentGeneration, minVisibleGeneration);
       setGraph(processed);
-    }, [data, currentGeneration]);
+    }, [data, currentGeneration, minVisibleGeneration]);
 
     /* ------------------------------------------------------------------ */
     /* Collapse logic                                                     */
@@ -931,7 +932,7 @@ const GraphRendererCanvas = forwardRef(
         <button
           onClick={() => setNodesLocked((p) => !p)}
           className={`absolute bottom-4 left-4 p-2 rounded-full z-10 shadow-md hover:shadow-lg transition-all ${
-             nodesLocked ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+             nodesLocked ? "bg-blue-500/90 text-white" : "bg-white/90 text-gray-600 border border-gray-200/70 dark:bg-gray-700/80 dark:text-gray-300 dark:border-gray-600/40"
            }`}
           title={nodesLocked ? "Unlock node positions" : "Lock node positions"}
         >
