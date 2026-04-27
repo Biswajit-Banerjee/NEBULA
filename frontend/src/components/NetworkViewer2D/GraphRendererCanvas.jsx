@@ -8,9 +8,10 @@ import React, {
   useContext,
 } from "react";
 import * as d3 from "d3";
-import { processData, applySpiral } from "./utils/graphProcessing";
-import { Lock, Unlock } from "lucide-react";
+import { processData, applyHierarchicalLayout, SUB_COL_GAP, GEN_GAP, ROW_SPACING } from "./utils/graphProcessing";
+import { getSchemeColor, getTypeColor } from "./utils/colorSchemes";
 import { ThemeContext } from "../ThemeProvider/ThemeProvider";
+import NodeInfoPanel from "./NodeInfoPanel";
 
 
 
@@ -24,22 +25,47 @@ const GraphRendererCanvas = forwardRef(
       containerRef,
       height = 600,
       isFullscreen,
-      tension,
-      repulsion,
       pairColorMap = {},
       showOverlay = false,
+      edgeOpacity = 0.5,
+      spacingScale = 1.0,
+      colorMode = 'generation',
+      colorScheme = 'viridis',
+      bgColor = '',
+      gridColor = '',
     },
     ref
   ) => {
     const { dark } = useContext(ThemeContext);
     const canvasRef = useRef(null);
-    const simulationRef = useRef(null);
+    const nodesRef = useRef([]); // static node array (no physics)
     const zoomRef = useRef(null);
     const transformRef = useRef(d3.zoomIdentity);
     const [collapsedRoots, setCollapsedRoots] = useState(new Set()); // reaction-side nodes acting as collapse pivots
     const [hiddenIds, setHiddenIds] = useState(new Set());
-    const [nodesLocked, setNodesLocked] = useState(false);
     const [ctrlHeld, setCtrlHeld] = useState(false);
+    const positionCacheRef = useRef({}); // persistent nodeId → {x,y}
+    const dirtyRef = useRef(false);      // rAF batching flag
+    const rafIdRef = useRef(null);       // rAF handle
+    const hoveredNodeRef = useRef(null); // id of node under cursor (for edge highlight)
+    const pinnedNodesRef = useRef(new Set()); // pinned node IDs (click-to-hold)
+    const [selectedNodes, setSelectedNodes] = useState([]);
+    const drawRef = useRef(null);        // always points to latest draw fn
+    const syncSelectionRef = useRef(null); // always points to latest syncSelection
+    const needsFitRef = useRef(true);    // auto-fit view on first layout / new data
+    const prevDataRef = useRef(null);    // track data identity for auto-fit
+    const genMapRef = useRef([]);        // compact generation mapping from layout
+
+    // Sync pinnedNodesRef → selectedNodes state so NodeInfoPanel re-renders
+    const syncSelection = useCallback(() => {
+      const nodes = nodesRef.current;
+      const pinned = pinnedNodesRef.current;
+      if (pinned.size === 0) { setSelectedNodes([]); return; }
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      const sel = [];
+      pinned.forEach(id => { const n = nodeMap.get(id); if (n) sel.push(n); });
+      setSelectedNodes(sel);
+    }, []);
 
     /* ------------------------------------------------------------------ */
     /* Helpers                                                            */
@@ -50,6 +76,8 @@ const GraphRendererCanvas = forwardRef(
         if (!roots || roots.size === 0) return new Set();
 
         const toHide = new Set();
+        // O(1) lookup map instead of nodes.find()
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
         const adjacency = {};
         links.forEach((l) => {
           const sId = l.source?.id || l.source;
@@ -70,11 +98,10 @@ const GraphRendererCanvas = forwardRef(
               if (visited.has(nbr)) return;
               visited.add(nbr);
 
-              const nbrNode = nodes.find((n) => n.id === nbr);
+              const nbrNode = nodeMap.get(nbr);
               if (!nbrNode) return;
 
               // Continue only if direction matches relative position in reaction pair
-              const isReactionSide = /reaction-/.test(nbrNode.type);
               if (direction === "upstream") {
                 // Stop traversing past product side
                 if (nbrNode.id.endsWith("_p")) return;
@@ -104,6 +131,25 @@ const GraphRendererCanvas = forwardRef(
 
     const [graph, setGraph] = useState({ nodes: [], links: [] });
 
+    // Compute degree map from current graph for the info panel
+    const degreeMap = React.useMemo(() => {
+      const m = new Map();
+      (graph.links || []).forEach(l => {
+        const s = l.source?.id || l.source;
+        const t = l.target?.id || l.target;
+        m.set(s, (m.get(s) || 0) + 1);
+        m.set(t, (m.get(t) || 0) + 1);
+      });
+      return m;
+    }, [graph]);
+
+    // Deselect a single node from the info panel
+    const handleDeselectNode = useCallback((nodeId) => {
+      pinnedNodesRef.current.delete(nodeId);
+      syncSelection();
+      drawRef.current?.(nodesRef.current);
+    }, [syncSelection]);
+
     /* ------------------------------------------------------------------ */
     /* Build/Update graph when raw data or generation changes              */
     /* ------------------------------------------------------------------ */
@@ -132,10 +178,15 @@ const GraphRendererCanvas = forwardRef(
       if (!ctx) return;
 
       const { width: w, height: h } = canvasRef.current;
-      // Clear
+      // Clear with background color
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
-      ctx.clearRect(0, 0, w, h);
+      if (bgColor) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, w, h);
+      } else {
+        ctx.clearRect(0, 0, w, h);
+      }
       ctx.restore();
 
       ctx.save();
@@ -143,88 +194,116 @@ const GraphRendererCanvas = forwardRef(
       ctx.translate(t.x, t.y);
       ctx.scale(t.k, t.k);
 
-      /* ---------------------------------------------------------- */
-      /* Grid overlay – drawn in world coordinates so it scales    */
-      /* ---------------------------------------------------------- */
+      // ── O(1) node lookup map for all link/overlay drawing ──
+      const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-      // Dynamically determine grid cell size so that a node fits neatly
-      const nodeGridSize = (() => {
-        let max = 0;
-        nodes.forEach((n) => {
-          let size;
-          switch (n.type) {
-            case "compound":
-              size = 36; // diameter 18 * 2
-              break;
-            case "ec":
-              size = 48; // width (rx 24 * 2)
-              break;
-            default:
-              size = 40; // rectangle width
-          }
-          if (size > max) max = size;
-        });
-        return max || 40; // fallback
-      })();
+      // ── Visible bounds in world coords (for viewport culling) ──
+      const CULL_MARGIN = 60; // px margin around viewport
+      const viewMinX = (-t.x) / t.k - CULL_MARGIN;
+      const viewMinY = (-t.y) / t.k - CULL_MARGIN;
+      const viewMaxX = (-t.x + w) / t.k + CULL_MARGIN;
+      const viewMaxY = (-t.y + h) / t.k + CULL_MARGIN;
 
+      const inView = (x, y) =>
+        x >= viewMinX && x <= viewMaxX && y >= viewMinY && y <= viewMaxY;
+
+      /* ---------------------------------------------------------- */
+      /* Grid overlay – batched into 2 draw calls                  */
+      /* ---------------------------------------------------------- */
+      const nodeGridSize = 48; // constant (largest node = EC ellipse)
       const gridSpacing = nodeGridSize;
-      const gridColor = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+      const effectiveGridColor = gridColor
+        ? gridColor + '18' // user color with ~10% opacity (hex alpha)
+        : dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
 
       ctx.save();
-      ctx.strokeStyle = gridColor;
-      ctx.lineWidth = 1 / t.k; // keep 1px regardless of zoom
+      ctx.strokeStyle = effectiveGridColor;
+      ctx.lineWidth = 1 / t.k;
 
-      // Compute visible bounds in world coords
-      const viewMinX = (-t.x) / t.k;
-      const viewMinY = (-t.y) / t.k;
-      const viewMaxX = viewMinX + w / t.k;
-      const viewMaxY = viewMinY + h / t.k;
-
-      // Align grid start to spacing
       const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
       const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
 
+      // Batch vertical lines
+      ctx.beginPath();
       for (let x = startX; x <= viewMaxX; x += gridSpacing) {
-        ctx.beginPath();
         ctx.moveTo(x, viewMinY);
         ctx.lineTo(x, viewMaxY);
-        ctx.stroke();
       }
+      ctx.stroke();
+
+      // Batch horizontal lines
+      ctx.beginPath();
       for (let y = startY; y <= viewMaxY; y += gridSpacing) {
-        ctx.beginPath();
         ctx.moveTo(viewMinX, y);
         ctx.lineTo(viewMaxX, y);
-        ctx.stroke();
       }
+      ctx.stroke();
       ctx.restore();
+
+      /* ---------------------------------------------------------- */
+      /* Generation column labels (no background stripes)           */
+      /* ---------------------------------------------------------- */
+      if (genMapRef.current.length > 0) {
+        ctx.save();
+        const colLabelColor = dark ? "rgba(148,163,184,0.45)" : "rgba(100,116,139,0.35)";
+        ctx.font = `bold 9px "Inter", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+
+        const scaledGap = SUB_COL_GAP * spacingScale;
+        const scaledGenGap = GEN_GAP * spacingScale;
+        const bandWidth = 4 * scaledGap + scaledGenGap;
+        genMapRef.current.forEach(({ gen, idx }) => {
+          // X center using compact index (skips empty generations)
+          const bandX = idx * bandWidth;
+          ctx.fillStyle = colLabelColor;
+          const label = gen === 0 ? "Seed" : `Gen ${gen}`;
+          ctx.fillText(label, bandX, viewMinY + 6);
+        });
+        ctx.restore();
+      }
+
+      // Node size constants (used for edge clipping & node drawing)
+      const R_COMPOUND = 12;
+      const EC_RX = 18, EC_RY = 10;
+      const RECT_W = 30, RECT_H = 18, RECT_R = 3;
+
+      // Compute point on node surface in direction (dx, dy) from center
+      const surfacePoint = (node, dx, dy) => {
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d === 0) return { x: node.x, y: node.y };
+        const ux = dx / d, uy = dy / d;
+        let r;
+        if (node.type === 'compound') {
+          r = R_COMPOUND;
+        } else if (node.type === 'ec') {
+          // Ellipse polar radius: r = rx*ry / sqrt((ry*cos)^2 + (rx*sin)^2)
+          r = (EC_RX * EC_RY) / Math.sqrt((EC_RY * ux) ** 2 + (EC_RX * uy) ** 2);
+        } else {
+          // Rectangle: ray-box intersection
+          const hw = RECT_W / 2, hh = RECT_H / 2;
+          const tx = ux !== 0 ? hw / Math.abs(ux) : Infinity;
+          const ty = uy !== 0 ? hh / Math.abs(uy) : Infinity;
+          r = Math.min(tx, ty);
+        }
+        return { x: node.x + ux * r, y: node.y + uy * r };
+      };
 
       /* ---------------------------------------------------------- */
       /* Path overlay – per node & edge highlight                   */
       /* ---------------------------------------------------------- */
 
       if (showOverlay) {
-        const alphaEdge = 0.25;
-        const alphaNode = 0.35;
-
-        const hexToRgba = (hex, alpha = 0.3) => {
-          let h = hex.replace("#", "");
-          if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-          const bigint = parseInt(h, 16);
-          const r = (bigint >> 16) & 255;
-          const g = (bigint >> 8) & 255;
-          const b = bigint & 255;
-          return `rgba(${r},${g},${b},${alpha})`;
-        };
-
         // Highlight edges first (so nodes overlay edges)
         graph.links.forEach((l) => {
           if (!l.pairIndices || l.pairIndices.length === 0) return;
           const srcId = l.source?.id || l.source;
           const trgId = l.target?.id || l.target;
           if (hiddenIds.has(srcId) || hiddenIds.has(trgId)) return;
-          const src = nodes.find((n) => n.id === srcId);
-          const trg = nodes.find((n) => n.id === trgId);
+          const src = nodeMap.get(srcId);
+          const trg = nodeMap.get(trgId);
           if (!src || !trg) return;
+          if (!inView(src.x, src.y) && !inView(trg.x, trg.y)) return;
 
           l.pairIndices.forEach((pi) => {
             const col = pairColorMap[pi];
@@ -233,9 +312,12 @@ const GraphRendererCanvas = forwardRef(
             ctx.strokeStyle = col;
             ctx.lineWidth = Math.max(6 / t.k, 3);
             ctx.lineCap = "round";
+            const odx = trg.x - src.x, ody = trg.y - src.y;
+            const oSrc = surfacePoint(src, odx, ody);
+            const oTrg = surfacePoint(trg, -odx, -ody);
             ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
-            ctx.lineTo(trg.x, trg.y);
+            ctx.moveTo(oSrc.x, oSrc.y);
+            ctx.lineTo(oTrg.x, oTrg.y);
             ctx.stroke();
             ctx.restore();
           });
@@ -245,170 +327,287 @@ const GraphRendererCanvas = forwardRef(
         nodes.forEach((n) => {
           if (!n.pairIndices || n.pairIndices.length === 0) return;
           if (hiddenIds.has(n.id)) return;
+          if (!inView(n.x, n.y)) return;
 
           n.pairIndices.forEach((pi) => {
             const col = pairColorMap[pi];
             if (!col) return;
             ctx.save();
             ctx.strokeStyle = col;
-            ctx.lineWidth = Math.max(6 / t.k, 3);
-            const pad = 4; // expansion around original size
+            ctx.lineWidth = Math.max(4 / t.k, 2);
+            const pad = 3;
             switch (n.type) {
               case "compound":
                 ctx.beginPath();
-                ctx.arc(n.x, n.y, 18 + pad, 0, Math.PI * 2);
+                ctx.arc(n.x, n.y, 12 + pad, 0, Math.PI * 2);
                 ctx.stroke();
                 break;
               case "ec":
                 ctx.beginPath();
-                ctx.ellipse(n.x, n.y, 24 + pad, 14 + pad, 0, 0, Math.PI * 2);
+                ctx.ellipse(n.x, n.y, 18 + pad, 10 + pad, 0, 0, Math.PI * 2);
                 ctx.stroke();
                 break;
-              default:
-                const rx = n.x - 20 - pad;
-                const ry = n.y - 12 - pad;
-                const rw = 40 + pad * 2;
-                const rh = 24 + pad * 2;
-                const radius = 6;
+              default: {
+                const rx = n.x - 15 - pad;
+                const ry = n.y - 9 - pad;
+                const rw = 30 + pad * 2;
+                const rh = 18 + pad * 2;
                 ctx.beginPath();
-                ctx.moveTo(rx + radius, ry);
-                ctx.lineTo(rx + rw - radius, ry);
-                ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
-                ctx.lineTo(rx + rw, ry + rh - radius);
-                ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
-                ctx.lineTo(rx + radius, ry + rh);
-                ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
-                ctx.lineTo(rx, ry + radius);
-                ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+                ctx.roundRect(rx, ry, rw, rh, 5);
                 ctx.stroke();
+                break;
+              }
             }
             ctx.restore();
           });
         });
       }
 
-      const links = graph.links.filter((l) => {
-        const sId = l.source?.id || l.source;
-        const tId = l.target?.id || l.target;
-        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
-      });
+      /* ---------------------------------------------------------- */
+      /* Draw links – adaptive opacity, bezier curves, hover-aware */
+      /* ---------------------------------------------------------- */
 
-      // Draw links with style per type
-      ctx.lineCap = "round";
-      links.forEach((l) => {
-        const lType = l.type;
-        if (lType && lType.startsWith("ec")) {
-          ctx.strokeStyle = dark ? "#c4b5fd" : "#8B5CF6";
-          ctx.setLineDash([2 / t.k, 4 / t.k]);
-        } else if (lType === "reaction") {
-          ctx.strokeStyle = dark ? "#CBD5E1" : "#9CA3AF";
-          ctx.setLineDash([6 / t.k, 4 / t.k]);
-        } else {
-          ctx.strokeStyle = dark ? "#CBD5E1" : "#9CA3AF";
-          ctx.setLineDash([]);
-        }
-
-        ctx.lineWidth = Math.max(1 / t.k, 0.8);
+      // Build per-node link index for hover highlighting
+      const linksByNode = new Map();
+      const visibleEdges = [];
+      graph.links.forEach((l) => {
         const srcId = l.source?.id || l.source;
         const trgId = l.target?.id || l.target;
         if (hiddenIds.has(srcId) || hiddenIds.has(trgId)) return;
-        const src = nodes.find((n) => n.id === srcId);
-        const trg = nodes.find((n) => n.id === trgId);
+        const src = nodeMap.get(srcId);
+        const trg = nodeMap.get(trgId);
         if (!src || !trg) return;
-        ctx.beginPath();
-        ctx.moveTo(src.x, src.y);
-        ctx.lineTo(trg.x, trg.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        if (l.stoichiometry && l.stoichiometry > 1) {
-          ctx.save();
-          ctx.fillStyle = dark ? "#334155" : "#1F2937";
-          //ctx.font = `${Math.max(8 / t.k, 6)}px Inter, sans-serif`;
-          ctx.font = `6px Inter, sans-serif`;
-          const midX = (src.x + trg.x) / 2;
-          const midY = (src.y + trg.y) / 2 - 4 / t.k;
-          ctx.fillText(l.stoichiometry, midX, midY);
-          ctx.restore();
-        }
+        if (!inView(src.x, src.y) && !inView(trg.x, trg.y)) return;
+        const idx = visibleEdges.length;
+        visibleEdges.push({ src, trg, link: l });
+        if (!linksByNode.has(srcId)) linksByNode.set(srcId, []);
+        if (!linksByNode.has(trgId)) linksByNode.set(trgId, []);
+        linksByNode.get(srcId).push(idx);
+        linksByNode.get(trgId).push(idx);
       });
 
-      // Helper to compute color for a generation index
-      const genColor = (g) => {
-        const hue = maxGeneration ? (g / (maxGeneration + 1)) * 320 : 200;
-        return {
-          fill: `hsl(${hue}, 70%, 90%)`,
-          stroke: `hsl(${hue}, 70%, 45%)`,
-        };
+      const edgeCount = visibleEdges.length;
+      const hovId = hoveredNodeRef.current;
+      const pinned = pinnedNodesRef.current;
+
+      // Highlighted set = union of hovered node + all pinned nodes
+      const highlightIds = new Set(pinned);
+      if (hovId != null && nodeMap.has(hovId)) highlightIds.add(hovId);
+      const hasHighlight = highlightIds.size > 0;
+
+      // Build set of edge indices connected to ANY highlighted node
+      const highlightedEdgeSet = new Set();
+      if (hasHighlight) {
+        highlightIds.forEach((nid) => {
+          (linksByNode.get(nid) || []).forEach((idx) => highlightedEdgeSet.add(idx));
+        });
+      }
+
+      // Adaptive base opacity scaled by user edgeOpacity setting (0–1)
+      const autoAlpha = edgeCount <= 50
+        ? 0.35
+        : edgeCount <= 500
+          ? 0.35 - (edgeCount - 50) / 450 * 0.27
+          : Math.max(0.03, 0.08 - (edgeCount - 500) / 3000 * 0.05);
+      const baseAlpha = autoAlpha * (edgeOpacity * 2); // edgeOpacity 0.5 = default
+
+      const dimAlpha = hasHighlight ? Math.min(baseAlpha * 0.25, 0.04) : baseAlpha;
+      const brightAlpha = 0.85;
+
+      ctx.lineCap = "round";
+
+      // Draw dim edges first (batch), then bright highlighted edges on top
+      for (let pass = 0; pass < 2; pass++) {
+        visibleEdges.forEach(({ src, trg, link }, idx) => {
+          const isBright = hasHighlight && highlightedEdgeSet.has(idx);
+          if (pass === 0 && isBright) return;   // skip bright edges on dim pass
+          if (pass === 1 && !isBright) return;  // skip dim edges on bright pass
+          if (pass === 1 && !hasHighlight) return;
+
+          const alpha = isBright ? brightAlpha : dimAlpha;
+          const lType = link.type;
+
+          // Edge color by type
+          let r, g, b;
+          if (lType && lType.startsWith("ec")) {
+            r = dark ? 196 : 139; g = dark ? 181 : 92; b = dark ? 253 : 246;
+          } else if (lType === "reaction") {
+            r = dark ? 203 : 156; g = dark ? 213 : 163; b = dark ? 225 : 175;
+          } else {
+            r = dark ? 148 : 120; g = dark ? 163 : 140; b = dark ? 184 : 160;
+          }
+
+          ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+          ctx.lineWidth = isBright
+            ? Math.max(1.5 / t.k, 1)
+            : Math.max(0.6 / t.k, 0.4);
+
+          // Dash convention:  solid = substrate/product,  dashed = reaction,  dotted = EC
+          if (lType && lType.startsWith("ec")) {
+            ctx.setLineDash([2 / t.k, 3 / t.k]); // dotted
+          } else if (lType === "reaction") {
+            ctx.setLineDash([5 / t.k, 3 / t.k]); // dashed
+          } else {
+            ctx.setLineDash([]); // solid
+          }
+
+          // Gentle bezier curve — clip at node surface
+          const dx = trg.x - src.x;
+          const dy = trg.y - src.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const curvature = Math.min(dist * 0.12, 30);
+          const mx = (src.x + trg.x) / 2;
+          const my = (src.y + trg.y) / 2;
+          const nx = dist > 0 ? -dy / dist : 0;
+          const ny = dist > 0 ? dx / dist : 0;
+          const cpx = mx + nx * curvature;
+          const cpy = my + ny * curvature;
+
+          // Tangent at t=0 points from src toward control; at t=1 from control toward trg
+          const s0 = surfacePoint(src, cpx - src.x, cpy - src.y);
+          const s1 = surfacePoint(trg, cpx - trg.x, cpy - trg.y);
+
+          ctx.beginPath();
+          ctx.moveTo(s0.x, s0.y);
+          ctx.quadraticCurveTo(cpx, cpy, s1.x, s1.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        });
+      }
+
+      /* ---------------------------------------------------------- */
+      /* Draw nodes – compact, clean, hover-aware                  */
+      /* ---------------------------------------------------------- */
+
+      // Compute node degrees for 'degree' color mode
+      const degreeMap = new Map();
+      if (colorMode === 'degree') {
+        graph.links.forEach((l) => {
+          const sId = l.source?.id || l.source;
+          const tId = l.target?.id || l.target;
+          degreeMap.set(sId, (degreeMap.get(sId) || 0) + 1);
+          degreeMap.set(tId, (degreeMap.get(tId) || 0) + 1);
+        });
+      }
+      const maxDeg = degreeMap.size > 0 ? Math.max(1, ...degreeMap.values()) : 1;
+
+      // Unified node color function
+      // Generation & degree use a 0–100 normalized bucket scale:
+      //   - With few generations (e.g. 5), each maps to a wide bucket → discrete colors
+      //   - With many generations (e.g. 80), buckets are narrow → near-continuous gradient
+      const MAX_BUCKET = 100;
+      const nodeColor = (n) => {
+        if (colorMode === 'type') {
+          return getTypeColor(n.type, dark);
+        }
+        if (colorMode === 'degree') {
+          const deg = degreeMap.get(n.id) || 0;
+          // Normalize to 0–100 bucket, then to 0–1
+          const bucket = Math.round((deg / maxDeg) * MAX_BUCKET);
+          const t = bucket / MAX_BUCKET;
+          return getSchemeColor(colorScheme, t, dark);
+        }
+        // 'generation' (default) — map gen to 0–100 bucket scale
+        const gen = n.generation || 0;
+        const bucket = maxGeneration > 0
+          ? Math.round((gen / maxGeneration) * MAX_BUCKET)
+          : 0;
+        const t = bucket / MAX_BUCKET;
+        return getSchemeColor(colorScheme, t, dark);
       };
 
-      // Draw nodes
+      // (Node sizes defined above before edge drawing)
+
       nodes.forEach((n) => {
         if (hiddenIds.has(n.id)) return;
-        ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,0.1)";
-        ctx.shadowBlur = 3;
-        ctx.beginPath();
+        if (!inView(n.x, n.y)) return;
 
-        // Determine styles
-        {
-          const { fill, stroke } = genColor(n.generation || 0);
-          ctx.fillStyle = fill;
-          ctx.strokeStyle = stroke;
+        const isHighlighted = highlightIds.has(n.id);
+        const { fill, stroke } = nodeColor(n);
+
+        // Highlighted node (hovered or pinned) gets a soft glow ring
+        if (isHighlighted) {
+          ctx.save();
+          ctx.strokeStyle = dark ? "rgba(96,165,250,0.6)" : "rgba(59,130,246,0.5)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          if (n.type === "compound") ctx.arc(n.x, n.y, R_COMPOUND + 4, 0, Math.PI * 2);
+          else if (n.type === "ec") ctx.ellipse(n.x, n.y, EC_RX + 4, EC_RY + 4, 0, 0, Math.PI * 2);
+          else {
+            const rx = n.x - RECT_W / 2 - 3, ry = n.y - RECT_H / 2 - 3;
+            ctx.roundRect(rx, ry, RECT_W + 6, RECT_H + 6, RECT_R + 2);
+          }
+          ctx.stroke();
+          ctx.restore();
         }
+
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
 
         switch (n.type) {
           case "compound":
-            ctx.lineWidth = 1.5;
-            ctx.arc(n.x, n.y, 18, 0, Math.PI * 2);
-            break;
-          case "ec":
-            ctx.lineWidth = 1.5;
-            ctx.ellipse(n.x, n.y, 24, 14, 0, 0, Math.PI * 2);
-            break;
-          default:
-            ctx.lineWidth = collapsedRoots.has(n.id) ? 3 : 1.5;
-            // rounded rectangle
-            const rx = n.x - 20;
-            const ry = n.y - 12;
-            const rw = 40;
-            const rh = 24;
-            const radius = 4;
+            ctx.lineWidth = 1.2;
             ctx.beginPath();
-            ctx.moveTo(rx + radius, ry);
-            ctx.lineTo(rx + rw - radius, ry);
-            ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
-            ctx.lineTo(rx + rw, ry + rh - radius);
-            ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
-            ctx.lineTo(rx + radius, ry + rh);
-            ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
-            ctx.lineTo(rx, ry + radius);
-            ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+            ctx.arc(n.x, n.y, R_COMPOUND, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
             break;
+          case "ec":
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.ellipse(n.x, n.y, EC_RX, EC_RY, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            break;
+          default: {
+            ctx.lineWidth = collapsedRoots.has(n.id) ? 2.5 : 1.2;
+            const rx = n.x - RECT_W / 2;
+            const ry = n.y - RECT_H / 2;
+            ctx.beginPath();
+            ctx.roundRect(rx, ry, RECT_W, RECT_H, RECT_R);
+            ctx.fill();
+            ctx.stroke();
+            break;
+          }
         }
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
       });
 
-      // Draw labels (compound + EC + reaction as text)
-      //ctx.font = `${Math.max(9 / t.k, 5)}px "Inter", sans-serif`;
-      ctx.font = `7px "Inter", sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      nodes.forEach((n) => {
-        if (hiddenIds.has(n.id)) return;
-        let label = n.label ?? n.id;
-        if (/reaction-/.test(n.type)) label = label.split("_")[0];
+      /* ---------------------------------------------------------- */
+      /* Draw labels – progressive: only when zoomed in enough      */
+      /* ---------------------------------------------------------- */
+      if (t.k >= 0.45) {
+        const fontSize = Math.max(5, Math.min(7, 6 / t.k * t.k));
+        ctx.font = `${fontSize}px "Inter", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        nodes.forEach((n) => {
+          if (hiddenIds.has(n.id)) return;
+          if (!inView(n.x, n.y)) return;
+          let label = n.label ?? n.id;
+          if (/reaction-/.test(n.type)) label = label.split("_")[0];
 
-        ctx.fillStyle = dark ? "#1E293B" : "#374151";
-        ctx.fillText(label, n.x, n.y);
-      });
+          ctx.fillStyle = dark ? "#CBD5E1" : "#374151";
+          ctx.fillText(label, n.x, n.y);
+        });
+      }
 
       ctx.restore();
-    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay]);
+    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor]);
+
+    // Keep refs always pointing to the latest functions (fixes stale closure in event handlers)
+    drawRef.current = draw;
+    syncSelectionRef.current = syncSelection;
+
+    // Prune stale hover/pinned state when graph changes (keep valid pins)
+    useEffect(() => {
+      hoveredNodeRef.current = null;
+      const nodeIds = new Set(graph.nodes.map((n) => n.id));
+      const pinned = pinnedNodesRef.current;
+      for (const id of pinned) {
+        if (!nodeIds.has(id)) pinned.delete(id);
+      }
+      syncSelection();
+    }, [graph, syncSelection]);
 
     // Use effect to redraw when overlay toggled or graph updated
     useEffect(() => {
@@ -418,86 +617,85 @@ const GraphRendererCanvas = forwardRef(
     useEffect(() => {
       if (!graph.nodes.length) return;
 
-      // Deep copy nodes so d3 can mutate x/y without affecting state
+      const centerY = (typeof height === "string" ? parseInt(height) : height) / 2;
+
+      // Deep copy nodes so we can mutate x/y without affecting state
       const nodesCopy = graph.nodes.map((n) => ({ ...n }));
       const linksCopy = graph.links.map((l) => ({ ...l }));
 
-      // Remove hidden nodes from simulation arrays
+      // Remove hidden nodes
       const visibleNodes = nodesCopy.filter((n) => !hiddenIds.has(n.id));
+      const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
 
       // Visible links corresponding to visible nodes
       const visibleLinks = linksCopy.filter((l) => {
         const sId = l.source?.id || l.source;
         const tId = l.target?.id || l.target;
-        return !hiddenIds.has(sId) && !hiddenIds.has(tId);
+        return visibleNodeIds.has(sId) && visibleNodeIds.has(tId);
       });
 
-      // Fix positions of nodes from earlier generations so they remain stable
-      visibleNodes.forEach((n) => {
-        if ((n.generation || 0) < currentGeneration && !nodesLocked) {
-          n.fx = n.x;
-          n.fy = n.y;
-        }
+      // Snapshot current positions into the persistent cache
+      nodesRef.current.forEach((n) => {
+        positionCacheRef.current[n.id] = { x: n.x, y: n.y };
       });
 
-      // Initial positions – reuse previous if simulation exists
-      const prevPositions = simulationRef.current?.nodes().reduce((acc, n) => {
-        acc[n.id] = { x: n.x, y: n.y };
-        return acc;
-      }, {});
-      visibleNodes.forEach((n) => {
-        if (prevPositions?.[n.id]) {
-          n.x = prevPositions[n.id].x;
-          n.y = prevPositions[n.id].y;
-        }
-      });
-
-      // Spiral placement for fresh nodes
-      applySpiral(
+      // Static hierarchical layout: assigns x/y directly, no physics
+      const layoutResult = applyHierarchicalLayout(
         visibleNodes,
-        (containerRef.current?.clientWidth || 800) / 2,
-        (typeof height === "string" ? parseInt(height) : height) / 2,
-        currentGeneration,
-        true,
-        nodesLocked
+        centerY,
+        positionCacheRef.current,
+        false,
+        visibleLinks,
+        spacingScale
       );
+      genMapRef.current = layoutResult.genMap || [];
 
-      if (simulationRef.current) simulationRef.current.stop();
+      // Update cache with final positions
+      visibleNodes.forEach((n) => {
+        positionCacheRef.current[n.id] = { x: n.x, y: n.y };
+      });
 
-      const sim = d3
-        .forceSimulation(visibleNodes)
-        .force(
-          "link",
-          d3
-            .forceLink(visibleLinks)
-            .id((d) => d.id)
-            .distance(tension)
-        )
-        .force("charge", d3.forceManyBody().strength(-repulsion))
-        .force(
-          "center",
-          d3.forceCenter(
-            (containerRef.current?.clientWidth || 800) / 2,
-            (typeof height === "string" ? parseInt(height) : height) / 2
-          )
-        )
-        .alpha(0.5) // gentler start to avoid "explosion" effect
-        .alphaDecay(0.05)
-        .on("tick", () => draw(sim.nodes()));
+      // Store nodes for drawing and interaction
+      nodesRef.current = visibleNodes;
 
-      if (nodesLocked) {
-        sim.stop();
+      // Auto-fit view when data changes (new search) or first layout
+      if (data !== prevDataRef.current) {
+        prevDataRef.current = data;
+        needsFitRef.current = true;
       }
 
-      simulationRef.current = sim;
+      if (needsFitRef.current && visibleNodes.length > 0 && canvasRef.current && zoomRef.current) {
+        needsFitRef.current = false;
+        const canvas = canvasRef.current;
+        const w = canvas.clientWidth || 800;
+        const h = canvas.clientHeight || 600;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        visibleNodes.forEach((n) => {
+          minX = Math.min(minX, n.x);
+          minY = Math.min(minY, n.y);
+          maxX = Math.max(maxX, n.x);
+          maxY = Math.max(maxY, n.y);
+        });
+        const pad = 60;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        const graphH = maxY - minY || 1;
+        // Scale to fit vertically; let graph extend rightward naturally
+        const scale = Math.min(h / graphH, 1.5);
+        // Gen 0 at 5% from left edge, vertically centered
+        const tx = w * 0.05 - minX * scale;
+        const ty = (h - graphH * scale) / 2 - minY * scale;
+        const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+        transformRef.current = t;
+        d3.select(canvas).call(zoomRef.current.transform, t);
+      }
 
-      // Initial draw
+      // Draw immediately (no simulation ticks needed)
       draw(visibleNodes);
 
       return () => {
-        sim.stop();
+        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
       };
-    }, [graph, hiddenIds, nodesLocked, currentGeneration, height, containerRef, tension, repulsion, draw]);
+    }, [graph, hiddenIds, currentGeneration, height, containerRef, draw, spacingScale, data]);
 
     /* ------------------------------------------------------------------ */
     /* Canvas & Zoom                                                      */
@@ -520,7 +718,7 @@ const GraphRendererCanvas = forwardRef(
         canvas.style.width = `${w}px`;
         canvas.style.height = `${h}px`;
         context.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
-        draw(simulationRef.current?.nodes() || []);
+        drawRef.current?.(nodesRef.current);
       };
       handleResize();
       window.addEventListener("resize", handleResize);
@@ -534,7 +732,7 @@ const GraphRendererCanvas = forwardRef(
           const rect = canvas.getBoundingClientRect();
           const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
           const my = (ev.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
-          const hitNode = (simulationRef.current?.nodes() || []).find((n) => {
+          const hitNode = nodesRef.current.find((n) => {
             const radius = n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20;
             return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
           });
@@ -542,7 +740,7 @@ const GraphRendererCanvas = forwardRef(
         })
         .on("zoom", (ev) => {
           transformRef.current = ev.transform;
-          draw(simulationRef.current?.nodes() || []);
+          drawRef.current?.(nodesRef.current);
         });
       d3.select(canvas).call(zoom);
       zoomRef.current = zoom;
@@ -551,7 +749,7 @@ const GraphRendererCanvas = forwardRef(
         window.removeEventListener("resize", handleResize);
         d3.select(canvas).on('.zoom', null);
       };
-    }, [containerRef, height, isFullscreen, draw]);
+    }, [containerRef, height, isFullscreen]);
 
     /* ------------------------------------------------------------------ */
     /* Drawing                                                             */
@@ -573,44 +771,7 @@ const GraphRendererCanvas = forwardRef(
     }, []);
 
     /* ------------------------------------------------------------------ */
-    /* Pointer interaction – selection & collapse                          */
-    /* ------------------------------------------------------------------ */
-
-    useEffect(() => {
-      if (!canvasRef.current) return;
-      const canvas = canvasRef.current;
-
-      const handleClick = (evt) => {
-        if (!evt.ctrlKey) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = (evt.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
-        const y = (evt.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
-
-        const hit = (simulationRef.current?.nodes() || []).find((n) => {
-          if (/reaction-/.test(n.type)) {
-            // Reaction side nodes are small rectangles 24×12
-            return x >= n.x - 12 && x <= n.x + 12 && y >= n.y - 6 && y <= n.y + 6;
-          } else if (n.type === "compound") {
-            return (x - n.x) ** 2 + (y - n.y) ** 2 <= 100; // r=10
-          }
-          return false;
-        });
-        if (hit && /reaction-/.test(hit.type)) {
-          setCollapsedRoots((prev) => {
-            const newSet = new Set(prev);
-            if (newSet.has(hit.id)) newSet.delete(hit.id);
-            else newSet.add(hit.id);
-            return newSet;
-          });
-        }
-      };
-
-      canvas.addEventListener("click", handleClick);
-      return () => canvas.removeEventListener("click", handleClick);
-    }, []);
-
-    /* ------------------------------------------------------------------ */
-    /* Dragging for node reposition                                        */
+    /* Pointer interaction – collapse, pin-highlight, drag, hover         */
     /* ------------------------------------------------------------------ */
 
     useEffect(() => {
@@ -618,57 +779,148 @@ const GraphRendererCanvas = forwardRef(
       if (!canvas) return;
 
       let dragging = null;
+      let didDrag = false; // distinguish drag from click
 
-      const pointerdown = (e) => {
+      // ── Hit-test helper ──
+      const hitTest = (mx, my) => {
+        const nodes = nodesRef.current;
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          const n = nodes[i];
+          if ((mx - n.x) ** 2 + (my - n.y) ** 2 < 300) return n;
+        }
+        return null;
+      };
+
+      const worldCoords = (e) => {
         const rect = canvas.getBoundingClientRect();
-        const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
-        const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
-        const node = (simulationRef.current?.nodes() || []).find((n) => {
-          return (mx - n.x) ** 2 + (my - n.y) ** 2 < 400;
-        });
+        return {
+          mx: (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k,
+          my: (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k,
+        };
+      };
+
+      // ── Pointer down: start drag ──
+      const pointerdown = (e) => {
+        const { mx, my } = worldCoords(e);
+        const node = hitTest(mx, my);
         if (node) {
           dragging = node;
-          simulationRef.current.alphaTarget(0.3).restart();
-          node.fx = node.x;
-          node.fy = node.y;
+          didDrag = false;
           canvas.style.cursor = "grabbing";
         }
       };
 
+      // ── Pointer move: drag or hover ──
       const pointermove = (e) => {
-        if (!dragging) return;
-        const rect = canvas.getBoundingClientRect();
-        const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
-        const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
-        dragging.fx = mx;
-        dragging.fy = my;
-        if (nodesLocked) draw(simulationRef.current?.nodes() || []);
+        const { mx, my } = worldCoords(e);
+
+        if (dragging) {
+          dragging.x = mx;
+          dragging.y = my;
+          didDrag = true;
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
+        // Hover detection
+        const hit = hitTest(mx, my);
+        const found = hit ? hit.id : null;
+        if (found !== hoveredNodeRef.current) {
+          hoveredNodeRef.current = found;
+          canvas.style.cursor = found ? 'pointer' : 'grab';
+          drawRef.current?.(nodesRef.current);
+        }
       };
 
+      // ── Pointer up: finish drag + enforce no-overlap ──
       const pointerup = () => {
         if (dragging) {
-          // Permanently fix node at its dropped location, regardless of mode
-          dragging.fx = dragging.x;
-          dragging.fy = dragging.y;
-
-          // Calm simulation so neighbours settle without pulling node back
-          simulationRef.current.alphaTarget(0);
-          if (nodesLocked) draw(simulationRef.current?.nodes() || []);
+          // Hard collision enforcement: push away from any overlapping neighbor
+          const MIN_DIST = 88; // 2 × collision radius
+          for (const other of nodesRef.current) {
+            if (other === dragging) continue;
+            const dx = dragging.x - other.x;
+            const dy = dragging.y - other.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < MIN_DIST && dist > 0) {
+              const push = (MIN_DIST - dist) / 2 + 1;
+              const nx = dx / dist;
+              const ny = dy / dist;
+              dragging.x += nx * push;
+              dragging.y += ny * push;
+            }
+          }
+          positionCacheRef.current[dragging.id] = { x: dragging.x, y: dragging.y };
+          drawRef.current?.(nodesRef.current);
           dragging = null;
           canvas.style.cursor = 'grab';
         }
       };
 
+      // ── Click: Ctrl+click = collapse, plain click = pin highlight, Shift+click = multi-pin ──
+      const handleClick = (evt) => {
+        if (didDrag) { didDrag = false; return; } // was a drag, not a click
+
+        const { mx, my } = worldCoords(evt);
+        const hit = hitTest(mx, my);
+        // Ctrl+click on reaction node = toggle collapse
+        if (evt.ctrlKey && hit && /reaction-/.test(hit.type)) {
+          setCollapsedRoots((prev) => {
+            const newSet = new Set(prev);
+            if (newSet.has(hit.id)) newSet.delete(hit.id);
+            else newSet.add(hit.id);
+            return newSet;
+          });
+          return;
+        }
+
+        // Shift+click on node = toggle it in pinned set (multi-select)
+        if (evt.shiftKey && hit) {
+          const pinned = pinnedNodesRef.current;
+          if (pinned.has(hit.id)) {
+            pinned.delete(hit.id);
+          } else {
+            pinned.add(hit.id);
+          }
+          drawRef.current?.(nodesRef.current);
+          syncSelectionRef.current?.();
+          return;
+        }
+
+        // Plain click on node = pin only that node (replace selection)
+        if (hit && !evt.ctrlKey) {
+          const pinned = pinnedNodesRef.current;
+          if (pinned.size === 1 && pinned.has(hit.id)) {
+            pinned.clear();
+          } else {
+            pinned.clear();
+            pinned.add(hit.id);
+          }
+          drawRef.current?.(nodesRef.current);
+          syncSelectionRef.current?.();
+          return;
+        }
+
+        // Click on empty space = clear all pins
+        if (!hit) {
+          pinnedNodesRef.current.clear();
+          drawRef.current?.(nodesRef.current);
+          syncSelectionRef.current?.();
+        }
+      };
+
       canvas.addEventListener("pointerdown", pointerdown, { passive: false });
+      canvas.addEventListener("click", handleClick);
       window.addEventListener("pointermove", pointermove);
       window.addEventListener("pointerup", pointerup);
 
       return () => {
         canvas.removeEventListener("pointerdown", pointerdown);
+        canvas.removeEventListener("click", handleClick);
         window.removeEventListener("pointermove", pointermove);
         window.removeEventListener("pointerup", pointerup);
       };
-    }, [nodesLocked]);
+    }, []);
 
     /* ------------------------------------------------------------------ */
     /* Imperative API – for ActionButtons etc.                             */
@@ -684,16 +936,32 @@ const GraphRendererCanvas = forwardRef(
         canvasSel.transition().call(zoomRef.current.scaleBy, 0.75);
       },
       resetView: () => {
-        const w = containerRef.current?.clientWidth || 800;
-        const h = typeof height === "string" ? parseInt(height) : height;
-        const identity = d3.zoomIdentity.translate(w / 4, h / 4).scale(0.8);
-        d3.select(canvasRef.current)
-          .transition()
-          .call(zoomRef.current.transform, identity);
+        const canvas = canvasRef.current;
+        if (!canvas || !zoomRef.current) return;
+        const nodes = nodesRef.current;
+        const w = canvas.clientWidth || 800;
+        const h = canvas.clientHeight || 600;
+        if (!nodes.length) {
+          d3.select(canvas).transition().call(zoomRef.current.transform, d3.zoomIdentity);
+          return;
+        }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        nodes.forEach((n) => {
+          minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+          maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
+        });
+        const pad = 60;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        const graphH = maxY - minY || 1;
+        const scale = Math.min(h / graphH, 1.5);
+        const tx = w * 0.05 - minX * scale;
+        const ty = (h - graphH * scale) / 2 - minY * scale;
+        const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+        d3.select(canvas).transition().duration(400).call(zoomRef.current.transform, t);
       },
       downloadSVG: () => {
         // Build an off-screen SVG containing the whole graph (not just viewport)
-        const nodes = simulationRef.current?.nodes() || [];
+        const nodes = nodesRef.current;
         if (!nodes.length) return;
 
         const visibleLinks = graph.links.filter((l) => {
@@ -728,12 +996,13 @@ const GraphRendererCanvas = forwardRef(
         const svgParts = [];
         svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${heightSvg}" viewBox="${minX} ${minY} ${width} ${heightSvg}">`);
 
-        // Links
+        // Links – use Map for O(1) lookups
+        const svgNodeMap = new Map(nodes.map((n) => [n.id, n]));
         visibleLinks.forEach((l) => {
           const sId = l.source?.id || l.source;
           const tId = l.target?.id || l.target;
-          const src = nodes.find((n) => n.id === sId);
-          const trg = nodes.find((n) => n.id === tId);
+          const src = svgNodeMap.get(sId);
+          const trg = svgNodeMap.get(tId);
           if (!src || !trg) return;
           let dash = '';
           if (l.type && l.type.startsWith('ec')) dash = '2 4';
@@ -777,97 +1046,33 @@ const GraphRendererCanvas = forwardRef(
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       },
-      toggleLock: () => {
-        setNodesLocked((prev) => {
-          const next = !prev;
-          const simNodes = simulationRef.current?.nodes?.() || [];
-
-          if (next) {
-            /* ------------- Locking: snap nodes to nearest grid ------------- */
-
-            // Determine grid spacing based on largest node footprint
-            const spacing = (() => {
-              let max = 0;
-              simNodes.forEach((n) => {
-                let size;
-                switch (n.type) {
-                  case "compound":
-                    size = 36; // diameter
-                    break;
-                  case "ec":
-                    size = 48; // ellipse width
-                    break;
-                  default:
-                    size = 40; // rectangle width
-                }
-                if (size > max) max = size;
-              });
-              return max || 40;
-            })();
-
-            // Helper to find nearest free grid coordinate
-            const occupied = new Set();
-            const findFreeCell = (gx, gy) => {
-              if (!occupied.has(`${gx},${gy}`)) return [gx, gy];
-              let r = 1;
-              while (r < 100) {
-                for (let dx = -r; dx <= r; dx++) {
-                  for (let dy = -r; dy <= r; dy++) {
-                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // perimeter only
-                    const key = `${gx + dx},${gy + dy}`;
-                    if (!occupied.has(key)) return [gx + dx, gy + dy];
-                  }
-                }
-                r++;
-              }
-              return [gx, gy]; // fallback
-            };
-
-            simNodes.forEach((n) => {
-              const gx = Math.round(n.x / spacing);
-              const gy = Math.round(n.y / spacing);
-              const [fxg, fyg] = findFreeCell(gx, gy);
-              occupied.add(`${fxg},${fyg}`);
-              const snappedX = fxg * spacing;
-              const snappedY = fyg * spacing;
-              n.x = snappedX;
-              n.y = snappedY;
-              n.fx = snappedX;
-              n.fy = snappedY;
-            });
-
-            simulationRef.current?.stop();
-          } else {
-            // Unlocking: allow movement again
-            simNodes.forEach((n) => {
-              delete n.fx;
-              delete n.fy;
-            });
-            simulationRef.current?.alpha(0.7).restart();
-          }
-
-          draw(simNodes);
-          return next;
-        });
+      resetLayout: () => {
+        const centerY = (typeof height === "string" ? parseInt(height) : height) / 2;
+        positionCacheRef.current = {};
+        const nodes = nodesRef.current;
+        // Clear existing positions so the layout function assigns fresh DAG positions
+        nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = undefined; n.fy = undefined; });
+        const result = applyHierarchicalLayout(nodes, centerY, {}, false, graph.links, spacingScale);
+        genMapRef.current = result.genMap || [];
+        nodes.forEach((n) => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
+        draw(nodes);
       },
       resetSpiral: () => {
-        simulationRef.current?.stop();
-        applySpiral(
-          simulationRef.current.nodes(),
-          (containerRef.current?.clientWidth || 800) / 2,
-          (typeof height === "string" ? parseInt(height) : height) / 2,
-          currentGeneration,
-          true,
-          false
-        );
-        simulationRef.current?.alpha(0.8).restart();
+        const centerY = (typeof height === "string" ? parseInt(height) : height) / 2;
+        positionCacheRef.current = {};
+        const nodes = nodesRef.current;
+        // Clear existing positions so the layout function assigns fresh DAG positions
+        nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = undefined; n.fy = undefined; });
+        const result = applyHierarchicalLayout(nodes, centerY, {}, false, graph.links, spacingScale);
+        genMapRef.current = result.genMap || [];
+        nodes.forEach((n) => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
+        draw(nodes);
       },
-      isLocked: nodesLocked,
       /**
        * Return a map of nodeId -> { x, y } capturing current positions.
        */
       getNodePositions: () => {
-        const nodes = simulationRef.current?.nodes?.() || [];
+        const nodes = nodesRef.current;
         const positions = {};
         nodes.forEach((n) => {
           positions[n.id] = { x: n.x, y: n.y };
@@ -880,7 +1085,7 @@ const GraphRendererCanvas = forwardRef(
        */
       setNodePositions: (positions) => {
         if (!positions) return;
-        const nodes = simulationRef.current?.nodes?.() || [];
+        const nodes = nodesRef.current;
         nodes.forEach((n) => {
           const pos = positions[n.id];
           if (pos) {
@@ -894,10 +1099,190 @@ const GraphRendererCanvas = forwardRef(
         draw(nodes);
       },
       /**
+       * One-shot force simulation: runs to convergence then stops.
+       *
+       * Forces (by priority):
+       *  1. Hard exclusion zone — each node has a circle of empty space
+       *     matching its rendered size that nothing can penetrate.
+       *  2. Same generation  → gentle attract
+       *  3. Diff generation  → gentle repel
+       *  4. Same node type   → gentle attract
+       *  5. Diff node type   → gentle repel
+       *  6. Edge tension     → spring pull along edges
+       */
+      tightenEdges: () => {
+        const nodes = nodesRef.current;
+        if (!nodes.length) return;
+
+        /* ── Node exclusion radii: 300% of rendered size ── */
+        const nodeRadius = (n) => {
+          if (n.type === 'compound') return 36;           // 12 * 3
+          if (n.type === 'ec')       return 54;           // 18 * 3
+          return 51;                                      // ~17 * 3
+        };
+
+        /* ── Tunables ── */
+        const GEN_ATTRACT    = 0.0008;  // same-generation pull  (very gentle)
+        const GEN_REPEL      = 0.0012;  // diff-generation push  (very gentle)
+        const TYPE_ATTRACT   = 0.0004;  // same-type pull
+        const TYPE_REPEL     = 0.0006;  // diff-type push
+        const EDGE_TENSION   = 0.04;    // spring along edges
+        const INTERACT_RANGE = 250;     // max range for gen/type forces
+        const DAMPING        = 0.80;    // velocity damping per tick
+        const MAX_ITERS      = 500;
+        const CONVERGE       = 0.15;    // stop when max disp < this
+
+        /* ── Adjacency ── */
+        const edgeList = [];
+        const nodeMap = new Map(nodes.map(n => [n.id, n]));
+        (graph.links || []).forEach(l => {
+          const sId = l.source?.id || l.source;
+          const tId = l.target?.id || l.target;
+          if (nodeMap.has(sId) && nodeMap.has(tId)) edgeList.push([sId, tId]);
+        });
+
+        const visible = nodes.filter(n => !hiddenIds.has(n.id));
+        const N = visible.length;
+        if (N === 0) return;
+
+        /* ── Pre-compute radii ── */
+        const radii = visible.map(n => nodeRadius(n));
+
+        /* ── Index maps for fast lookup ── */
+        const idxOf = new Map();
+        visible.forEach((n, i) => idxOf.set(n.id, i));
+
+        /* ── Velocity buffers ── */
+        const vx = new Float64Array(N);
+        const vy = new Float64Array(N);
+
+        /* ── Normalise node type ── */
+        const ntype = (n) => {
+          if (n.type === 'reaction-in' || n.type === 'reaction-out') return 'reaction';
+          return n.type || 'unknown';
+        };
+
+        for (let iter = 0; iter < MAX_ITERS; iter++) {
+          const fx = new Float64Array(N);
+          const fy = new Float64Array(N);
+
+          /* Pairwise forces */
+          for (let i = 0; i < N; i++) {
+            const ni = visible[i];
+            const ri = radii[i];
+            for (let j = i + 1; j < N; j++) {
+              const nj = visible[j];
+              const rj = radii[j];
+              const ex = ni.x - nj.x;
+              const ey = ni.y - nj.y;
+              const d2 = ex * ex + ey * ey;
+              const dist = Math.sqrt(d2) || 0.1;
+              const ux = ex / dist;
+              const uy = ey / dist;
+
+              /* 1) HARD exclusion — sum of radii is the minimum allowed distance */
+              const minDist = ri + rj;
+              if (dist < minDist) {
+                // Very strong push: proportional to overlap depth
+                const overlap = minDist - dist;
+                const pushF = overlap * 2.0;   // strong multiplier
+                fx[i] += ux * pushF;  fy[i] += uy * pushF;
+                fx[j] -= ux * pushF;  fy[j] -= uy * pushF;
+              }
+
+              if (dist > INTERACT_RANGE) continue;
+
+              /* 2-5) Soft generation & type forces */
+              let force = 0;
+
+              const sameGen = ni.generation === nj.generation;
+              if (sameGen) {
+                force -= GEN_ATTRACT * dist;
+              } else {
+                force += (GEN_REPEL * minDist * minDist) / (d2 + 1);
+              }
+
+              const sameType = ntype(ni) === ntype(nj);
+              if (sameType) {
+                force -= TYPE_ATTRACT * dist;
+              } else {
+                force += (TYPE_REPEL * minDist * minDist) / (d2 + 1);
+              }
+
+              fx[i] += ux * force;  fy[i] += uy * force;
+              fx[j] -= ux * force;  fy[j] -= uy * force;
+            }
+          }
+
+          /* 6) Edge tension — spring pull */
+          edgeList.forEach(([sId, tId]) => {
+            const si = idxOf.get(sId);
+            const ti = idxOf.get(tId);
+            if (si === undefined || ti === undefined) return;
+            const ns = visible[si], nt = visible[ti];
+            const ex = nt.x - ns.x;
+            const ey = nt.y - ns.y;
+            const dist = Math.sqrt(ex * ex + ey * ey) || 0.1;
+            // Only pull if beyond the sum of radii (don't fight exclusion)
+            const minE = radii[si] + radii[ti];
+            if (dist > minE) {
+              const pull = (dist - minE) * EDGE_TENSION / dist;
+              fx[si] += ex * pull;  fy[si] += ey * pull;
+              fx[ti] -= ex * pull;  fy[ti] -= ey * pull;
+            }
+          });
+
+          /* Apply forces → velocity → position */
+          let maxDisp = 0;
+          for (let i = 0; i < N; i++) {
+            vx[i] = (vx[i] + fx[i]) * DAMPING;
+            vy[i] = (vy[i] + fy[i]) * DAMPING;
+            const disp = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+            const maxStep = 6;
+            if (disp > maxStep) {
+              vx[i] *= maxStep / disp;
+              vy[i] *= maxStep / disp;
+            }
+            visible[i].x += vx[i];
+            visible[i].y += vy[i];
+            if (disp > maxDisp) maxDisp = disp;
+          }
+
+          if (maxDisp < CONVERGE) break;
+        }
+
+        /* Post-pass: resolve any remaining overlaps deterministically */
+        for (let pass = 0; pass < 50; pass++) {
+          let anyOverlap = false;
+          for (let i = 0; i < N; i++) {
+            for (let j = i + 1; j < N; j++) {
+              const ni = visible[i], nj = visible[j];
+              const ex = ni.x - nj.x;
+              const ey = ni.y - nj.y;
+              const dist = Math.sqrt(ex * ex + ey * ey) || 0.1;
+              const minD = radii[i] + radii[j];
+              if (dist < minD) {
+                anyOverlap = true;
+                const push = (minD - dist) / 2 + 0.5;
+                const ux = ex / dist;
+                const uy = ey / dist;
+                ni.x += ux * push;  ni.y += uy * push;
+                nj.x -= ux * push;  nj.y -= uy * push;
+              }
+            }
+          }
+          if (!anyOverlap) break;
+        }
+
+        // Persist & redraw
+        visible.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
+        draw(nodes);
+      },
+      /**
        * Rotate all visible nodes around the canvas centre by a given angle (radians, CCW).
        */
       rotateGraph: (angleRad) => {
-        const nodes = simulationRef.current?.nodes?.() || [];
+        const nodes = nodesRef.current;
         if (!nodes.length) return;
         const cx = (containerRef.current?.clientWidth || 800) / 2;
         const cy = (typeof height === 'string' ? parseInt(height) : height) / 2;
@@ -927,17 +1312,11 @@ const GraphRendererCanvas = forwardRef(
           ref={canvasRef}
           style={{ width: "100%", height: "100%", cursor: 'grab' }}
         />
-
-        {/* Lock Button */}
-        <button
-          onClick={() => setNodesLocked((p) => !p)}
-          className={`absolute bottom-4 left-4 p-2 rounded-full z-10 shadow-md hover:shadow-lg transition-all ${
-             nodesLocked ? "bg-blue-500/90 text-white" : "bg-white/90 text-gray-600 border border-gray-200/70 dark:bg-gray-700/80 dark:text-gray-300 dark:border-gray-600/40"
-           }`}
-          title={nodesLocked ? "Unlock node positions" : "Lock node positions"}
-        >
-          {nodesLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
-        </button>
+        <NodeInfoPanel
+          selectedNodes={selectedNodes}
+          degreeMap={degreeMap}
+          onDeselectNode={handleDeselectNode}
+        />
       </div>
     );
   }

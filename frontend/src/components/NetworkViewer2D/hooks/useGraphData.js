@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 function useGraphData(results) {
   const [currentGeneration, setCurrentGeneration] = useState(0);
@@ -31,12 +31,28 @@ function useGraphData(results) {
     setGraphData(results);
   }, [results]);
 
+  // Compute sorted array of generations that actually have compounds
+  const populatedGens = useMemo(() => {
+    if (!results || !Array.isArray(results) || results.length === 0) return [0];
+    const genSet = new Set();
+    results.forEach((item) => {
+      if (item.compound_generation) {
+        Object.values(item.compound_generation).forEach((gen) => {
+          genSet.add(parseInt(gen));
+        });
+      }
+    });
+    const sorted = [...genSet].sort((a, b) => a - b);
+    return sorted.length > 0 ? sorted : [0];
+  }, [results]);
+
   return {
     graphData,
     currentGeneration,
     setCurrentGeneration,
     maxGeneration,
-    minGeneration
+    minGeneration,
+    populatedGens
   };
 }
 

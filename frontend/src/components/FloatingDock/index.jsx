@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Download, Upload, Layers, Loader2,
-  Plus, X, Eye, EyeOff, Sparkles, ChevronUp,
+  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical, Home,
 } from 'lucide-react';
 import Logo from '../Logo';
 import ThemeToggle from '../ThemeProvider/ThemeToggle';
@@ -31,6 +31,9 @@ const FloatingDock = ({
   searchPairs,
   setSearchPairs,
   onToggleVisibility,
+  hideCofactors,
+  toggleHideCofactors,
+  onClearResults,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [compoundData, setCompoundData] = useState([]);
@@ -48,12 +51,16 @@ const FloatingDock = ({
   // Only close on outside click — NOT on mouse leave
   useEffect(() => {
     const onClickOutside = (e) => {
-      if (expanded && dockRef.current && !dockRef.current.contains(e.target)) {
-        // Don't close if clicking inside an autocomplete dropdown
-        const dropdown = e.target.closest('ul');
-        if (dropdown) return;
-        setExpanded(false);
-      }
+      if (!expanded) return;
+      
+      // Don't close if clicking inside the dock itself
+      if (dockRef.current && dockRef.current.contains(e.target)) return;
+      
+      // Don't close if clicking inside an autocomplete dropdown
+      const dropdown = e.target.closest('ul');
+      if (dropdown) return;
+      
+      setExpanded(false);
     };
     const onEscape = (e) => {
       if (e.key === 'Escape') setExpanded(false);
@@ -82,7 +89,8 @@ const FloatingDock = ({
     setSearchPairs(prev => prev.map((p, i) => i === index ? { ...p, ...data } : p));
   }, [setSearchPairs]);
 
-  // Auto-search: when a required value is selected, trigger search after a short debounce
+  // Auto-search: when a required value is selected, trigger search after a debounce
+  // Longer delay allows users to add multiple queries before search starts
   const triggerAutoSearch = useCallback(() => {
     pendingSearchRef.current = true;
     setTimeout(() => {
@@ -100,7 +108,7 @@ const FloatingDock = ({
           return currentPairs;
         });
       }
-    }, 300);
+    }, 1000);
   }, [onSearch, setSearchPairs]);
 
   const handleTargetSelect = useCallback((index, id) => {
@@ -206,10 +214,28 @@ const FloatingDock = ({
             </div>
           )}
 
+          {/* Home button - clear results */}
+          {hasResults && onClearResults && (
+            <button 
+              onClick={onClearResults} 
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-all flex-shrink-0" 
+              title="Clear results and return to home"
+            >
+              <Home className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Combined mode */}
           {hasResults && (
             <button onClick={toggleCombinedMode} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${combinedMode ? 'bg-violet-50 dark:bg-violet-700/20 text-violet-500 dark:text-violet-300/80' : 'text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50'}`} title={combinedMode ? 'Separate view' : 'Combined view'}>
               <Layers className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Hide cofactors */}
+          {hasResults && (
+            <button onClick={toggleHideCofactors} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${hideCofactors ? 'bg-amber-50 dark:bg-amber-700/20 text-amber-500 dark:text-amber-300/80' : 'text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50'}`} title={hideCofactors ? 'Show cofactors (Z compounds)' : 'Hide cofactors (Z compounds)'}>
+              <FlaskConical className="w-4 h-4" />
             </button>
           )}
 

@@ -1,45 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Clock,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Download,
-  SlidersHorizontal,
-  Maximize,
-  Minimize,
-  HelpCircle,
-  Lock,
-  Unlock,
-  Layers,
+  Play, Pause, SkipForward, SkipBack, Clock,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
-
-// ✨ NEW: extracted reusable IconButton to ensure consistent styling & built-in tooltip
-const tooltipBase =
-  'absolute z-20 -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-xs font-medium pointer-events-none transition opacity-0 group-hover:opacity-100 whitespace-nowrap';
-
-const IconButton = ({ title, disabled, children, ...rest }) => (
-  <button
-    type="button"
-    className="group relative p-2 rounded-md hover:bg-indigo-50/60 dark:hover:bg-slate-600/40 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-400/50 dark:focus:ring-indigo-400/30 disabled:opacity-40 disabled:pointer-events-none"
-    disabled={disabled}
-    aria-label={title}
-    {...rest}
-  >
-    {children}
-    {/* Tooltip */}
-    <span
-      className={`${tooltipBase} bg-gray-800/90 text-white dark:bg-slate-700/90`}
-      role="tooltip"
-    >
-      {title}
-    </span>
-  </button>
-);
 
 const GenerationControls = ({
   currentGeneration,
@@ -54,166 +17,152 @@ const GenerationControls = ({
   stepBackward,
   transitionSpeed = 2,
   setTransitionSpeed,
-  isFullscreen,
-  handleZoomIn,
-  handleZoomOut,
-  resetSpiral,
-  toggleFullscreen,
-  handleDownloadSVG,
-  togglePhysics,
-  toggleHelp,
-  startRotate,
-  stopRotate,
-  togglePhysicsSim,
-  physicsOff,
-  toggleOverlay,
-  overlayOn,
+  populatedGens = [],
 }) => {
-  const [showSpeedControl, setShowSpeedControl] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+
+  // Use populated gens for slider positions (index-based)
+  const gens = populatedGens.length > 0 ? populatedGens : [minGeneration];
+  const lastIdx = gens.length - 1;
+
+  // Find closest index for a generation value
+  const genToIdx = (g) => {
+    let best = 0;
+    for (let i = 0; i < gens.length; i++) {
+      if (gens[i] <= g) best = i;
+      else break;
+    }
+    return best;
+  };
+
+  const lo = minVisibleGeneration !== undefined ? minVisibleGeneration : minGeneration;
+  const hi = currentGeneration;
+  const loIdx = genToIdx(lo);
+  const hiIdx = genToIdx(hi);
+  const loPercent = lastIdx > 0 ? (loIdx / lastIdx) * 100 : 0;
+  const hiPercent = lastIdx > 0 ? (hiIdx / lastIdx) * 100 : 100;
+  const overlapping = loIdx === hiIdx;
+
+  const handleOverlapChange = (idx) => {
+    const val = gens[idx];
+    if (val > hi) setCurrentGeneration(val);
+    else if (val < lo && setMinVisibleGeneration) setMinVisibleGeneration(val);
+  };
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col gap-2 p-3 pb-12 sm:p-4 sm:pb-14">
-      {/* Unified toolbar */}
-      <div className="pointer-events-auto flex flex-col rounded-xl bg-white/75 dark:bg-slate-800/75 backdrop-blur-md shadow-lg border border-gray-200/60 dark:border-slate-600/35 overflow-hidden">
-        {/* Controls row */}
-        <div className="flex items-center justify-between gap-3 px-4 py-2">
-          {/* View cluster */}
-          <div className="flex items-center gap-1">
-            <IconButton title="Zoom in" onClick={handleZoomIn}><ZoomIn className="w-5 h-5" /></IconButton>
-            <IconButton title="Zoom out" onClick={handleZoomOut}><ZoomOut className="w-5 h-5" /></IconButton>
-            <IconButton title={overlayOn ? 'Hide path overlay' : 'Show path overlay'} onClick={toggleOverlay}>
-              <Layers className="w-5 h-5" />
-            </IconButton>
-            <IconButton
-              title="Rotate layout (hold to spin)"
-              onClick={resetSpiral}
-              onMouseDown={startRotate}
-              onMouseUp={stopRotate}
-              onMouseLeave={stopRotate}
-            >
-              <RotateCcw className="w-5 h-5" />
-            </IconButton>
-            <IconButton
-              title={physicsOff ? 'Unlock physics' : 'Lock physics'}
-              onClick={togglePhysicsSim}
-            >
-              {physicsOff ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-            </IconButton>
-          </div>
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center pb-14 px-4">
+      <div className="pointer-events-auto w-full max-w-xl">
 
-          {/* Generation controls */}
-          <div className="flex items-center gap-1">
-            <div className="relative">
-              <IconButton title="Animation speed" onClick={() => setShowSpeedControl((p) => !p)}>
-                <Clock className="w-5 h-5" />
-              </IconButton>
-              {showSpeedControl && (
-                <div className="absolute bottom-full left-1/2 z-40 mb-3 w-44 -translate-x-1/2 rounded-lg border border-gray-200/60 dark:border-slate-600/35 bg-white/95 dark:bg-slate-800/95 p-3 shadow-xl">
-                  <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Transition Speed</p>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={transitionSpeed}
-                    onChange={(e) => setTransitionSpeed(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500"
-                  />
-                </div>
-              )}
-            </div>
-
-            <IconButton title="Previous generation" onClick={stepBackward} disabled={currentGeneration === minGeneration}>
-              <SkipBack className="w-5 h-5" />
-            </IconButton>
-
-            <IconButton title={isPlaying ? 'Pause' : 'Play'} onClick={togglePlay}>
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-            </IconButton>
-
-            <IconButton title="Next generation" onClick={stepForward} disabled={currentGeneration === maxGeneration}>
-              <SkipForward className="w-5 h-5" />
-            </IconButton>
-
-            <span className="select-none text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
-              Gen <span className="text-indigo-500 dark:text-indigo-400/80">{minVisibleGeneration !== undefined && minVisibleGeneration !== currentGeneration ? `${minVisibleGeneration}-` : ''}{currentGeneration}</span>/{maxGeneration}
+        {/* ── Collapsed pill ── */}
+        {!expanded && (
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex items-center gap-2 mx-auto px-4 py-1.5 rounded-full
+              bg-white/85 dark:bg-slate-800/85 backdrop-blur-xl
+              border border-slate-200/40 dark:border-slate-600/30
+              shadow-lg text-xs font-semibold text-slate-600 dark:text-slate-300
+              hover:shadow-xl hover:bg-white/95 dark:hover:bg-slate-800/95 transition-all"
+          >
+            <span className="tabular-nums">
+              Gen{' '}
+              <span className="text-violet-500 dark:text-violet-400">
+                {lo !== hi ? `${lo}–` : ''}{hi}
+              </span>
+              /{maxGeneration}
             </span>
-          </div>
+            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+        )}
 
-          {/* Right tools */}
-          <div className="flex items-center gap-1">
-            <IconButton title="Physics controls" onClick={togglePhysics}><SlidersHorizontal className="w-5 h-5" /></IconButton>
-            <IconButton title="Download SVG" onClick={handleDownloadSVG}><Download className="w-5 h-5" /></IconButton>
-            <IconButton title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-            </IconButton>
-            <IconButton title="Help" onClick={toggleHelp}><HelpCircle className="w-5 h-5" /></IconButton>
-          </div>
-        </div>
+        {/* ── Expanded bar ── */}
+        {expanded && (
+          <div className="rounded-2xl bg-white/88 dark:bg-slate-800/88 backdrop-blur-xl
+            border border-slate-200/40 dark:border-slate-600/30 shadow-xl">
 
-        {/* Dual-thumb generation seekbar */}
-        <div className="px-4 pb-3 pt-1">
-          {(() => {
-            const lo = minVisibleGeneration !== undefined ? minVisibleGeneration : minGeneration;
-            const hi = currentGeneration;
-            const range = maxGeneration - minGeneration || 1;
-            const loPercent = ((lo - minGeneration) / range) * 100;
-            const hiPercent = ((hi - minGeneration) / range) * 100;
-            const overlapping = lo === hi;
+            {/* Controls row */}
+            <div className="flex items-center gap-2 px-3 py-2">
 
-            // When thumbs overlap, one smart input handles both directions
-            const handleOverlapChange = (val) => {
-              if (val > hi) {
-                setCurrentGeneration(val);
-              } else if (val < lo) {
-                if (setMinVisibleGeneration) setMinVisibleGeneration(val);
-              }
-            };
+              {/* Transport */}
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button
+                  onClick={stepBackward}
+                  disabled={currentGeneration === minGeneration}
+                  className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-700/40
+                    disabled:opacity-30 transition-all"
+                  title="Previous generation"
+                >
+                  <SkipBack className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
 
-            return (
-              <div className="relative h-3 flex items-center">
-                {/* Track background */}
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-gray-200/80 dark:bg-slate-600/50" />
-                {/* Active range fill */}
+                <button
+                  onClick={togglePlay}
+                  className="p-2 rounded-xl bg-violet-500 hover:bg-violet-400 text-white
+                    shadow-sm shadow-violet-500/20 transition-all"
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying
+                    ? <Pause className="w-4 h-4" />
+                    : <Play className="w-4 h-4" />
+                  }
+                </button>
+
+                <button
+                  onClick={stepForward}
+                  disabled={currentGeneration === maxGeneration}
+                  className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-700/40
+                    disabled:opacity-30 transition-all"
+                  title="Next generation"
+                >
+                  <SkipForward className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+
+              {/* Gen label */}
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300
+                tabular-nums select-none min-w-[56px] text-center flex-shrink-0"
+              >
+                Gen{' '}
+                <span className="text-violet-500 dark:text-violet-400">
+                  {lo !== hi ? `${lo}–` : ''}{hi}
+                </span>
+                /{maxGeneration}
+              </span>
+
+              {/* Seekbar */}
+              <div className="flex-1 relative h-5 flex items-center min-w-[80px]">
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-slate-200/80 dark:bg-slate-600/50" />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-indigo-400 dark:bg-indigo-500/80"
+                  className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-violet-400 dark:bg-violet-500/80"
                   style={{ left: `${loPercent}%`, right: `${100 - hiPercent}%` }}
                 />
 
                 {overlapping ? (
-                  /* Single input when both thumbs overlap — direction determines which value moves */
                   <input
                     type="range"
-                    min={minGeneration}
-                    max={maxGeneration}
-                    value={lo}
+                    min={0} max={lastIdx} value={loIdx}
                     onChange={(e) => handleOverlapChange(parseInt(e.target.value))}
                     className="dual-thumb-range absolute inset-0 w-full"
                     style={{ zIndex: 3 }}
                   />
                 ) : (
                   <>
-                    {/* Left thumb (min visible) */}
                     <input
                       type="range"
-                      min={minGeneration}
-                      max={maxGeneration}
-                      value={lo}
+                      min={0} max={lastIdx} value={loIdx}
                       onChange={(e) => {
-                        const val = parseInt(e.target.value);
+                        const idx = parseInt(e.target.value);
+                        const val = gens[idx];
                         if (setMinVisibleGeneration) setMinVisibleGeneration(Math.min(val, hi));
                       }}
                       className="dual-thumb-range absolute inset-0 w-full"
                       style={{ zIndex: 1 }}
                     />
-                    {/* Right thumb (current gen) */}
                     <input
                       type="range"
-                      min={minGeneration}
-                      max={maxGeneration}
-                      value={hi}
+                      min={0} max={lastIdx} value={hiIdx}
                       onChange={(e) => {
-                        const val = parseInt(e.target.value);
+                        const idx = parseInt(e.target.value);
+                        const val = gens[idx];
                         setCurrentGeneration(Math.max(val, lo));
                         if (setMinVisibleGeneration && lo > val) setMinVisibleGeneration(val);
                       }}
@@ -223,9 +172,34 @@ const GenerationControls = ({
                   </>
                 )}
               </div>
-            );
-          })()}
-        </div>
+
+              {/* Speed */}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Clock className="w-3 h-3 text-slate-400" />
+                <select
+                  value={transitionSpeed}
+                  onChange={(e) => setTransitionSpeed(parseInt(e.target.value))}
+                  className="text-[10px] font-semibold bg-transparent border-none
+                    text-slate-500 dark:text-slate-400 cursor-pointer outline-none
+                    appearance-none pr-0.5"
+                >
+                  {[1,2,3,5,8,10].map(s => (
+                    <option key={s} value={s}>{s}×</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Collapse arrow */}
+              <button
+                onClick={() => setExpanded(false)}
+                className="p-1 rounded-md hover:bg-slate-100/60 dark:hover:bg-slate-700/40 transition-all flex-shrink-0"
+                title="Minimize"
+              >
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

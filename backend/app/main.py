@@ -6,9 +6,11 @@ import logging
 from pathlib import Path
 import re
 import requests
+import xml.etree.ElementTree as ET
 
-from app import STATIC_DIR
+from app import STATIC_DIR, DATA_DIR
 from app.core.viewer import MetabolicViewer
+from app.utils.smiles_cache import get_smiles_batch, get_mol_batch, get_cofactor_names
 
 # Set up logging
 logging.basicConfig(
@@ -39,6 +41,109 @@ viewer = MetabolicViewer()
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+# ── KEGG global map layout (parsed once, cached) ──
+_kegg_layout_cache = None
+
+def _parse_kegg_layout():
+    """Parse ko01100.kgml and return {compound_id: {x, y}} for all compound entries."""
+    global _kegg_layout_cache
+    if _kegg_layout_cache is not None:
+        return _kegg_layout_cache
+
+    kgml_path = DATA_DIR / "ko01100.kgml"
+    if not kgml_path.exists():
+        logger.warning("ko01100.kgml not found in data directory")
+        return {}
+
+    positions = {}
+    tree = ET.parse(str(kgml_path))
+    root = tree.getroot()
+    for entry in root.findall("entry"):
+        if entry.get("type") != "compound":
+            continue
+        # name is like "cpd:C00001" or "gl:G13352"
+        raw_name = entry.get("name", "")
+        cid = raw_name.split(":")[-1] if ":" in raw_name else raw_name
+        graphics = entry.find("graphics")
+        if graphics is not None:
+            x = graphics.get("x")
+            y = graphics.get("y")
+            if x is not None and y is not None and cid not in positions:
+                positions[cid] = {"x": float(x), "y": float(y)}
+
+    _kegg_layout_cache = positions
+    logger.info(f"Parsed KEGG layout: {len(positions)} compound positions from ko01100.kgml")
+    return _kegg_layout_cache
+
+@app.get("/api/kegg-layout")
+async def get_kegg_layout():
+    """Return KEGG global metabolic map (ko01100) compound positions."""
+    try:
+        positions = _parse_kegg_layout()
+        return {"positions": positions, "count": len(positions)}
+    except Exception as e:
+        logger.error(f"Error parsing KEGG layout: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse KEGG layout")
+
+# ── KEGG ortholog edges (polylines, parsed once, cached) ──
+_kegg_ortho_cache = None
+
+def _parse_kegg_ortho_edges():
+    """Parse ko01100.kgml and return ortholog polylines (type='line' graphics)."""
+    global _kegg_ortho_cache
+    if _kegg_ortho_cache is not None:
+        return _kegg_ortho_cache
+
+    kgml_path = DATA_DIR / "ko01100.kgml"
+    if not kgml_path.exists():
+        logger.warning("ko01100.kgml not found in data directory")
+        return []
+
+    edges = []
+    tree = ET.parse(str(kgml_path))
+    root = tree.getroot()
+    for entry in root.findall("entry"):
+        if entry.get("type") != "ortholog":
+            continue
+        reaction = entry.get("reaction", "")
+        name = entry.get("name", "")
+        for graphics in entry.findall("graphics"):
+            if graphics.get("type") != "line":
+                continue
+            coords_str = graphics.get("coords", "")
+            if not coords_str:
+                continue
+            # coords is "x1,y1,x2,y2,..." — parse into list of [x, y] pairs
+            nums = coords_str.split(",")
+            points = []
+            for i in range(0, len(nums) - 1, 2):
+                try:
+                    points.append([float(nums[i]), float(nums[i + 1])])
+                except (ValueError, IndexError):
+                    continue
+            if len(points) >= 2:
+                fgcolor = graphics.get("fgcolor", "#F06292")
+                edges.append({
+                    "name": name,
+                    "reaction": reaction,
+                    "points": points,
+                    "color": fgcolor,
+                })
+
+    _kegg_ortho_cache = edges
+    logger.info(f"Parsed KEGG ortho edges: {len(edges)} polylines from ko01100.kgml")
+    return _kegg_ortho_cache
+
+@app.get("/api/kegg-ortho-edges")
+async def get_kegg_ortho_edges():
+    """Return KEGG ortholog edge polylines from ko01100."""
+    try:
+        edges = _parse_kegg_ortho_edges()
+        return {"edges": edges, "count": len(edges)}
+    except Exception as e:
+        logger.error(f"Error parsing KEGG ortho edges: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse KEGG ortho edges")
 
 @app.get("/api/backtrace")
 async def get_backtrace(target: str, source: str=''):
@@ -75,6 +180,54 @@ async def get_backtrace(target: str, source: str=''):
             detail="Failed to process backtrace request"
         )
         
+@app.get("/api/backtrace/tree")
+async def get_backtrace_tree(target: str, source: str = ''):
+    """
+    AND-OR hypergraph backward reachability from target compound.
+
+    Returns a nested AND-OR tree where:
+      - OR-nodes = compounds (produced by any of several reactions)
+      - AND-nodes = reactions (require all reactants)
+
+    Args:
+        target: Target compound ID (e.g. C00258)
+        source: Optional comma-separated source compound IDs (e.g. C00022,C00036)
+    """
+    try:
+        # Validate target
+        if not re.match(r'^[CZ]\d{5}$', target):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid compound ID format. Must start with 'C' or 'Z' followed by 5 digits."
+            )
+
+        # Parse sources
+        sources = None
+        if source and source.strip():
+            sources = [s.strip() for s in source.split(',') if s.strip()]
+            for s in sources:
+                if not re.match(r'^[CZ]\d{5}$', s):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid source compound ID: {s}"
+                    )
+
+        result = await viewer.get_backtrace_tree(target, sources)
+
+        if result.get('error'):
+            raise HTTPException(status_code=500, detail=result['error'])
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in backtrace tree API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process backtrace tree request"
+        )
+
 @app.get("/api/search")
 async def search(type: str, query: str):
     """
@@ -523,6 +676,105 @@ async def get_accession_domains(accession: str, organism_code: str = ""):
     except Exception as e:
         logger.error(f"Error fetching accession domains: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch accession domain data")
+
+@app.post("/api/smiles")
+async def get_smiles(payload: dict):
+    """
+    Return structure data for a list of KEGG compound IDs.
+    - SMILES from PubChem (primary)
+    - MOL files from KEGG (fallback for compounds missing SMILES)
+    - Cofactor display names for Z compounds
+
+    Body: { "compound_ids": ["C00001", "Z00001", ...] }
+    Returns: { "smiles": {...}, "mol": {...}, "names": {...} }
+    """
+    try:
+        compound_ids = payload.get("compound_ids", [])
+        if not compound_ids or not isinstance(compound_ids, list):
+            raise HTTPException(status_code=400, detail="compound_ids must be a non-empty list")
+        if len(compound_ids) > 500:
+            compound_ids = compound_ids[:500]
+        for cid in compound_ids:
+            if not re.match(r'^[CZ]\d{5}$', str(cid)):
+                raise HTTPException(status_code=400, detail=f"Invalid compound ID: {cid}")
+
+        # Split C and Z compounds
+        c_ids = [c for c in compound_ids if c.startswith('C')]
+        z_ids = [c for c in compound_ids if c.startswith('Z')]
+
+        # 1) SMILES from PubChem
+        smiles_result = get_smiles_batch(c_ids) if c_ids else {}
+
+        # 2) MOL from KEGG for C compounds that have no SMILES
+        missing_smiles = [cid for cid in c_ids if not smiles_result.get(cid)]
+        mol_result = get_mol_batch(missing_smiles) if missing_smiles else {}
+
+        # 3) Cofactor names for Z compounds
+        names_result = get_cofactor_names(z_ids) if z_ids else {}
+
+        return {"smiles": smiles_result, "mol": mol_result, "names": names_result}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in SMILES API: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch SMILES data")
+
+@app.post("/api/substructure-search")
+async def substructure_search(payload: dict):
+    """
+    Search for compounds containing a SMILES substructure (backbone).
+
+    Body: { "smarts": "C(=O)O", "compound_ids": ["C00001", ...] }
+      - smarts: SMILES or SMARTS pattern for the backbone
+      - compound_ids: list of compound IDs to search within (from current graph)
+
+    Returns: { "matches": ["C00022", ...], "query": "C(=O)O", "total": 5 }
+    """
+    try:
+        from rdkit import Chem
+
+        query_str = (payload.get("smarts") or "").strip()
+        compound_ids = payload.get("compound_ids", [])
+
+        if not query_str:
+            raise HTTPException(status_code=400, detail="smarts query is required")
+        if not compound_ids or not isinstance(compound_ids, list):
+            raise HTTPException(status_code=400, detail="compound_ids must be a non-empty list")
+
+        # Parse query — try SMARTS first, then SMILES
+        query_mol = Chem.MolFromSmarts(query_str)
+        if query_mol is None:
+            query_mol = Chem.MolFromSmiles(query_str)
+        if query_mol is None:
+            raise HTTPException(status_code=400, detail=f"Invalid SMILES/SMARTS pattern: {query_str}")
+
+        # Get cached SMILES for the requested compounds
+        c_ids = [c for c in compound_ids if re.match(r'^C\d{5}$', str(c))]
+        smiles_map = get_smiles_batch(c_ids) if c_ids else {}
+
+        matches = []
+        for cid, smi in smiles_map.items():
+            if not smi:
+                continue
+            try:
+                mol = Chem.MolFromSmiles(smi)
+                if mol and mol.HasSubstructMatch(query_mol):
+                    matches.append(cid)
+            except Exception:
+                continue
+
+        logger.info(f"Substructure search '{query_str}': {len(matches)}/{len(smiles_map)} matches")
+        return {"matches": matches, "query": query_str, "total": len(matches)}
+
+    except HTTPException as he:
+        raise he
+    except ImportError:
+        logger.error("RDKit not installed — substructure search unavailable")
+        raise HTTPException(status_code=501, detail="RDKit not installed. Install rdkit-pypi.")
+    except Exception as e:
+        logger.error(f"Error in substructure search: {e}")
+        raise HTTPException(status_code=500, detail="Failed to perform substructure search")
 
 # Serve frontend static files
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

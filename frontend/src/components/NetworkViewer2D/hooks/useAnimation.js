@@ -1,10 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 
-function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration = 0) {
+// Helper: find next populated gen after `cur` in sorted array
+const nextPopulated = (gens, cur) => {
+  for (let i = 0; i < gens.length; i++) {
+    if (gens[i] > cur) return gens[i];
+  }
+  return null; // already at or past last
+};
+
+// Helper: find previous populated gen before `cur` in sorted array
+const prevPopulated = (gens, cur) => {
+  for (let i = gens.length - 1; i >= 0; i--) {
+    if (gens[i] < cur) return gens[i];
+  }
+  return null; // already at or before first
+};
+
+function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration = 0, populatedGens = []) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [transitionSpeed, setTransitionSpeed] = useState(2); // Default 2 seconds
   const playIntervalRef = useRef(null);
   const transitionInProgressRef = useRef(false);
+  // Keep a ref to populatedGens so the interval closure sees the latest value
+  const populatedGensRef = useRef(populatedGens);
+  populatedGensRef.current = populatedGens;
 
   // Handle animation playback
   useEffect(() => {
@@ -17,8 +36,9 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
       // Set new interval based on transition speed
       playIntervalRef.current = setInterval(() => {
         setCurrentGeneration((prev) => {
-          // If we've reached the max, stop playing
-          if (prev >= maxGeneration) {
+          const next = nextPopulated(populatedGensRef.current, prev);
+          // If no next populated gen, stop playing
+          if (next === null) {
             setIsPlaying(false);
             return prev;
           }
@@ -28,16 +48,15 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
             transitionInProgressRef.current = true;
             
             // Set a timeout to mark the transition as complete
-            // This gives the simulation time to stabilize
             setTimeout(() => {
               transitionInProgressRef.current = false;
-            }, Math.min(1000, transitionSpeed * 500)); // At least 50% of transition time
+            }, Math.min(1000, transitionSpeed * 500));
             
-            return prev + 1;
+            return next;
           }
           return prev;
         });
-      }, transitionSpeed * 1000); // Convert to milliseconds
+      }, transitionSpeed * 1000);
     } else if (playIntervalRef.current) {
       clearInterval(playIntervalRef.current);
     }
@@ -51,49 +70,39 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
 
   const togglePlay = () => {
     if (isPlaying) {
-      // Currently playing – pause
       setIsPlaying(false);
       return;
     }
 
     // About to start playing
     if (currentGeneration >= maxGeneration) {
-      setCurrentGeneration(minGeneration);
+      // Restart from first populated gen
+      setCurrentGeneration(populatedGens.length > 0 ? populatedGens[0] : minGeneration);
     } else {
-      // Immediate advance for instant feedback
-      setCurrentGeneration((prev) => Math.min(prev + 1, maxGeneration));
+      // Immediate advance to next populated gen
+      const next = nextPopulated(populatedGens, currentGeneration);
+      if (next !== null) setCurrentGeneration(next);
     }
 
-    // Reset transition flag and start the interval
     transitionInProgressRef.current = false;
     setIsPlaying(true);
   };
 
   const stepForward = () => {
-    if (currentGeneration < maxGeneration) {
-      // Set the transition flag to prevent rapid stepping
+    const next = nextPopulated(populatedGens, currentGeneration);
+    if (next !== null) {
       transitionInProgressRef.current = true;
-      
-      setCurrentGeneration((prev) => prev + 1);
-      
-      // Clear the transition flag after a delay
-      setTimeout(() => {
-        transitionInProgressRef.current = false;
-      }, 500); // Give simulation 500ms to adjust
+      setCurrentGeneration(next);
+      setTimeout(() => { transitionInProgressRef.current = false; }, 500);
     }
   };
 
   const stepBackward = () => {
-    if (currentGeneration > minGeneration) {
-      // Set the transition flag to prevent rapid stepping
+    const prev = prevPopulated(populatedGens, currentGeneration);
+    if (prev !== null) {
       transitionInProgressRef.current = true;
-      
-      setCurrentGeneration((prev) => prev - 1);
-      
-      // Clear the transition flag after a delay
-      setTimeout(() => {
-        transitionInProgressRef.current = false;
-      }, 500); // Give simulation 500ms to adjust
+      setCurrentGeneration(prev);
+      setTimeout(() => { transitionInProgressRef.current = false; }, 500);
     }
   };
 

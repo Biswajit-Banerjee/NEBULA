@@ -5,6 +5,7 @@ import Logo from "./components/Logo";
 import FloatingDock from "./components/FloatingDock";
 import ViewSwitcher from "./components/ViewSwitcher";
 import ViewPane from "./components/ViewPane";
+import { filterCofactors } from "./components/utils/cofactorFilter";
 
 const SOLID_COLORS_PALETTE_APP = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#059669', '#D97706', '#DC2626', '#7C3AED'];
 
@@ -24,6 +25,7 @@ function App() {
 
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [combinedMode, setCombinedMode] = useState(false);
+  const [hideCofactors, setHideCofactors] = useState(false);
 
   // Layout state
   const [activeView, setActiveView] = useState('table');
@@ -37,6 +39,11 @@ function App() {
   // Pending positions loaded from imported session
   const [pendingPositions2D, setPendingPositions2D] = useState(null);
   const [pendingPositions3D, setPendingPositions3D] = useState(null);
+
+  // AND-OR hypergraph tree data
+  const [treeData, setTreeData] = useState(null);
+  const [treeStats, setTreeStats] = useState(null);
+  const [treeSolutions, setTreeSolutions] = useState([]);
 
   const ensureIdAndColorForPair = useCallback((pair, index) => {
     return {
@@ -130,6 +137,7 @@ function App() {
     try {
       let allResults = [];
       let workingPairs = [...processedPairsInput];
+      let treeDataSet = false;
 
       for (let i = 0; i < workingPairs.length; i++) {
         const pair = workingPairs[i];
@@ -146,7 +154,7 @@ function App() {
             const qp = new URLSearchParams();
             qp.append('target', pair.target.trim());
             if (pair.source && pair.source.trim()) qp.append('source', pair.source.trim());
-            fetchUrl = `/api/backtrace?${qp.toString()}`;
+            fetchUrl = `/api/backtrace/tree?${qp.toString()}`;
             pairLabel = pair.target.trim();
           }
         } else if (mode === 'reaction') {
@@ -172,6 +180,7 @@ function App() {
           continue;
         }
 
+        const t0 = performance.now();
         const response = await fetch(fetchUrl);
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({error: `Request failed: ${response.status}`}));
@@ -179,6 +188,27 @@ function App() {
         }
         const data = await response.json();
         if (data.error) throw new Error(data.error);
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+        // For compound mode, the unified /api/backtrace/tree returns
+        // data (flat reactions) + tree + stats + solutions in one call
+        if (mode === 'compound') {
+          const flatCount = data.data?.length ?? 0;
+          const solCount = data.solutions?.length ?? 0;
+          console.log(`[NEBULA] "${pairLabel}": ${flatCount} reactions, ${data.stats?.total_compounds ?? 0} compounds, ${solCount} solutions in ${elapsed}s`);
+
+          // Set tree/solutions from first compound pair
+          if (i === 0 || !treeDataSet) {
+            if (data.tree) {
+              setTreeData(data.tree);
+              setTreeStats(data.stats || null);
+              setTreeSolutions(data.solutions || []);
+              treeDataSet = true;
+            }
+          }
+        } else {
+          console.log(`[NEBULA] ${mode} search "${pairLabel}": ${data.data?.length ?? 0} results in ${elapsed}s`);
+        }
 
         if (data.data && data.data.length > 0) {
           workingPairs[i] = { ...pair, hasResults: true, resultCount: data.data.length };
@@ -195,9 +225,19 @@ function App() {
       }
       handleSetSearchPairs(workingPairs);
       setResults(allResults.length > 0 ? allResults : []);
+
+      // Clear tree data if no compound search produced tree results
+      if (!treeDataSet) {
+        setTreeData(null);
+        setTreeStats(null);
+        setTreeSolutions([]);
+      }
     } catch (errorMsg) {
       setError(errorMsg.message || "An error occurred during search");
       setResults(null);
+      setTreeData(null);
+      setTreeStats(null);
+      setTreeSolutions([]);
       handleSetSearchPairs(prev => prev.map(p => ({ ...p, hasResults: false, resultCount: 0 })));
     } finally {
       setLoading(false);
@@ -216,6 +256,20 @@ function App() {
     setCombinedMode(prev => !prev);
   }, []);
 
+  const handleClearResults = useCallback(() => {
+    setResults(null);
+    setTreeData(null);
+    setTreeStats(null);
+    setTreeSolutions([]);
+    setSelectedRows(new Set());
+    setError(null);
+    // Reset search pairs to initial state
+    const initialPairId = `init-${Date.now()}`;
+    handleSetSearchPairs([
+      { id: initialPairId, mode: 'compound', source: '', target: '', reaction: '', ec: '', color: getSolidColorForPairByIndexApp(0), visible: true, sourceDisplay:'', targetDisplay:'' }
+    ]);
+  }, [handleSetSearchPairs]);
+
   const filteredResults = useMemo(() => {
     if (!results) return null;
     const visiblePairIndices = searchPairs
@@ -224,11 +278,17 @@ function App() {
     return results.filter(result => result.pairIndex !== undefined && visiblePairIndices.includes(result.pairIndex));
   }, [results, searchPairs]);
 
-  const processedResults = useMemo(() => {
+  // Apply cofactor filter before combined-mode dedup
+  const cofactorFiltered = useMemo(() => {
     if (!filteredResults) return null;
-    if (!combinedMode) return filteredResults;
+    return hideCofactors ? filterCofactors(filteredResults) : filteredResults;
+  }, [filteredResults, hideCofactors]);
+
+  const processedResults = useMemo(() => {
+    if (!cofactorFiltered) return null;
+    if (!combinedMode) return cofactorFiltered;
     const uniqueRows = {}; const combined = [];
-    filteredResults.forEach(result => {
+    cofactorFiltered.forEach(result => {
       const key = `${result.reaction}-${result.source}-${result.target}-${result.equation}`;
       if (!uniqueRows[key]) {
         uniqueRows[key] = { ...result, pairIndices: [result.pairIndex].filter(idx => idx !== undefined) };
@@ -238,7 +298,7 @@ function App() {
       }
     });
     return combined;
-  }, [filteredResults, combinedMode]);
+  }, [cofactorFiltered, combinedMode]);
 
   const [viewFilteredResults, setViewFilteredResults] = useState(processedResults);
   useEffect(() => {
@@ -327,7 +387,7 @@ function App() {
   const handleToggleSplit = useCallback(() => {
     setIsSplit(prev => {
       if (!prev && activeView === secondaryView) {
-        const alt = ['table', 'network2d', 'network3d'].find(v => v !== activeView);
+        const alt = ['table', 'network2d', 'network3d', 'map', 'tree'].find(v => v !== activeView);
         if (alt) setSecondaryView(alt);
       }
       return !prev;
@@ -337,7 +397,7 @@ function App() {
   const handleActiveViewChange = useCallback((v) => {
     setActiveView(v);
     if (isSplit && v === secondaryView) {
-      const alt = ['table', 'network2d', 'network3d'].find(o => o !== v);
+      const alt = ['table', 'network2d', 'network3d', 'map', 'tree'].find(o => o !== v);
       if (alt) setSecondaryView(alt);
     }
   }, [isSplit, secondaryView]);
@@ -345,7 +405,7 @@ function App() {
   const handleSecondaryViewChange = useCallback((v) => {
     setSecondaryView(v);
     if (isSplit && v === activeView) {
-      const alt = ['table', 'network2d', 'network3d'].find(o => o !== v);
+      const alt = ['table', 'network2d', 'network3d', 'map', 'tree'].find(o => o !== v);
       if (alt) setActiveView(alt);
     }
   }, [isSplit, activeView]);
@@ -375,6 +435,9 @@ function App() {
     searchPairs,
     network2dRef,
     network3dRef,
+    treeData,
+    treeStats,
+    treeSolutions,
   };
 
   return (
@@ -428,6 +491,9 @@ function App() {
         searchPairs={searchPairs}
         setSearchPairs={handleSetSearchPairs}
         onToggleVisibility={handleToggleVisibility}
+        hideCofactors={hideCofactors}
+        toggleHideCofactors={() => setHideCofactors(prev => !prev)}
+        onClearResults={handleClearResults}
       />
 
       {/* ── Error toast ── */}

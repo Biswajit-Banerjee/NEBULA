@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app.utils.helpers import create_backtrack_df, parse_ec_list, add_compound_generation
 from app.core.uniprot import get_uniprot_entries_from_mapper, integrate_ecod_data, filter_important_features, list_accessions_for_ec, get_single_uniprot_entry
+from app.core.hypergraph import HyperGraph, backward_reachability, tree_to_dict, tree_to_flat_reactions, enumerate_solutions, collect_flat_reactions
 
 def get_uniprot_from_ec(ec_number, domains_df):
     """
@@ -61,6 +62,9 @@ class MetabolicViewer:
         self.gen_mapper = self.generation_df["modified_generation"].dropna().to_dict()
         self.current_df: Optional[pd.DataFrame] = None
         self.current_target: Optional[str] = None
+
+        # Build hypergraph index for AND-OR backward reachability
+        self.hypergraph = HyperGraph.from_dataframe(self.df)
 
     async def get_ec_data(self, ec_number: str) -> Dict:
         """Get UniProt data for an EC number"""
@@ -296,6 +300,76 @@ class MetabolicViewer:
             return {"data": display_df.to_dict('records')}
         except Exception as e:
             return {"data": [], "error": str(e)}
+
+    async def get_backtrace_tree(
+        self,
+        target: str,
+        sources: List[str] = None,
+        skip_cofactor: bool = True,
+    ) -> Dict:
+        """
+        AND-OR hypergraph backward reachability from target.
+
+        Returns a nested AND-OR tree JSON where:
+          - OR-nodes = compounds (produced by any of several reactions)
+          - AND-nodes = reactions (require all reactants)
+
+        Args:
+            target: Target compound ID.
+            sources: Optional list of source compound IDs. If provided,
+                     prune branches that don't reach any source.
+            skip_cofactor: Whether to treat cofactors as leaves.
+        """
+        try:
+            cofactors = set(self.cofactors) if skip_cofactor else set()
+            source_set = set(sources) if sources else set()
+
+            root, stats = backward_reachability(
+                self.hypergraph,
+                target,
+                self.gen_mapper,
+                cofactors,
+                source_set,
+                skip_cofactor,
+            )
+
+            if root is None:
+                return {"target": target, "sources": sources or [], "tree": None, "stats": stats, "solutions": [], "data": []}
+
+            tree_dict = tree_to_dict(root)
+
+            # Enumerate minimal solutions
+            solutions = enumerate_solutions(root, max_solutions=500)
+            solution_summaries = []
+            for i, sol in enumerate(solutions):
+                solution_summaries.append({
+                    "id": i,
+                    "reactionCount": len(sol),
+                    "reactions": sol,
+                })
+
+            stats["total_solutions"] = len(solution_summaries)
+
+            # Flat reaction list (powers table / 2D / 3D views)
+            flat_rows = collect_flat_reactions(
+                self.hypergraph, target, self.gen_mapper, cofactors
+            )
+            # Add compound_generation + max_generation (table view needs these)
+            for row in flat_rows:
+                cpd_gen = add_compound_generation(row["equation"], self.gen_mapper)
+                row["compound_generation"] = cpd_gen
+                row["max_generation"] = max(cpd_gen.values()) if cpd_gen else 0
+
+            return {
+                "target": target,
+                "sources": sources or [],
+                "tree": tree_dict,
+                "stats": stats,
+                "solutions": solution_summaries,
+                "data": flat_rows,
+            }
+        except Exception as e:
+            return {"target": target, "sources": sources or [], "tree": None, "stats": {}, "solutions": [], "data": [], "error": str(e)}
 
     async def download_csv(self, background_tasks: BackgroundTasks) -> FileResponse:
         """Generate and return a CSV file of the current dataframe"""

@@ -1,11 +1,10 @@
 import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import GraphRenderer from "./GraphRendererCanvas";
 import GenerationControls from "./GenerationControls";
-import Legend from "./Legend";
+import SettingsPanel from "./SettingsPanel";
 import useGraphData from "./hooks/useGraphData";
 import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
-import PhysicsControls from "./PhysicsControls";
 import HelpOverlay from "./HelpOverlay";
 
 const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
@@ -14,17 +13,20 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   const wrapperRef = useRef(null);
   const graphRendererRef = useRef(null);
 
-  const [showPhysics, setShowPhysics] = useState(false);
-  const [physicsOff, setPhysicsOff] = useState(false);
-  const [tension, setTension] = useState(120);
-  const [repulsion, setRepulsion] = useState(400);
-
-  // New: help overlay visibility state
+  // Help overlay
   const [showHelp, setShowHelp] = useState(false);
   // Overlay visibility state
   const [showOverlay, setShowOverlay] = useState(false);
-  // color by generation always on
-  const colorByGeneration = true;
+
+  // User customization
+  const [edgeOpacity, setEdgeOpacity] = useState(0.5);
+  const [spacingScale, setSpacingScale] = useState(1.0);
+
+  // Color settings
+  const [colorMode, setColorMode] = useState('generation'); // 'generation' | 'type' | 'degree'
+  const [colorScheme, setColorScheme] = useState('rainbow');
+  const [bgColor, setBgColor] = useState(''); // empty = default theme bg
+  const [gridColor, setGridColor] = useState(''); // empty = default theme grid
 
   // Mask slider: lower bound of visible generation range
   const [minVisibleGeneration, setMinVisibleGeneration] = useState(0);
@@ -35,7 +37,8 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     currentGeneration, 
     setCurrentGeneration, 
     maxGeneration,
-    minGeneration
+    minGeneration,
+    populatedGens
   } = useGraphData(results);
 
   // Reset mask slider when data changes
@@ -50,16 +53,17 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     stepBackward: rawStepBackward,
     transitionSpeed,
     setTransitionSpeed
-  } = useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration);
+  } = useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, minGeneration, populatedGens);
 
   // Wrapped step callbacks that maintain minVisibleGeneration <= currentGeneration
   const stepBackward = React.useCallback(() => {
-    if (currentGeneration > minGeneration) {
-      const next = currentGeneration - 1;
-      setCurrentGeneration(next);
-      if (minVisibleGeneration > next) setMinVisibleGeneration(next);
-    }
-  }, [currentGeneration, minGeneration, minVisibleGeneration, setCurrentGeneration, setMinVisibleGeneration]);
+    rawStepBackward();
+    // After stepping back, ensure minVisibleGeneration doesn't exceed currentGeneration
+    setCurrentGeneration((prev) => {
+      if (minVisibleGeneration > prev) setMinVisibleGeneration(prev);
+      return prev;
+    });
+  }, [rawStepBackward, minVisibleGeneration, setCurrentGeneration, setMinVisibleGeneration]);
 
   const stepForward = React.useCallback(() => {
     rawStepForward();
@@ -101,6 +105,12 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     }
   };
 
+  const tightenEdges = () => {
+    if (graphRendererRef.current) {
+      graphRendererRef.current.tightenEdges();
+    }
+  };
+
   const startRotate = () => {
     if (!graphRendererRef.current) return;
     rotateIntervalRef.current = setInterval(() => {
@@ -135,17 +145,21 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   // Keyboard shortcuts for common actions
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return; // ignore when typing
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      
+      // Don't intercept browser shortcuts (Ctrl+F, Cmd+F, etc.)
+      if (e.ctrlKey || e.metaKey) return;
+      
       switch (e.key) {
         case '+':
-        case '=': // laptop keyboards
+        case '=':
           handleZoomIn();
           break;
         case '-':
         case '_':
           handleZoomOut();
           break;
-        case ' ': // Space toggles play
+        case ' ':
           e.preventDefault();
           togglePlay();
           break;
@@ -163,10 +177,6 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
         case 'H':
           setShowHelp((prev) => !prev);
           break;
-        case 'p':
-        case 'P':
-          setShowPhysics(prev => !prev);
-          break;
         case 'r':
         case 'R':
           resetSpiral();
@@ -180,7 +190,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, setShowPhysics, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
+  }, [togglePlay, stepForward, stepBackward, toggleFullscreen, setShowHelp, resetSpiral, handleReset, handleZoomIn, handleZoomOut]);
 
   // Expose imperative handlers for exporting/importing positions
   useImperativeHandle(ref, () => ({
@@ -188,39 +198,22 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     setNodePositions: (positions) => graphRendererRef.current?.setNodePositions?.(positions),
   }));
 
-  const togglePhysicsSim = () => {
-    if (graphRendererRef.current) {
-      graphRendererRef.current.toggleLock();
-      setPhysicsOff(prev=>!prev);
-    }
-  };
-
   const toggleOverlay = () => {
     setShowOverlay(prev => !prev);
   };
 
   return (
-    <div className="relative rounded-xl border border-gray-200 dark:border-slate-700 shadow bg-white dark:bg-slate-800" ref={containerRef}>
+    <div className="relative rounded-xl border border-gray-200/40 dark:border-slate-700/40 shadow-sm bg-white dark:bg-slate-800 overflow-hidden" ref={containerRef}>
       {/* Main container */}
       <div 
         ref={wrapperRef}
-        className={`relative flex flex-col bg-neutral-100 dark:bg-slate-800 transition-all duration-300 ${
+        className={`relative flex flex-col bg-neutral-50 dark:bg-slate-900 transition-all duration-300 ${
           isFullscreen ? 'min-h-screen' : ''
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}
       >
         {/* Help overlay */}
         {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
-
-        {showPhysics && (
-          <PhysicsControls
-            tension={tension}
-            setTension={setTension}
-            repulsion={repulsion}
-            setRepulsion={setRepulsion}
-            onClose={()=>setShowPhysics(false)}
-          />
-        )}
 
         {/* Main Visualization Area */}
         <div className="flex-1 relative">
@@ -233,15 +226,42 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             containerRef={containerRef}
             height={height}
             isFullscreen={isFullscreen}
-            tension={tension}
-            repulsion={repulsion}
-            colorByGeneration={colorByGeneration}
             pairColorMap={pairColorMap}
             showOverlay={showOverlay}
+            edgeOpacity={edgeOpacity}
+            spacingScale={spacingScale}
+            colorMode={colorMode}
+            colorScheme={colorScheme}
+            bgColor={bgColor}
+            gridColor={gridColor}
+          />
+
+          {/* Right-side settings panel (arrow toggle) */}
+          <SettingsPanel
+            edgeOpacity={edgeOpacity}
+            setEdgeOpacity={setEdgeOpacity}
+            spacingScale={spacingScale}
+            setSpacingScale={setSpacingScale}
+            showOverlay={showOverlay}
+            toggleOverlay={toggleOverlay}
+            isFullscreen={isFullscreen}
+            toggleFullscreen={toggleFullscreen}
+            handleDownloadSVG={handleDownloadSVG}
+            resetSpiral={resetSpiral}
+            tightenEdges={tightenEdges}
+            toggleHelp={() => setShowHelp(prev => !prev)}
+            colorMode={colorMode}
+            setColorMode={setColorMode}
+            colorScheme={colorScheme}
+            setColorScheme={setColorScheme}
+            bgColor={bgColor}
+            setBgColor={setBgColor}
+            gridColor={gridColor}
+            setGridColor={setGridColor}
           />
         </div>
 
-        {/* Generation Controls and Slider */}
+        {/* Slim generation timeline (collapsible) */}
         <GenerationControls
           currentGeneration={currentGeneration}
           setCurrentGeneration={setCurrentGeneration}
@@ -255,24 +275,8 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
           stepBackward={stepBackward}
           transitionSpeed={transitionSpeed}
           setTransitionSpeed={setTransitionSpeed}
-          isFullscreen={isFullscreen}
-          handleZoomIn={handleZoomIn}
-          handleZoomOut={handleZoomOut}
-          resetSpiral={resetSpiral}
-          toggleFullscreen={toggleFullscreen}
-          handleDownloadSVG={handleDownloadSVG}
-          togglePhysics={() => setShowPhysics(prev => !prev)}
-          togglePhysicsSim={togglePhysicsSim}
-          physicsOff={physicsOff}
-          toggleHelp={() => setShowHelp(prev => !prev)}
-          startRotate={startRotate}
-          stopRotate={stopRotate}
-          toggleOverlay={toggleOverlay}
-          overlayOn={showOverlay}
+          populatedGens={populatedGens}
         />
-
-        {/* Legend and Help Text */}
-        <Legend />
       </div>
     </div>
   );

@@ -221,74 +221,284 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
     return { nodes, links };
   };
   
+  // ── Layout constants ──
+  // Gap between sub-columns within a generation band
+  export const SUB_COL_GAP = 180;
+  // Gap between generation bands
+  export const GEN_GAP = 200;
+  // Vertical spacing between nodes within a sub-column (must be > 2 × collision radius)
+  export const ROW_SPACING = 90;
+
+  // Sub-column order per transition band N→N+1:
+  //   compound(gen=N) → reaction-in(gen=N) → ec(gen=N+1) → reaction-out(gen=N+1) → compound(gen=N+1)
+  //   circle           rectangle             oval           rectangle               circle
+  //
+  // Band index = N.  Each band has 4 slots (0–3).
+  // compound & reaction-in use their own gen as the band.
+  // ec & reaction-out have generation = targetGen, so their band = gen - 1.
+  const computeSubColumn = (node) => {
+    const gen = node.generation || 0;
+    switch (node.type) {
+      case "compound":
+        // Band = gen, slot 0
+        return gen * 4;
+      case "reaction-in":
+        // Band = gen (source side), slot 1
+        return gen * 4 + 1;
+      case "ec":
+        // Band = gen-1 (ec has gen=targetGen, belongs to previous transition), slot 2
+        return Math.max(0, gen - 1) * 4 + 2;
+      case "reaction-out":
+        // Band = gen-1 (reaction-out has gen=targetGen), slot 3
+        return Math.max(0, gen - 1) * 4 + 3;
+      default:
+        return gen * 4 + 2;
+    }
+  };
+
   /**
-   * Apply spiral layout to nodes based on generation
-   * @param {Array} nodes - Graph nodes to position
-   * @param {number} centerX - X-center of the spiral
-   * @param {number} centerY - Y-center of the spiral
-   * @param {number} currentGeneration - Current generation being displayed
-   * @param {boolean} onlyForCurrentGeneration - Whether to only apply to current generation
-   * @param {boolean} nodesLocked - Whether nodes are currently locked in position
-   * @returns {Array} Positioned nodes
+   * Compute the X position for a sub-column index.
+   * Sub-columns within a gen band are tightly spaced (SUB_COL_GAP),
+   * with a larger GEN_GAP between bands.
    */
-  export const applySpiral = (
-    nodes, 
-    centerX, 
-    centerY, 
-    currentGeneration, 
-    onlyForCurrentGeneration = true,
-    nodesLocked = false
-  ) => {
-    const spiralSpacing = 120; // Spacing between spiral layers
-    const nodeSpacing = 50; // Spacing between nodes in the same generation
-    const angleIncrement = 0.7; // Angle increment to spread nodes
-  
-    // Group nodes by generation
-    const nodesByGeneration = {};
-    nodes.forEach((node) => {
-      const gen = node.generation || 0;
-      if (!nodesByGeneration[gen]) {
-        nodesByGeneration[gen] = [];
-      }
-      nodesByGeneration[gen].push(node);
+  const subColToX = (subCol) => {
+    const genBand = Math.floor(subCol / 4);
+    const slot = subCol % 4;
+    return genBand * (4 * SUB_COL_GAP + GEN_GAP) + slot * SUB_COL_GAP;
+  };
+
+  /**
+   * Find the longest directed path through the graph (the "backbone").
+   * Uses a greedy forward walk: at each step pick the neighbor with the
+   * highest generation (prefers compounds over reaction nodes for ties).
+   * O(n + m) — safe for 10K+ nodes.
+   */
+  const findBackbone = (nodes, links) => {
+    // Build directed adjacency: source → [targets]
+    const adj = {};
+    links.forEach((l) => {
+      const s = l.source?.id || l.source;
+      const t = l.target?.id || l.target;
+      if (!adj[s]) adj[s] = [];
+      adj[s].push(t);
     });
-  
-    // Position each generation in a spiral
-    Object.entries(nodesByGeneration).forEach(([gen, genNodes]) => {
-      const generation = parseInt(gen);
-  
-      // Skip this generation if we're only updating the current one
-      // and this is not the current generation
-      if (onlyForCurrentGeneration && generation !== currentGeneration) {
-        return;
+
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+    // Find max generation
+    let maxGen = 0;
+    nodes.forEach((n) => { if ((n.generation || 0) > maxGen) maxGen = n.generation; });
+
+    // Find all gen-0 compounds as starting points
+    const starts = nodes.filter((n) => n.type === "compound" && (n.generation || 0) === 0);
+    if (starts.length === 0 && nodes.length > 0) {
+      // Fallback: node with lowest generation
+      const sorted = [...nodes].sort((a, b) => (a.generation || 0) - (b.generation || 0));
+      starts.push(sorted[0]);
+    }
+
+    let bestPath = [];
+
+    // Greedy forward walk from each start — pick neighbor with highest gen
+    const tryStarts = Math.min(starts.length, 20);
+    for (let si = 0; si < tryStarts; si++) {
+      const path = [starts[si].id];
+      const visited = new Set(path);
+      let cur = starts[si].id;
+
+      while (true) {
+        const neighbors = (adj[cur] || []).filter((id) => !visited.has(id));
+        if (neighbors.length === 0) break;
+
+        // Sort: prefer higher generation, then compounds over others
+        neighbors.sort((a, b) => {
+          const na = nodeMap.get(a);
+          const nb = nodeMap.get(b);
+          const ga = na ? na.generation || 0 : 0;
+          const gb = nb ? nb.generation || 0 : 0;
+          if (gb !== ga) return gb - ga;
+          // Prefer compounds (they continue the chain)
+          const ta = na && na.type === "compound" ? 0 : 1;
+          const tb = nb && nb.type === "compound" ? 0 : 1;
+          return ta - tb;
+        });
+
+        const next = neighbors[0];
+        path.push(next);
+        visited.add(next);
+        cur = next;
       }
-  
-      // Only apply positioning to nodes that don't have fixed positions already
-      // unless we're forcing a reset
-      const nodesToPosition = genNodes.filter((node) => !node.fx || !node.fy);
-  
-      if (nodesToPosition.length === 0) return;
-  
-      const radius = 80 + generation * spiralSpacing;
-  
-      nodesToPosition.forEach((node, i) => {
-        // Calculate position on the spiral
-        // Add more spacing between nodes based on the number in this generation
-        const angle = angleIncrement * i + (generation * Math.PI) / 2;
-        node.x = centerX + radius * Math.cos(angle);
-        node.y = centerY + radius * Math.sin(angle);
-  
-        // Add some jitter to prevent perfect overlaps
-        node.x += (Math.random() - 0.5) * nodeSpacing * 0.5;
-        node.y += (Math.random() - 0.5) * nodeSpacing * 0.5;
-  
-        // If nodes are locked, fix their position
-        if (nodesLocked) {
-          node.fx = node.x;
-          node.fy = node.y;
+
+      if (path.length > bestPath.length) {
+        bestPath = path;
+      }
+    }
+
+    return bestPath;
+  };
+
+  /**
+   * Apply hierarchical backbone-first layout.
+   *
+   * 1. Each node gets a sub-column X based on (generation, type):
+   *    compound(g) → reaction-in(g) → ec(g) → reaction-out(g) → compound(g+1) → ...
+   * 2. The longest path (backbone) is laid out along y = centerY.
+   * 3. Non-backbone nodes are placed above/below the backbone,
+   *    ordered to minimize edge crossings.
+   */
+  export const applyHierarchicalLayout = (
+    nodes,
+    centerY,
+    positionCache = {},
+    nodesLocked = false,
+    links = [],
+    spacingScale = 1.0
+  ) => {
+    if (!nodes.length) return { nodes, genMap: [] };
+
+    // ── Compact generation mapping: skip empty generations ──
+    // Collect which generation bands actually have nodes
+    const populatedBands = new Set();
+    nodes.forEach((n) => {
+      const gen = n.generation || 0;
+      const type = n.type;
+      // Determine which band this node belongs to
+      if (type === 'compound' || type === 'reaction-in') {
+        populatedBands.add(gen);
+      } else if (type === 'ec' || type === 'reaction-out') {
+        populatedBands.add(Math.max(0, gen - 1));
+      } else {
+        populatedBands.add(gen);
+      }
+    });
+    const sortedBands = [...populatedBands].sort((a, b) => a - b);
+    // Map original band → compact index
+    const bandToCompact = new Map();
+    sortedBands.forEach((band, idx) => { bandToCompact.set(band, idx); });
+    // genMap: array of { gen: originalGen, compactIdx } for label drawing
+    const genMap = sortedBands.map((band, idx) => ({ gen: band, idx }));
+
+    // Scale sub-column X positions by spacingScale, using compact band index
+    const scaledSubColToX = (subCol, compactBand) => {
+      const slot = subCol % 4;
+      const gap = SUB_COL_GAP * spacingScale;
+      const genGap = GEN_GAP * spacingScale;
+      return compactBand * (4 * gap + genGap) + slot * gap;
+    };
+
+    // Assign targetX based on sub-column with compact band mapping
+    nodes.forEach((n) => {
+      const sc = computeSubColumn(n);
+      const origBand = Math.floor(sc / 4);
+      const compactBand = bandToCompact.get(origBand) ?? origBand;
+      n._subCol = compactBand * 4 + (sc % 4); // remap to compact sub-column
+      n.targetX = scaledSubColToX(sc, compactBand);
+    });
+
+    // ── Backbone detection ──
+    const backbone = findBackbone(nodes, links);
+    const backboneSet = new Set(backbone);
+
+    // ── Group non-backbone nodes by sub-column ──
+    const nonBackboneBySubCol = {};
+    nodes.forEach((n) => {
+      if (backboneSet.has(n.id)) return;
+      const sc = n._subCol;
+      if (!nonBackboneBySubCol[sc]) nonBackboneBySubCol[sc] = [];
+      nonBackboneBySubCol[sc].push(n);
+    });
+
+    // Sort within each sub-column by id for determinism
+    Object.values(nonBackboneBySubCol).forEach((arr) => {
+      arr.sort((a, b) => (a.id || "").localeCompare(b.id || ""));
+    });
+
+    // ── Place backbone nodes at y = centerY ──
+    backbone.forEach((id) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return;
+      if (positionCache[id]) {
+        node.x = positionCache[id].x;
+        node.y = positionCache[id].y;
+      } else if (node.x === undefined || node.x === null || isNaN(node.x)) {
+        node.x = node.targetX;
+        node.y = centerY;
+      }
+      node._isBackbone = true;
+      if (nodesLocked) { node.fx = node.x; node.fy = node.y; }
+    });
+
+    // ── Place non-backbone nodes above/below the backbone ──
+    Object.entries(nonBackboneBySubCol).forEach(([sc, arr]) => {
+      const half = Math.ceil(arr.length / 2);
+      arr.forEach((node, i) => {
+        if (positionCache[node.id]) {
+          node.x = positionCache[node.id].x;
+          node.y = positionCache[node.id].y;
+        } else if (node.x === undefined || node.x === null || isNaN(node.x)) {
+          node.x = node.targetX;
+          // Place alternating above/below backbone with increasing distance
+          if (i < half) {
+            node.y = centerY - (i + 1) * ROW_SPACING;
+          } else {
+            node.y = centerY + (i - half + 1) * ROW_SPACING;
+          }
         }
+        node._isBackbone = false;
+        if (nodesLocked) { node.fx = node.x; node.fy = node.y; }
       });
     });
-  
-    return nodes;
+
+    // ── Static collision resolution (replaces physics) ──
+    // Group by sub-column, sort by y, push apart any that are too close
+    const MIN_DIST = ROW_SPACING * spacingScale;
+    const byCol = {};
+    nodes.forEach((n) => {
+      const col = n._subCol;
+      if (!byCol[col]) byCol[col] = [];
+      byCol[col].push(n);
+    });
+    // Multiple passes to propagate pushes
+    for (let pass = 0; pass < 4; pass++) {
+      Object.values(byCol).forEach((col) => {
+        col.sort((a, b) => a.y - b.y);
+        for (let i = 1; i < col.length; i++) {
+          const gap = col[i].y - col[i - 1].y;
+          if (gap < MIN_DIST) {
+            const push = (MIN_DIST - gap) / 2;
+            col[i - 1].y -= push;
+            col[i].y += push;
+          }
+        }
+      });
+    }
+    // Also do a global O(n²) pass for nodes across columns that are very close
+    const GLOBAL_MIN = 40;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[j].x - nodes[i].x;
+          const dy = nodes[j].y - nodes[i].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < GLOBAL_MIN && dist > 0) {
+            const push = (GLOBAL_MIN - dist) / 2;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            nodes[i].x -= nx * push;
+            nodes[i].y -= ny * push;
+            nodes[j].x += nx * push;
+            nodes[j].y += ny * push;
+          }
+        }
+      }
+    }
+
+    // Update position cache after collision resolution
+    nodes.forEach((n) => {
+      if (positionCache[n.id]) {
+        positionCache[n.id] = { x: n.x, y: n.y };
+      }
+    });
+
+    return { nodes, genMap };
   };

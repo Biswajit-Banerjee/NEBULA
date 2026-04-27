@@ -148,8 +148,8 @@ def fetch_uniprot_by_accession(accession: str) -> Optional[Dict]:
 
 def list_accessions_for_ec(ec_id: str, gene_mapper: Dict) -> List[Dict]:
     """
-    Instantly list all accessions for an EC number from the precomputed gene_mapper.
-    No network calls — just a dictionary lookup.
+    List all accessions for an EC number from the precomputed gene_mapper.
+    Falls back to UniProt API search if no entries found in gene_mapper.
     
     Returns:
         List of dicts with 'accession' and 'organism_code' keys
@@ -162,6 +162,16 @@ def list_accessions_for_ec(ec_id: str, gene_mapper: Dict) -> List[Dict]:
         organism_code = key[len(prefix):]
         for accession in accessions:
             result.append({"accession": accession, "organism_code": organism_code})
+    
+    # Fallback: if gene_mapper has no entries, fetch from UniProt API
+    if not result:
+        entries = get_uniprot_entries(ec_id)
+        for entry in entries:
+            result.append({
+                "accession": entry.primary_accession,
+                "organism_code": entry.organism_code
+            })
+    
     return result
 
 def get_single_uniprot_entry(accession: str, organism_code: str = "") -> Optional[UniProtEntry]:
@@ -183,6 +193,8 @@ def get_uniprot_entries_from_mapper(ec_id: str, gene_mapper: Dict) -> List[UniPr
     """
     Look up UniProt accessions from precomputed gene_mapper and fetch each entry
     by direct accession instead of broad EC search.
+    
+    Falls back to the older get_uniprot_entries() if no entries are found in gene_mapper.
     
     Args:
         ec_id: EC number (e.g. "1.1.1.38")
@@ -208,6 +220,10 @@ def get_uniprot_entries_from_mapper(ec_id: str, gene_mapper: Dict) -> List[UniPr
                 result.append(entry)
             except KeyError:
                 continue
+    
+    # Fallback: if gene_mapper has no entries for this EC number, use the older search logic
+    if not result:
+        result = get_uniprot_entries(ec_id)
     
     return result
 

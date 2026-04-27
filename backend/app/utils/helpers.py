@@ -9,11 +9,14 @@ def parse_ec_list(ec_string: str) -> List[str]:
         return []
     return [ec.strip() for ec in str(ec_string).split(',') if ec.strip()]
 
-def create_backtrack_df(df, target_compound, gen_mapper, cofactors=[], src_compound=""):
-    # Initialize result dataframe
-    result = pd.DataFrame()
+def create_backtrack_df(df, target_compound, gen_mapper, cofactors=None, src_compound=""):
+    # Initialize result collection (avoid O(n²) pd.concat in loop)
+    result_parts = []
     compounds_to_process = {target_compound}
-    processed_compounds = set(cofactors)
+    processed_compounds = set(cofactors) if cofactors else set()
+
+    # Upper bound: never trace into compounds with generation > target
+    target_gen = gen_mapper.get(target_compound, np.inf)
     
     if src_compound:
         processed_compounds.add(src_compound)
@@ -25,13 +28,20 @@ def create_backtrack_df(df, target_compound, gen_mapper, cofactors=[], src_compo
         current_compound = compounds_to_process.pop()
         current_gen = gen_mapper.get(current_compound, np.inf)
         
-        if current_compound in processed_compounds or current_gen <= stop_gen:
+        # Skip if already processed, below source gen, or ABOVE target gen
+        if current_compound in processed_compounds or current_gen < stop_gen:
+            continue
+        if current_gen > target_gen and current_compound != target_compound:
+            continue
+        # Gen-0 compounds are seeds — no need to trace further
+        if current_gen == 0 and current_compound != target_compound:
+            processed_compounds.add(current_compound)
             continue
         
         relevant_reactions = get_first_occurance(df, current_compound)
         
         if not relevant_reactions.empty:
-            result = pd.concat([result, relevant_reactions])
+            result_parts.append(relevant_reactions)
             
             # Add new reactants to process
             for _, row in relevant_reactions.iterrows():
@@ -40,15 +50,24 @@ def create_backtrack_df(df, target_compound, gen_mapper, cofactors=[], src_compo
                 
         processed_compounds.add(current_compound)
     
-    if not result.empty:
+    if result_parts:
+        result = pd.concat(result_parts, ignore_index=True)
         result = result.sort_values('generation').reset_index(drop=True)
+    else:
+        result = pd.DataFrame()
     
     return result
 
 def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
-    target_df = df[df.products.str.contains(target)]
+    # Use word-boundary regex to avoid substring false positives
+    # (e.g. searching C0001 should not match C00011)
+    pattern = r'(?:^|\+|\s)' + re.escape(target) + r'(?:$|\+|\s)'
+    target_df = df[df.products.str.contains(pattern, regex=True, na=False)]
+    if target_df.empty:
+        return target_df
     target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
-    target_df.loc[:, "target"] = target_df.shape[0] * [target]
+    target_df = target_df.copy()
+    target_df.loc[:, "target"] = target
     return target_df
 
 def add_compound_generation(eqn, gen_mapper):

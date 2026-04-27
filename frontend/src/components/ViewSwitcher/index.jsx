@@ -1,12 +1,14 @@
 import React from 'react';
 import {
-  Table2, Layers, Network, Columns2, Square,
+  Table2, Layers, Network, Columns2, Square, Undo2, MapPin,
 } from 'lucide-react';
 
 const VIEW_OPTIONS = [
   { id: 'table', label: 'Table', icon: Table2 },
   { id: 'network2d', label: '2D', icon: Layers },
   { id: 'network3d', label: '3D', icon: Network },
+  { id: 'map', label: 'Map', icon: MapPin },
+  { id: 'tree', label: 'Backtrace', icon: Undo2 },
 ];
 
 const ViewSwitcher = ({
