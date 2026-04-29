@@ -8,7 +8,7 @@ import re
 import requests
 import xml.etree.ElementTree as ET
 
-from app import STATIC_DIR, DATA_DIR
+from app import STATIC_DIR, DATA_DIR, DOCS_DIR
 from app.core.viewer import MetabolicViewer
 from app.utils.smiles_cache import get_smiles_batch, get_mol_batch, get_cofactor_names
 
@@ -775,6 +775,31 @@ async def substructure_search(payload: dict):
     except Exception as e:
         logger.error(f"Error in substructure search: {e}")
         raise HTTPException(status_code=500, detail="Failed to perform substructure search")
+
+# ── Documentation API ──
+import json as _json
+
+@app.get("/api/docs/manifest")
+async def docs_manifest():
+    """Return the documentation page manifest."""
+    manifest_path = DOCS_DIR / "manifest.json"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail="Documentation manifest not found")
+    return JSONResponse(content=_json.loads(manifest_path.read_text(encoding="utf-8")))
+
+@app.get("/api/docs/{slug}")
+async def docs_page(slug: str):
+    """Return raw markdown content for a documentation page."""
+    safe_slug = re.sub(r"[^a-zA-Z0-9_-]", "", slug)
+    md_path = DOCS_DIR / f"{safe_slug}.md"
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail=f"Documentation page '{slug}' not found")
+    return JSONResponse(content={"slug": safe_slug, "content": md_path.read_text(encoding="utf-8")})
+
+# Serve documentation images (GIFs, screenshots, etc.)
+_docs_images_dir = DOCS_DIR / "images"
+if _docs_images_dir.exists():
+    app.mount("/docs-assets", StaticFiles(directory=_docs_images_dir), name="docs-images")
 
 # Serve frontend static files
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

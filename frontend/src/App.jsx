@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Zap } from "lucide-react";
+import { Zap, HelpCircle } from "lucide-react";
 
 import Logo from "./components/Logo";
 import FloatingDock from "./components/FloatingDock";
 import ViewSwitcher from "./components/ViewSwitcher";
 import ViewPane from "./components/ViewPane";
 import { filterCofactors } from "./components/utils/cofactorFilter";
+import DocsViewer from "./components/DocsViewer";
 
 const SOLID_COLORS_PALETTE_APP = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#059669', '#D97706', '#DC2626', '#7C3AED'];
 
@@ -44,6 +45,9 @@ function App() {
   const [treeData, setTreeData] = useState(null);
   const [treeStats, setTreeStats] = useState(null);
   const [treeSolutions, setTreeSolutions] = useState([]);
+
+  // Documentation viewer
+  const [docsOpen, setDocsOpen] = useState(false);
 
   const ensureIdAndColorForPair = useCallback((pair, index) => {
     return {
@@ -568,6 +572,18 @@ function App() {
           onSecondaryViewChange={handleSecondaryViewChange}
         />
       )}
+
+      {/* ── Help button (bottom-right) ── */}
+      <button
+        onClick={() => setDocsOpen(true)}
+        className="fixed bottom-4 right-4 z-40 w-10 h-10 rounded-full bg-violet-500 hover:bg-violet-400 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-400/30 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
+        title="Help & Documentation"
+      >
+        <HelpCircle className="w-5 h-5" />
+      </button>
+
+      {/* ── Documentation Viewer ── */}
+      <DocsViewer isOpen={docsOpen} onClose={() => setDocsOpen(false)} initialSlug={hasResults ? activeView : null} />
     </div>
   );
 }

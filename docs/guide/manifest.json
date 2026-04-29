@@ -1,0 +1,79 @@
+{
+  "sections": [
+    {
+      "category": "Introduction",
+      "pages": [
+        {
+          "slug": "introduction",
+          "title": "What is NEBULA?",
+          "description": "Overview of the platform, interface layout, and quick workflow"
+        }
+      ]
+    },
+    {
+      "category": "Views",
+      "pages": [
+        {
+          "slug": "view-table",
+          "title": "Table View",
+          "description": "Sortable data table of reactions, compounds, and metadata",
+          "viewId": "table"
+        },
+        {
+          "slug": "view-network-2d",
+          "title": "2D Network",
+          "description": "Interactive 2D force-directed metabolic graph",
+          "viewId": "network2d"
+        },
+        {
+          "slug": "view-network-3d",
+          "title": "3D Network",
+          "description": "Rotatable three-dimensional network visualization",
+          "viewId": "network3d"
+        },
+        {
+          "slug": "view-map",
+          "title": "KEGG Map",
+          "description": "Results overlaid on the KEGG global metabolism map",
+          "viewId": "map"
+        },
+        {
+          "slug": "view-backtrace",
+          "title": "Backtrace",
+          "description": "AND-OR backward reachability tree and minimal pathways",
+          "viewId": "tree"
+        }
+      ]
+    },
+    {
+      "category": "Features",
+      "pages": [
+        {
+          "slug": "feature-search",
+          "title": "Search Modes",
+          "description": "Compound, reaction, and EC number searches"
+        },
+        {
+          "slug": "feature-multi-search",
+          "title": "Multi-Search & Chips",
+          "description": "Running multiple queries and comparing results"
+        },
+        {
+          "slug": "feature-split-view",
+          "title": "Split View",
+          "description": "Side-by-side view comparison"
+        },
+        {
+          "slug": "feature-cofactors",
+          "title": "Cofactor Filtering",
+          "description": "Hiding common cofactors to simplify views"
+        },
+        {
+          "slug": "feature-sessions",
+          "title": "Session Management",
+          "description": "Exporting, importing, and restoring sessions"
+        }
+      ]
+    }
+  ]
+}
