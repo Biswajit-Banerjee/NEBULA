@@ -1,5 +1,6 @@
 import { clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { getApiUrl } from '../config/api'
  
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
@@ -16,7 +17,7 @@ export const fetchCompoundData = async (compoundId) => {
   }
 
   try {
-    const response = await fetch(`/api/compound/${compoundId}`);
+    const response = await fetch(getApiUrl(`compound/${compoundId}`));
     if (!response.ok) {
       throw new Error('Failed to fetch compound data');
     }
@@ -35,7 +36,7 @@ export const fetchReactionData = async (equation) => {
   }
 
   try {
-    const response = await fetch(`/api/reaction/${encodeURIComponent(equation)}`);
+    const response = await fetch(getApiUrl(`reaction/${encodeURIComponent(equation)}`));
     if (!response.ok) {
       throw new Error('Failed to fetch reaction data');
     }
@@ -54,7 +55,7 @@ export const fetchECData = async (ecNumber) => {
   }
 
   try {
-    const response = await fetch(`/api/ec/${ecNumber}`);
+    const response = await fetch(getApiUrl(`ec/${ecNumber}`));
     if (!response.ok) {
       throw new Error('Failed to fetch EC data');
     }

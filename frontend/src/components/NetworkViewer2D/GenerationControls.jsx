@@ -58,26 +58,26 @@ const GenerationControls = ({
           <button
             onClick={() => setExpanded(true)}
             className="flex items-center gap-2 mx-auto px-4 py-1.5 rounded-full
-              bg-white/85 dark:bg-slate-800/85 backdrop-blur-xl
-              border border-slate-200/40 dark:border-slate-600/30
-              shadow-lg text-xs font-semibold text-slate-600 dark:text-slate-300
-              hover:shadow-xl hover:bg-white/95 dark:hover:bg-slate-800/95 transition-all"
+              bg-surface-overlay/85 backdrop-blur-xl
+              border border-brd/40
+              shadow-lg text-xs font-semibold text-content
+              hover:shadow-xl hover:bg-surface-overlay/95 transition-all"
           >
             <span className="tabular-nums">
               Gen{' '}
-              <span className="text-violet-500 dark:text-violet-400">
+              <span className="text-brand">
                 {lo !== hi ? `${lo}–` : ''}{hi}
               </span>
               /{maxGeneration}
             </span>
-            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronUp className="w-3.5 h-3.5 text-content-muted" />
           </button>
         )}
 
         {/* ── Expanded bar ── */}
         {expanded && (
-          <div className="rounded-2xl bg-white/88 dark:bg-slate-800/88 backdrop-blur-xl
-            border border-slate-200/40 dark:border-slate-600/30 shadow-xl">
+          <div className="rounded-2xl bg-surface-overlay/88 backdrop-blur-xl
+            border border-brd/40 shadow-xl">
 
             {/* Controls row */}
             <div className="flex items-center gap-2 px-3 py-2">
@@ -87,17 +87,17 @@ const GenerationControls = ({
                 <button
                   onClick={stepBackward}
                   disabled={currentGeneration === minGeneration}
-                  className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-700/40
+                  className="p-1.5 rounded-lg hover:bg-surface-inset/60
                     disabled:opacity-30 transition-all"
                   title="Previous generation"
                 >
-                  <SkipBack className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <SkipBack className="w-4 h-4 text-content-secondary" />
                 </button>
 
                 <button
                   onClick={togglePlay}
-                  className="p-2 rounded-xl bg-violet-500 hover:bg-violet-400 text-white
-                    shadow-sm shadow-violet-500/20 transition-all"
+                  className="p-2 rounded-xl bg-brand hover:bg-brand-hover text-content-inverse
+                    shadow-sm shadow-brand/20 transition-all"
                   title={isPlaying ? 'Pause' : 'Play'}
                 >
                   {isPlaying
@@ -109,20 +109,20 @@ const GenerationControls = ({
                 <button
                   onClick={stepForward}
                   disabled={currentGeneration === maxGeneration}
-                  className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-700/40
+                  className="p-1.5 rounded-lg hover:bg-surface-inset/60
                     disabled:opacity-30 transition-all"
                   title="Next generation"
                 >
-                  <SkipForward className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <SkipForward className="w-4 h-4 text-content-secondary" />
                 </button>
               </div>
 
               {/* Gen label */}
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300
+              <span className="text-[11px] font-semibold text-content
                 tabular-nums select-none min-w-[56px] text-center flex-shrink-0"
               >
                 Gen{' '}
-                <span className="text-violet-500 dark:text-violet-400">
+                <span className="text-brand">
                   {lo !== hi ? `${lo}–` : ''}{hi}
                 </span>
                 /{maxGeneration}
@@ -130,9 +130,9 @@ const GenerationControls = ({
 
               {/* Seekbar */}
               <div className="flex-1 relative h-5 flex items-center min-w-[80px]">
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-slate-200/80 dark:bg-slate-600/50" />
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-brd/80" />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-violet-400 dark:bg-violet-500/80"
+                  className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-brand"
                   style={{ left: `${loPercent}%`, right: `${100 - hiPercent}%` }}
                 />
 
@@ -175,12 +175,12 @@ const GenerationControls = ({
 
               {/* Speed */}
               <div className="flex items-center gap-1 flex-shrink-0">
-                <Clock className="w-3 h-3 text-slate-400" />
+                <Clock className="w-3 h-3 text-content-muted" />
                 <select
                   value={transitionSpeed}
                   onChange={(e) => setTransitionSpeed(parseInt(e.target.value))}
                   className="text-[10px] font-semibold bg-transparent border-none
-                    text-slate-500 dark:text-slate-400 cursor-pointer outline-none
+                    text-content-secondary cursor-pointer outline-none
                     appearance-none pr-0.5"
                 >
                   {[1,2,3,5,8,10].map(s => (
@@ -192,10 +192,10 @@ const GenerationControls = ({
               {/* Collapse arrow */}
               <button
                 onClick={() => setExpanded(false)}
-                className="p-1 rounded-md hover:bg-slate-100/60 dark:hover:bg-slate-700/40 transition-all flex-shrink-0"
+                className="p-1 rounded-md hover:bg-surface-inset/60 transition-all flex-shrink-0"
                 title="Minimize"
               >
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronDown className="w-3.5 h-3.5 text-content-muted" />
               </button>
             </div>
           </div>

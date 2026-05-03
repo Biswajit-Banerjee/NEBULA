@@ -40,7 +40,7 @@
         {
           "slug": "view-backtrace",
           "title": "Backtrace",
-          "description": "AND-OR backward reachability tree and minimal pathways",
+          "description": "AND-OR backward reachability tree and minimal paths",
           "viewId": "tree"
         }
       ]

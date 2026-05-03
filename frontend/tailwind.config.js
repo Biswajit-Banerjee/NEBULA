@@ -19,119 +19,129 @@ export default {
         // You could add a 'serif' or 'mono' stack here if needed
       },
       colors: {
+        // ── Theme-aware semantic tokens (CSS custom properties) ──
+        surface: {
+          DEFAULT:   'rgb(var(--surface-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--surface-secondary) / <alpha-value>)',
+          elevated:  'rgb(var(--surface-elevated) / <alpha-value>)',
+          overlay:   'rgb(var(--surface-overlay) / <alpha-value>)',
+          inset:     'rgb(var(--surface-inset) / <alpha-value>)',
+        },
+        content: {
+          DEFAULT:   'rgb(var(--text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+          muted:     'rgb(var(--text-muted) / <alpha-value>)',
+          inverse:   'rgb(var(--text-inverse) / <alpha-value>)',
+        },
+        brd: {
+          DEFAULT:   'rgb(var(--border-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--border-secondary) / <alpha-value>)',
+          focus:     'rgb(var(--border-focus) / <alpha-value>)',
+        },
+        brand: {
+          DEFAULT:   'rgb(var(--brand-primary) / <alpha-value>)',
+          hover:     'rgb(var(--brand-primary-hover) / <alpha-value>)',
+          secondary: 'rgb(var(--brand-secondary) / <alpha-value>)',
+        },
+        ok:   'rgb(var(--success) / <alpha-value>)',
+        'ok-subtle': 'rgb(var(--success-subtle) / <alpha-value>)',
+        warn: 'rgb(var(--warning) / <alpha-value>)',
+        'warn-subtle': 'rgb(var(--warning-subtle) / <alpha-value>)',
+        err:  'rgb(var(--error) / <alpha-value>)',
+        'err-subtle': 'rgb(var(--error-subtle) / <alpha-value>)',
+        nfo:  'rgb(var(--info) / <alpha-value>)',
+        'nfo-subtle': 'rgb(var(--info-subtle) / <alpha-value>)',
+        'input-bg':    'rgb(var(--input-bg) / <alpha-value>)',
+        'input-brd':   'rgb(var(--input-border) / <alpha-value>)',
+        'input-focus': 'rgb(var(--input-focus) / <alpha-value>)',
+        'btn-primary': 'rgb(var(--btn-primary) / <alpha-value>)',
+        'btn-text':    'rgb(var(--btn-text) / <alpha-value>)',
+        'code-bg':   'rgb(var(--code-bg) / <alpha-value>)',
+        'code-text': 'rgb(var(--code-text) / <alpha-value>)',
+        ring:        'rgb(var(--ring) / <alpha-value>)',
+
+        // ── Legacy fixed color scales (kept so existing raw classes still work) ──
         primary: {
-          DEFAULT: '#2563EB', // blue-600
-          light: '#60A5FA',   // blue-400
-          dark: '#1D4ED8',    // blue-700
+          DEFAULT: '#2563EB',
+          light: '#60A5FA',
+          dark: '#1D4ED8',
           foreground: '#FFFFFF',
         },
         secondary: {
-          DEFAULT: '#4F46E5', // indigo-600
-          light: '#818CF8',   // indigo-400
-          dark: '#3730A3',    // indigo-700
+          DEFAULT: '#4F46E5',
+          light: '#818CF8',
+          dark: '#3730A3',
           foreground: '#FFFFFF',
         },
         accent: {
-          DEFAULT: '#EC4899', // pink-500
-          light: '#F472B6',   // pink-400
-          dark: '#DB2777',    // pink-600
+          DEFAULT: '#EC4899',
+          light: '#F472B6',
+          dark: '#DB2777',
           foreground: '#FFFFFF',
         },
         neutral: {
-          50: '#F8FAFC',    // slate-50
-          100: '#F1F5F9',   // slate-100
-          200: '#E2E8F0',   // slate-200
-          300: '#CBD5E1',   // slate-300
-          400: '#94A3B8',   // slate-400
-          DEFAULT: '#64748B', // slate-500
-          600: '#475569',   // slate-600
-          700: '#334155',   // slate-700
-          800: '#1E293B',   // slate-800
-          900: '#0F172A',   // slate-900
+          50: '#F8FAFC', 100: '#F1F5F9', 200: '#E2E8F0', 300: '#CBD5E1',
+          400: '#94A3B8', DEFAULT: '#64748B', 600: '#475569', 700: '#334155',
+          800: '#1E293B', 900: '#0F172A',
         },
-        info: {
-          DEFAULT: '#38BDF8', // sky-400
-          foreground: '#0F172A', // dark text for light info bg
+        info: { DEFAULT: '#38BDF8', foreground: '#0F172A' },
+        success: { DEFAULT: '#10B981', light: '#34D399', dark: '#059669', foreground: '#FFFFFF' },
+        warning: { DEFAULT: '#FBBF24', foreground: '#0F172A' },
+        danger: { DEFAULT: '#F87171', dark: '#EF4444', foreground: '#FFFFFF' },
+        dracula: {
+          background: '#282a36', currentLine: '#44475a', selection: '#44475a',
+          foreground: '#f8f8f2', comment: '#6272a4', cyan: '#8be9fd',
+          green: '#50fa7b', orange: '#ffb86c', pink: '#ff79c6',
+          purple: '#bd93f9', red: '#ff5555', yellow: '#f1fa8c',
         },
-        success: {
-          DEFAULT: '#10B981', // emerald-500
-          light: '#34D399',   // emerald-400
-          dark: '#059669',    // emerald-600
-          foreground: '#FFFFFF',
-        },
-        warning: {
-          DEFAULT: '#FBBF24', // amber-400
-          foreground: '#0F172A', // dark text for light warning bg
-        },
-        danger: {
-          DEFAULT: '#F87171', // red-400
-          dark: '#EF4444',    // red-500
-          foreground: '#FFFFFF',
-        },
-        // Keeping your original custom shades if they are used directly elsewhere,
-        // but ideally, you'd map them to the semantic colors above.
         emerald: {
           50: '#ECFDF5',
           100: '#D1FAE5',
-          400: '#34D399', // Added from SearchPanel
+          400: '#34D399', 
           500: '#10B981',
-          600: '#059669', // Added from SearchPanel for hover
+          600: '#059669', 
           700: '#047857',
         },
-        slate: { // Merged with neutral, but keeping for reference if needed
+        slate: { 
           50: '#F8FAFC',
           100: '#F1F5F9',
           200: '#E2E8F0',
-          400: '#94A3B8', // Added from SearchPanel
+          400: '#94A3B8', 
           500: '#64748B',
-          600: '#475569', // Added from SearchPanel
+          600: '#475569', 
           700: '#334155',
         },
-        indigo: { // Merged with secondary, but keeping for reference
+        indigo: { 
           50: '#EEF2FF',
           100: '#E0E7FF',
-          600: '#4F46E5', // Added from App.jsx for title gradient
+          600: '#4F46E5', 
         },
-        blue: { // Merged with primary, but keeping for reference
-          50: '#EFF6FF',  // Added from App.jsx gradient
-          400: '#60A5FA', // Added from SearchPanel
-          600: '#2563EB', // Added from App.jsx title gradient & SearchPanel
-          700: '#1D4ED8', // Added from SearchPanel hover
+        blue: { 
+          50: '#EFF6FF',  
+          400: '#60A5FA', 
+          600: '#2563EB', 
+          700: '#1D4ED8', 
         },
-        pink: { // Merged with accent
-            400: '#F472B6', // from SearchPanel
+        pink: { 
+            400: '#F472B6', 
         },
-        amber: { // Merged with warning
-            400: '#FBBF24', // from SearchPanel
+        amber: { 
+            400: '#FBBF24', 
         },
-        violet: { // Could be another accent or a new semantic color if used often
-            400: '#A78BFA', // from SearchPanel
+        violet: { 
+            400: '#A78BFA', 
         },
-        green: { // Could be another shade of success or a new semantic color
-            400: '#4ADE80', // from SearchPanel
+        green: { 
+            400: '#4ADE80', 
         },
-        red: { // Merged with danger
-            400: '#F87171', // from SearchPanel
+        red: { 
+            400: '#F87171', 
         },
-        sky: { // Merged with info
-            400: '#38BDF8', // from SearchPanel
+        sky: { 
+            400: '#38BDF8', 
         },
-        orange: { // Could be another shade of warning or a new semantic color
-            400: '#FB923C', // from SearchPanel
-        },
-        dracula: {
-          background: '#282a36',
-          currentLine: '#44475a',
-          selection: '#44475a',
-          foreground: '#f8f8f2',
-          comment: '#6272a4',
-          cyan: '#8be9fd',
-          green: '#50fa7b',
-          orange: '#ffb86c',
-          pink: '#ff79c6',
-          purple: '#bd93f9',
-          red: '#ff5555',
-          yellow: '#f1fa8c',
+        orange: { 
+            400: '#FB923C', 
         },
       },
       keyframes: {

@@ -8,12 +8,12 @@ const PhysicsControls = ({
   setRepulsion,
   onClose,
 }) => (
-  <div className="absolute bottom-24 right-4 z-40 w-64 rounded-lg border border-gray-200/60 dark:border-slate-600/35 bg-white/90 dark:bg-slate-800/90 p-4 shadow-2xl backdrop-blur-lg">
+  <div className="absolute bottom-24 right-4 z-40 w-64 rounded-lg border border-brd/60 bg-surface-overlay/90 p-4 shadow-2xl backdrop-blur-lg">
     <div className="mb-3 flex items-center justify-between">
-      <h3 className="text-sm font-semibold text-gray-600 dark:text-slate-200">Physics</h3>
+      <h3 className="text-sm font-semibold text-content">Physics</h3>
       <button
         onClick={onClose}
-        className="rounded p-1 hover:bg-indigo-50/60 dark:hover:bg-slate-600/40"
+        className="rounded p-1 hover:bg-surface-inset/60"
         aria-label="Close physics panel"
       >
         <X className="h-4 w-4" />
@@ -21,7 +21,7 @@ const PhysicsControls = ({
     </div>
 
     <fieldset className="mb-4 space-y-2">
-      <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+      <label className="block text-xs font-medium text-content">
         Edge relaxation
       </label>
       <input
@@ -31,12 +31,12 @@ const PhysicsControls = ({
         step="10"
         value={tension}
         onChange={(e) => setTension(parseInt(e.target.value))}
-        className="w-full accent-indigo-500" />
-      <div className="text-right text-xs text-gray-500 dark:text-gray-400">{tension} px</div>
+        className="w-full accent-brand" />
+      <div className="text-right text-xs text-content-secondary">{tension} px</div>
     </fieldset>
 
     <fieldset className="space-y-2">
-      <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+      <label className="block text-xs font-medium text-content">
         Node repulsion
       </label>
       <input
@@ -46,8 +46,8 @@ const PhysicsControls = ({
         step="50"
         value={repulsion}
         onChange={(e) => setRepulsion(parseInt(e.target.value))}
-        className="w-full accent-indigo-500" />
-      <div className="text-right text-xs text-gray-500 dark:text-gray-400">{repulsion}</div>
+        className="w-full accent-brand" />
+      <div className="text-right text-xs text-content-secondary">{repulsion}</div>
     </fieldset>
   </div>
 );

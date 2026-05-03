@@ -11,8 +11,8 @@ import { SCHEME_NAMES, schemeGradientCSS } from '../NetworkViewer2D/utils/colorS
 const Slider = ({ label, value, min, max, step, onChange, unit = '', displayValue }) => (
   <div className="space-y-1.5">
     <div className="flex items-center justify-between">
-      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</span>
-      <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+      <span className="text-[11px] font-medium text-content-secondary">{label}</span>
+      <span className="text-[11px] font-semibold text-content tabular-nums">
         {displayValue ?? value}{unit}
       </span>
     </div>
@@ -29,16 +29,16 @@ const Toggle = ({ label, value, onChange, icon: Icon }) => (
     onClick={() => onChange(!value)}
     className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[11px] font-medium transition-all ${
       value
-        ? 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-300'
-        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40'
+        ? 'bg-brand/10 text-brand'
+        : 'text-content-secondary hover:bg-surface-inset/60'
     }`}
   >
     {Icon && <Icon className="w-3.5 h-3.5 flex-shrink-0" />}
     <span className="flex-1 text-left">{label}</span>
     <div className={`w-7 h-4 rounded-full transition-colors relative flex-shrink-0 ${
-      value ? 'bg-violet-500' : 'bg-slate-300 dark:bg-slate-600'
+      value ? 'bg-brand' : 'bg-brd'
     }`}>
-      <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${
+      <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-content-inverse shadow-sm transition-transform ${
         value ? 'translate-x-3.5' : 'translate-x-0.5'
       }`} />
     </div>
@@ -49,7 +49,7 @@ const ActionButton = ({ label, onClick, icon: Icon, ...rest }) => (
   <button
     onClick={onClick}
     className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[11px] font-medium
-      text-slate-500 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40 transition-all"
+      text-content-secondary hover:bg-surface-inset/60 transition-all"
     {...rest}
   >
     {Icon && <Icon className="w-3.5 h-3.5 flex-shrink-0" />}
@@ -58,25 +58,25 @@ const ActionButton = ({ label, onClick, icon: Icon, ...rest }) => (
 );
 
 const SectionTitle = ({ children }) => (
-  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 pb-1">
+  <h4 className="text-[10px] font-bold uppercase tracking-wider text-content-muted pb-1">
     {children}
   </h4>
 );
 
 const ColorInput = ({ label, value, onChange, defaultColor }) => (
   <div className="flex items-center justify-between">
-    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</span>
+    <span className="text-[11px] font-medium text-content-secondary">{label}</span>
     <div className="flex items-center gap-1.5">
       {value && (
         <button
           onClick={() => onChange('')}
-          className="text-[9px] text-slate-400 hover:text-red-400 transition-colors"
+          className="text-[9px] text-content-muted hover:text-err transition-colors"
           title="Reset to default"
         >
           ✕
         </button>
       )}
-      <label className="relative w-6 h-6 rounded-md border border-slate-300/60 dark:border-slate-600/40 cursor-pointer overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+      <label className="relative w-6 h-6 rounded-md border border-brd/60 cursor-pointer overflow-hidden shadow-sm hover:shadow-md transition-shadow">
         <div className="absolute inset-0" style={{ backgroundColor: value || defaultColor }} />
         <input
           type="color"
@@ -96,15 +96,15 @@ const COLOR_MODES = [
 ];
 
 const ColorModeSelector = ({ value, onChange }) => (
-  <div className="flex rounded-lg overflow-hidden border border-slate-200/60 dark:border-slate-600/30">
+  <div className="flex rounded-lg overflow-hidden border border-brd/60">
     {COLOR_MODES.map(({ id, label, icon: Icon }) => (
       <button
         key={id}
         onClick={() => onChange(id)}
         className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-semibold transition-all ${
           value === id
-            ? 'bg-violet-500 text-white shadow-sm'
-            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40'
+            ? 'bg-brand text-content-inverse shadow-sm'
+            : 'text-content-secondary hover:bg-surface-inset/60'
         }`}
       >
         <Icon className="w-3 h-3" />
@@ -116,7 +116,7 @@ const ColorModeSelector = ({ value, onChange }) => (
 
 const SchemePicker = ({ value, onChange }) => (
   <div className="space-y-1">
-    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Color Scheme</span>
+    <span className="text-[11px] font-medium text-content-secondary">Color Scheme</span>
     <div className="grid grid-cols-3 gap-1">
       {SCHEME_NAMES.map((name) => (
         <button
@@ -124,13 +124,13 @@ const SchemePicker = ({ value, onChange }) => (
           onClick={() => onChange(name)}
           className={`relative h-[18px] rounded overflow-hidden transition-all ${
             value === name
-              ? 'ring-2 ring-violet-500 ring-offset-1 ring-offset-white dark:ring-offset-slate-800'
-              : 'ring-1 ring-slate-200/40 dark:ring-slate-600/30 hover:ring-slate-400 dark:hover:ring-slate-500'
+              ? 'ring-2 ring-brand ring-offset-1 ring-offset-surface'
+              : 'ring-1 ring-brd/40 hover:ring-brd'
           }`}
           title={name}
         >
           <div className="absolute inset-0" style={{ background: schemeGradientCSS(name) }} />
-          <span className="relative text-[7px] font-bold uppercase tracking-wide text-white drop-shadow-md px-0.5">
+          <span className="relative text-[7px] font-bold uppercase tracking-wide text-content-inverse drop-shadow-md px-0.5">
             {name}
           </span>
         </button>
@@ -146,16 +146,16 @@ const LAYOUT_MODES = [
 
 const LayoutSelector = ({ value, onChange }) => (
   <div>
-    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5 block">Layout</span>
-    <div className="flex rounded-lg overflow-hidden border border-slate-200/60 dark:border-slate-600/30">
+    <span className="text-[11px] font-medium text-content-secondary mb-1.5 block">Layout</span>
+    <div className="flex rounded-lg overflow-hidden border border-brd/60">
       {LAYOUT_MODES.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           onClick={() => onChange(id)}
           className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-semibold transition-all ${
             value === id
-              ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300'
-              : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+              ? 'bg-brand/15 text-brand'
+              : 'text-content-muted hover:text-content-secondary'
           }`}
         >
           <Icon className="w-3 h-3" />
@@ -193,9 +193,9 @@ const SettingsPanel = ({
         onClick={() => setOpen(prev => !prev)}
         className="absolute z-30 flex items-center justify-center
           w-5 h-14 rounded-l-lg
-          bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl
-          border border-r-0 border-slate-200/50 dark:border-slate-600/30
-          shadow-lg text-slate-400 hover:text-violet-500
+          bg-surface-overlay/80 backdrop-blur-xl
+          border border-r-0 border-brd/50
+          shadow-lg text-content-muted hover:text-brand
           transition-all duration-300 ease-out"
         style={{
           top: '50%',
@@ -212,16 +212,16 @@ const SettingsPanel = ({
 
       <div
         className={`absolute top-0 right-0 bottom-0 z-30 w-[260px]
-          bg-white/95 dark:bg-slate-800/95 backdrop-blur-2xl
-          border-l border-slate-200/50 dark:border-slate-600/30
+          bg-surface-overlay/95 backdrop-blur-2xl
+          border-l border-brd/50
           shadow-2xl overflow-y-auto overflow-x-hidden
           transition-transform duration-300 ease-out
           ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="px-4 py-4 space-y-5">
           <div className="flex items-center gap-2">
-            <Settings2 className="w-4 h-4 text-violet-500" />
-            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">
+            <Settings2 className="w-4 h-4 text-brand" />
+            <h3 className="text-xs font-bold text-content uppercase tracking-wide">
               Map Settings
             </h3>
           </div>
@@ -249,7 +249,7 @@ const SettingsPanel = ({
             <LayoutSelector value={edgeStyle} onChange={setEdgeStyle} />
           </div>
 
-          <div className="h-px bg-slate-200/60 dark:bg-slate-700/30" />
+          <div className="h-px bg-brd/60" />
 
           {/* Colors */}
           <div className="space-y-3">
@@ -262,18 +262,18 @@ const SettingsPanel = ({
             )}
             {colorMode === 'type' && (
               <div className="space-y-1 pl-1">
-                <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-                  <span className="w-3 h-3 rounded-full bg-teal-400 border border-teal-600 inline-block flex-shrink-0" />
+                <div className="flex items-center gap-2 text-[10px] text-content-secondary">
+                  <span className="w-3 h-3 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: 'rgb(var(--node-compound-fill))', border: '1px solid rgb(var(--node-compound-stroke))' }} />
                   Compound (circle)
                 </div>
               </div>
             )}
-            <div className="h-px bg-slate-200/60 dark:bg-slate-700/30 my-1" />
+            <div className="h-px bg-brd/60 my-1" />
             <ColorInput label="Background" value={bgColor} onChange={setBgColor} defaultColor="#f8fafc" />
             <ColorInput label="Grid lines" value={gridColor} onChange={setGridColor} defaultColor="#e2e8f0" />
           </div>
 
-          <div className="h-px bg-slate-200/60 dark:bg-slate-700/30" />
+          <div className="h-px bg-brd/60" />
 
           {/* Actions */}
           <div className="space-y-1">

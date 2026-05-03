@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle, useContext } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
+import { getApiUrl } from '../../config/api';
 import * as THREE from 'three';
 import styled from 'styled-components';
 import * as d3 from 'd3';
@@ -13,7 +14,7 @@ import GenerationControls from '../NetworkViewer2D/GenerationControls';
 // API fetch function
 const fetchNodeData = async (nodeType, nodeId) => {
   try {
-    const response = await fetch(`/api/${nodeType}/${nodeId}`);
+    const response = await fetch(getApiUrl(`${nodeType}/${nodeId}`));
     if (!response.ok) {
       throw new Error(`Error fetching ${nodeType} data: ${response.statusText}`);
     }
@@ -29,7 +30,7 @@ const Container = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: ${props => props.$dark ? 'radial-gradient(ellipse at center, #1a2130 0%, #090a0f 100%)' : '#F9FAFB'};
+  background: rgb(var(--surface));
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   
@@ -38,11 +39,9 @@ const Container = styled.div`
     content: "";
     position: absolute;
     inset: 0;
-    pointer-events: none; /* make overlay non-interactive */
+    pointer-events: none;
     border-radius: inherit;
-    background: ${props => props.$dark
-      ? 'radial-gradient(circle at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.65) 100%)'
-      : 'radial-gradient(circle at center, rgba(255,255,255,0) 60%, rgba(0,0,0,0.25) 100%)'};
+    background: radial-gradient(circle at center, transparent 60%, rgba(0,0,0,0.35) 100%);
   }
   
   &:fullscreen {
@@ -55,21 +54,21 @@ const ControlPanel = styled.div`
   bottom: 20px;
   left: 20px;
   z-index: 10;
-  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.85)'};
+  background: rgb(var(--surface-overlay) / 0.85);
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
+  color: rgb(var(--content));
   display: flex;
   flex-direction: column;
   gap: 10px;
   max-width: 300px;
   transition: all 0.3s ease;
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+  border: 1px solid rgb(var(--border-primary) / 0.4);
 
   &:hover {
-    background: ${props => props.$dark ? 'rgba(40,49,61,0.9)' : 'rgba(255,255,255,0.9)'};
+    background: rgb(var(--surface-overlay) / 0.92);
   }
 `;
 
@@ -84,14 +83,14 @@ const SliderLabel = styled.div`
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #abb4c5;
+  color: rgb(var(--content-secondary));
 `;
 
 const Slider = styled.input`
   width: 100%;
   height: 6px;
   -webkit-appearance: none;
-  background: rgba(80, 100, 130, 0.3);
+  background: rgb(var(--border-primary) / 0.3);
   border-radius: 3px;
   outline: none;
   
@@ -100,14 +99,14 @@ const Slider = styled.input`
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #4a9fff;
+    background: rgb(var(--brand-primary));
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: all 0.2s ease;
   }
   
   &::-webkit-slider-thumb:hover {
-    background: #65aeff;
+    background: rgb(var(--brand-hover));
     transform: scale(1.1);
   }
 `;
@@ -118,9 +117,9 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  background: ${props => props.$active ? 'rgba(74,159,255,0.2)' : (props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)')};
-  color: ${props => props.$active ? '#4a9fff' : (props.$dark ? '#d0d0d0' : '#374151')};
-  border: 1px solid ${props => props.$active ? 'rgba(74, 159, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  background: ${props => props.$active ? 'rgb(var(--brand-primary) / 0.2)' : 'rgb(var(--surface-inset) / 0.5)'};
+  color: ${props => props.$active ? 'rgb(var(--brand-primary))' : 'rgb(var(--content))'};
+  border: 1px solid ${props => props.$active ? 'rgb(var(--brand-primary) / 0.5)' : 'rgb(var(--border-primary) / 0.3)'};
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13px;
@@ -134,7 +133,7 @@ const Button = styled.button`
   font-size: 13px;
 
   &:hover {
-    background: ${props => props.$active ? 'rgba(74,159,255,0.35)' : (props.$dark ? 'rgba(40,49,61,0.9)' : 'rgba(226,232,240,1)')};
+    background: ${props => props.$active ? 'rgb(var(--brand-primary) / 0.35)' : 'rgb(var(--surface-inset) / 0.7)'};
   }
 
   &:active {
@@ -151,18 +150,18 @@ const OptionsPanel = styled.div`
   top: 20px;
   right: 20px;
   z-index: 10;
-  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
+  background: rgb(var(--surface-overlay) / 0.88);
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
+  color: rgb(var(--content));
   display: flex;
   flex-direction: column;
   gap: 12px;
   max-width: 240px;
   transition: all 0.3s ease;
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+  border: 1px solid rgb(var(--border-primary) / 0.4);
 `;
 
 const Option = styled.div`
@@ -173,7 +172,7 @@ const Option = styled.div`
 
 const OptionLabel = styled.label`
   font-size: 13px;
-  color: #abb4c5;
+  color: rgb(var(--content-secondary));
   cursor: pointer;
 `;
 
@@ -189,7 +188,7 @@ const ToggleInput = styled.input`
   height: 0;
   
   &:checked + span {
-    background-color: #4a9fff;
+    background-color: rgb(var(--brand-primary));
   }
   
   &:checked + span:before {
@@ -204,7 +203,7 @@ const ToggleSlider = styled.span`
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(80, 100, 130, 0.3);
+  background-color: rgb(var(--border-primary) / 0.3);
   transition: 0.4s;
   border-radius: 34px;
   
@@ -222,9 +221,9 @@ const ToggleSlider = styled.span`
 `;
 
 const Select = styled.select`
-  background: rgba(60, 70, 90, 0.5);
-  color: #d0d0d0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgb(var(--surface-inset) / 0.5);
+  color: rgb(var(--content));
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
@@ -233,12 +232,12 @@ const Select = styled.select`
   transition: all 0.2s ease;
   
   &:hover {
-    background: rgba(80, 100, 130, 0.7);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgb(var(--surface-inset) / 0.7);
+    border-color: rgb(var(--border-primary) / 0.5);
   }
   
   option {
-    background: #1e2733;
+    background: rgb(var(--surface));
   }
 `;
 
@@ -251,17 +250,17 @@ const LoadingOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(10, 15, 25, 0.8);
+  background: rgb(var(--surface) / 0.8);
   z-index: 20;
-  color: white;
+  color: rgb(var(--content));
   font-size: 18px;
   flex-direction: column;
 `;
 
 const Spinner = styled.div`
-  border: 4px solid rgba(255, 255, 255, 0.1);
+  border: 4px solid rgb(var(--border-primary) / 0.2);
   border-radius: 50%;
-  border-top: 4px solid #4a9fff;
+  border-top: 4px solid rgb(var(--brand-primary));
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
@@ -283,27 +282,21 @@ const TopLeftButtonGroup = styled.div`
 `;
 
 const ControlButton = styled.button`
-  background: ${({ $active, $dark }) =>
+  background: ${({ $active }) =>
     $active
-      ? $dark
-        ? 'rgba(74, 159, 255, 0.3)'
-        : 'rgba(96, 165, 250, 0.3)'
-      : $dark
-      ? 'rgba(30, 39, 51, 0.85)'
-      : 'rgba(255, 255, 255, 0.85)'};
+      ? 'rgb(var(--brand-primary) / 0.3)'
+      : 'rgb(var(--surface-overlay) / 0.85)'};
   backdrop-filter: blur(6px);
   padding: 8px 12px;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: ${({ $active, $dark }) =>
-    $active ? '#fff' : $dark ? '#e0e0e0' : '#374151'};
+  color: ${({ $active }) =>
+    $active ? 'rgb(var(--content-inverse))' : 'rgb(var(--content))'};
   border: 1px solid
-    ${({ $active, $dark }) =>
+    ${({ $active }) =>
       $active
-        ? 'rgba(74, 159, 255, 0.5)'
-        : $dark
-        ? 'rgba(255, 255, 255, 0.1)'
-        : 'rgba(0, 0, 0, 0.05)'};
+        ? 'rgb(var(--brand-primary) / 0.5)'
+        : 'rgb(var(--border-primary) / 0.3)'};
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -313,14 +306,10 @@ const ControlButton = styled.button`
   font-size: 13px;
 
   &:hover {
-    background: ${({ $active, $dark }) =>
+    background: ${({ $active }) =>
       $active
-        ? $dark
-          ? 'rgba(74, 159, 255, 0.4)'
-          : 'rgba(96, 165, 250, 0.4)'
-        : $dark
-        ? 'rgba(40, 49, 61, 0.9)'
-        : 'rgba(243, 244, 246, 1)'};
+        ? 'rgb(var(--brand-primary) / 0.4)'
+        : 'rgb(var(--surface-inset) / 0.9)'};
   }
 
   svg {
@@ -334,38 +323,38 @@ const AxisControls = styled.div`
   bottom: 20px;
   right: 20px;
   z-index: 20;
-  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
+  background: rgb(var(--surface-overlay) / 0.88);
   backdrop-filter: blur(6px);
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: ${props => props.$dark ? '#e0e0e0' : '#374151'};
+  color: rgb(var(--content));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   transition: all 0.3s ease;
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+  border: 1px solid rgb(var(--border-primary) / 0.4);
 `;
 
 const AxisButton = styled.button`
-  background: ${props => props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)'};
-  color: ${props => props.$dark ? '#d0d0d0' : '#374151'};
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgb(var(--surface-inset) / 0.5);
+  color: rgb(var(--content));
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 8px;
   font-size: 13px;
   font-weight: ${props => props.$center ? 'bold' : 'normal'};
   cursor: pointer;
   transition: all 0.2s ease;
-  touch-action: none; /* Prevent scrolling when holding button on touchscreens */
+  touch-action: none;
   
   &:hover {
-    background: ${props => props.$dark ? 'rgba(80,100,130,0.7)' : 'rgba(226,232,240,1)'};
-    border-color: rgba(0, 0, 0, 0.1);
+    background: rgb(var(--surface-inset) / 0.7);
+    border-color: rgb(var(--border-primary) / 0.5);
   }
   
   &:active {
-    background: rgba(100, 120, 150, 0.8);
+    background: rgb(var(--surface-inset) / 0.8);
   }
   
   &.x-axis {
@@ -388,16 +377,16 @@ const NodeInfoPanel = styled.div`
   bottom: 20px;
   width: 300px;
   z-index: 30;
-  background: rgba(20, 29, 41, 0.9);
+  background: rgb(var(--surface-overlay) / 0.92);
   backdrop-filter: blur(10px);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  color: #e0e0e0;
+  color: rgb(var(--content));
   overflow-y: auto;
   transform: ${props => props.$visible ? 'translateX(0)' : 'translateX(320px)'};
   transition: transform 0.3s ease-in-out;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   display: flex;
   flex-direction: column;
 `;
@@ -408,7 +397,7 @@ const CloseButton = styled.button`
   right: 15px;
   background: none;
   border: none;
-  color: #abb4c5;
+  color: rgb(var(--content-secondary));
   cursor: pointer;
   font-size: 18px;
   display: flex;
@@ -417,7 +406,7 @@ const CloseButton = styled.button`
   transition: color 0.2s ease;
   
   &:hover {
-    color: white;
+    color: rgb(var(--content));
   }
 `;
 
@@ -426,8 +415,8 @@ const NodeInfoTitle = styled.h3`
   margin-bottom: 15px;
   padding-bottom: 10px;
   font-size: 18px;
-  color: white;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgb(var(--content));
+  border-bottom: 1px solid rgb(var(--border-primary) / 0.3);
 `;
 
 const NodeInfoSection = styled.div`
@@ -438,7 +427,7 @@ const NodeInfoSectionTitle = styled.h4`
   margin-top: 0;
   margin-bottom: 8px;
   font-size: 14px;
-  color: #abb4c5;
+  color: rgb(var(--content-secondary));
 `;
 
 const NodeInfoTable = styled.table`
@@ -448,7 +437,7 @@ const NodeInfoTable = styled.table`
   
   td {
     padding: 6px 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgb(var(--border-primary) / 0.15);
   }
   
   tr:last-child td {
@@ -456,18 +445,18 @@ const NodeInfoTable = styled.table`
   }
   
   td:first-child {
-    color: #abb4c5;
+    color: rgb(var(--content-secondary));
     width: 40%;
   }
   
   td:last-child {
-    color: white;
+    color: rgb(var(--content));
     width: 60%;
   }
 `;
 
 const NodeInfoPre = styled.pre`
-  background: rgba(0, 0, 0, 0.2);
+  background: rgb(var(--surface-inset) / 0.4);
   padding: 10px;
   border-radius: 6px;
   font-size: 12px;
@@ -489,9 +478,9 @@ const SearchContainer = styled.div`
   display: flex;
   gap: 8px;
   align-items: center;
-  background: ${props => props.$dark ? 'rgba(30,39,51,0.85)' : 'rgba(255,255,255,0.9)'};
+  background: rgb(var(--surface-overlay) / 0.88);
   backdrop-filter: blur(6px);
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 10px;
   padding: 8px 10px;
 `;
@@ -500,15 +489,15 @@ const SearchInput = styled.input`
   border: none;
   outline: none;
   background: transparent;
-  color: ${props => props.$dark ? '#e5e7eb' : '#111827'};
+  color: rgb(var(--content));
   min-width: 220px;
   font-size: 13px;
 `;
 
 const SearchBtn = styled.button`
-  background: ${props => props.$dark ? 'rgba(60,70,90,0.5)' : 'rgba(240,244,250,0.9)'};
-  color: ${props => props.$dark ? '#d0d0d0' : '#374151'};
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgb(var(--surface-inset) / 0.5);
+  color: rgb(var(--content));
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
@@ -527,18 +516,18 @@ const HelpOverlayBackdrop = styled.div`
 `;
 
 const HelpOverlayCard = styled.div`
-  background: ${props => props.$dark ? 'rgba(30,39,51,0.95)' : 'rgba(255,255,255,0.98)'};
-  color: ${props => props.$dark ? '#e5e7eb' : '#374151'};
+  background: rgb(var(--surface-overlay) / 0.96);
+  color: rgb(var(--content));
   padding: 20px;
   border-radius: 12px;
   width: 520px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};
+  border: 1px solid rgb(var(--border-primary) / 0.3);
 `;
 
 const HelpTitle = styled.h3`
   margin: 0 0 10px 0;
-  color: ${props => props.$dark ? '#fff' : '#111827'};
+  color: rgb(var(--content));
 `;
 
 const HelpList = styled.ul`
@@ -552,8 +541,8 @@ const HelpList = styled.ul`
 `;
 
 const HelpKey = styled.code`
-  background: ${props => props.$dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};
-  border: 1px solid ${props => props.$dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'};
+  background: rgb(var(--surface-inset) / 0.4);
+  border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 2px 6px;
   margin-right: 8px;
@@ -2204,7 +2193,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           linkDirectionalArrowLength={linkDirectionalArrowLength}
           linkColor={linkColor}
           linkOpacity={0.8}
-          backgroundColor={dark ? "#1a2130" : "#FFFFFF"}
+          backgroundColor={dark ? "#1a2130" : "#D6D1C7"}
           linkDirectionalParticleSpeed={0.1}
           linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
           enableNodeDrag={!nodesLocked}
@@ -2226,7 +2215,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         <div style={{
           display: 'flex', justifyContent: 'center', alignItems: 'center',
           width: '100%', height: '100%',
-          backgroundColor: dark ? '#1a2130' : '#FFFFFF',
+          backgroundColor: dark ? '#1a2130' : '#D6D1C7',
           color: dark ? '#abb4c5' : '#64748b',
           fontSize: '14px',
         }}>
@@ -2356,6 +2345,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
 const NetworkViewerContainer = forwardRef(({ results, height }, ref) => {
   const innerRef = useRef();
+  const { dark } = useContext(ThemeContext);
 
   // Expose imperative API by delegating to the inner 3D viewer
   useImperativeHandle(ref, () => ({
@@ -2373,8 +2363,8 @@ const NetworkViewerContainer = forwardRef(({ results, height }, ref) => {
           justifyContent: 'center', 
           alignItems: 'center', 
           height: '100%',
-          backgroundColor: '#121820',
-          color: '#abb4c5',
+          backgroundColor: dark ? '#121820' : '#D6D1C7',
+          color: dark ? '#abb4c5' : '#64748b',
           borderRadius: '8px'
         }}>
           No data available. Please select a reaction network.

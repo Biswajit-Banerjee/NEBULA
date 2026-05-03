@@ -203,11 +203,11 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   };
 
   return (
-    <div className="relative rounded-xl border border-gray-200/40 dark:border-slate-700/40 shadow-sm bg-white dark:bg-slate-800 overflow-hidden" ref={containerRef}>
+    <div className="relative rounded-xl border border-brd/40 shadow-sm bg-surface-secondary overflow-hidden" ref={containerRef}>
       {/* Main container */}
       <div 
         ref={wrapperRef}
-        className={`relative flex flex-col bg-neutral-50 dark:bg-slate-900 transition-all duration-300 ${
+        className={`relative flex flex-col bg-surface transition-all duration-300 ${
           isFullscreen ? 'min-h-screen' : ''
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}

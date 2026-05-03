@@ -124,7 +124,7 @@ const AutocompleteInput = ({
   return (
     <div className="relative flex-1" ref={componentRef}>
       {label && (
-        <label htmlFor={`${idPrefix}-input`} className="block text-xs font-medium text-slate-500 mb-1">
+        <label htmlFor={`${idPrefix}-input`} className="block text-xs font-medium text-content-secondary mb-1">
           {label}
         </label>
       )}
@@ -139,7 +139,7 @@ const AutocompleteInput = ({
         disabled={disabled || !Array.isArray(compoundData)} // Disable if no data
         className={
           className ||
-          "w-full px-3 py-2 bg-slate-50/70 dark:bg-slate-700/50 border border-slate-200/70 dark:border-slate-600/40 rounded-lg text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-violet-300/30 dark:focus:ring-violet-400/20 focus:border-violet-300 dark:focus:border-violet-400/40 transition-shadow text-sm"
+          "w-full px-3 py-2 bg-input-bg/70 border border-brd/70 rounded-lg text-content placeholder-content-muted focus:ring-2 focus:ring-brand/20 focus:border-brand-hover transition-shadow text-sm"
         }
         autoComplete="off"
       />
@@ -147,14 +147,14 @@ const AutocompleteInput = ({
         <button
           type="button"
           onClick={() => { setInputText(''); onValueSelect(''); setSuggestions([]); }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 focus:outline-none"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted hover:text-content-secondary focus:outline-none"
           aria-label="Clear input"
         >
           <Close className="w-4 h-4" />
         </button>
       )}
       {isDropdownVisible && suggestions.length > 0 && (
-        <ul className="absolute z-20 w-full bg-white/95 dark:bg-slate-800/95 border border-slate-200/70 dark:border-slate-600/40 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1 text-left">
+        <ul className="absolute z-20 w-full bg-surface-overlay/95 border border-brd/70 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1 text-left">
           {suggestions.map(suggestion => {
             const id = suggestion?.[itemIdKey];
             const label = suggestion?.[itemLabelKey];
@@ -163,7 +163,7 @@ const AutocompleteInput = ({
               <li
                 key={id}
                 onMouseDown={() => handleSuggestionClick(suggestion)}
-                className="px-3 py-2 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 cursor-pointer text-sm text-slate-600 dark:text-slate-300"
+                className="px-3 py-2 hover:bg-surface-inset/70 cursor-pointer text-sm text-content"
               >
                 {label ? `${label} (${id})` : id}
               </li>

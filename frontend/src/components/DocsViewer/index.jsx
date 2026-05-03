@@ -10,6 +10,7 @@ import {
   Minus, Plus, Sun, Moon,
 } from 'lucide-react';
 import { ThemeContext } from '../ThemeProvider/ThemeProvider';
+import ThemeSelector from '../ThemeProvider/ThemeSelector';
 
 const FONT_SIZES = [
   { label: 'S', class: 'prose-sm', px: 14 },
@@ -136,7 +137,7 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
         return (
           <button
             onClick={(e) => { e.preventDefault(); loadPage(href); }}
-            className="text-violet-600 dark:text-violet-400 hover:underline font-medium cursor-pointer"
+            className="text-brand hover:underline font-medium cursor-pointer"
           >
             {children}
           </button>
@@ -153,27 +154,27 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex bg-surface/95 backdrop-blur-sm">
       {/* Sidebar */}
       <aside
-        className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 transition-all duration-200 overflow-hidden border-r border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/50`}
+        className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 transition-all duration-200 overflow-hidden border-r border-brd bg-surface-secondary`}
       >
         <div className="w-72 h-full flex flex-col">
           {/* Sidebar header */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700/50">
+          <div className="p-4 border-b border-brd">
             <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="w-5 h-5 text-violet-500" />
-              <span className="font-bold text-lg text-slate-800 dark:text-slate-100">NEBULA Docs</span>
+              <BookOpen className="w-5 h-5 text-brand" />
+              <span className="font-bold text-lg text-content">NEBULA Docs</span>
             </div>
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-content-muted" />
               <input
                 type="text"
                 placeholder="Filter pages..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-brd bg-surface text-content placeholder-content-muted focus:outline-none focus:ring-2 focus:ring-brand/50"
               />
             </div>
           </div>
@@ -186,7 +187,7 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
                 <div key={section.category}>
                   <button
                     onClick={() => toggleSection(section.category)}
-                    className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                    className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-content-secondary hover:text-content transition-colors"
                   >
                     {isCollapsed
                       ? <ChevronRight className="w-3.5 h-3.5" />
@@ -202,8 +203,8 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
                           onClick={() => loadPage(page.slug)}
                           className={`w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                             activePage === page.slug
-                              ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 font-medium'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'
+                              ? 'bg-brand/15 text-brand font-medium'
+                              : 'text-content-secondary hover:bg-surface-inset hover:text-content'
                           }`}
                         >
                           <FileText className="w-3.5 h-3.5 flex-shrink-0" />
@@ -216,7 +217,7 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
               );
             })}
             {filteredSections.length === 0 && (
-              <p className="text-sm text-slate-400 italic px-2 py-4">No pages match your filter.</p>
+              <p className="text-sm text-content-muted italic px-2 py-4">No pages match your filter.</p>
             )}
           </nav>
         </div>
@@ -225,11 +226,11 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-700/50 bg-white/80 dark:bg-slate-800/80">
+        <header className="flex items-center justify-between px-4 py-2.5 border-b border-brd bg-surface-overlay/80">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-500 dark:text-slate-400 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-surface-inset text-content-secondary transition-colors"
               title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             >
               <BookOpen className="w-4 h-4" />
@@ -237,9 +238,9 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
             {/* Breadcrumb */}
             {currentPageInfo && (
               <div className="flex items-center gap-1.5 text-sm">
-                <span className="text-slate-400 dark:text-slate-500">{currentPageInfo.category}</span>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />
-                <span className="text-slate-700 dark:text-slate-200 font-medium">{currentPageInfo.title}</span>
+                <span className="text-content-muted">{currentPageInfo.category}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-content-muted" />
+                <span className="text-content font-medium">{currentPageInfo.title}</span>
               </div>
             )}
           </div>
@@ -247,44 +248,38 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
           {/* Controls: font size + theme + close */}
           <div className="flex items-center gap-1">
             {/* Font size */}
-            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-700/50 rounded-lg p-0.5">
+            <div className="flex items-center gap-0.5 bg-surface-inset rounded-lg p-0.5">
               <button
                 onClick={() => setFontSizeIdx(i => Math.max(0, i - 1))}
                 disabled={fontSizeIdx === 0}
-                className="p-1 rounded-md text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-md text-content-secondary hover:bg-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 title="Decrease font size"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 w-5 text-center select-none">
+              <span className="text-[10px] font-bold text-content-secondary w-5 text-center select-none">
                 {FONT_SIZES[fontSizeIdx].label}
               </span>
               <button
                 onClick={() => setFontSizeIdx(i => Math.min(FONT_SIZES.length - 1, i + 1))}
                 disabled={fontSizeIdx === FONT_SIZES.length - 1}
-                className="p-1 rounded-md text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-md text-content-secondary hover:bg-surface disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 title="Increase font size"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-500 dark:text-slate-400 transition-colors"
-              title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-violet-500" />}
-            </button>
+            {/* Theme selector */}
+            <ThemeSelector />
 
             {/* Divider */}
-            <div className="w-px h-5 bg-slate-200 dark:bg-slate-700/50 mx-0.5" />
+            <div className="w-px h-5 bg-brd mx-0.5" />
 
             {/* Close */}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-500 dark:text-slate-400 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-surface-inset text-content-secondary transition-colors"
               title="Close documentation"
             >
               <X className="w-5 h-5" />
@@ -297,22 +292,22 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
           <div className="max-w-3xl mx-auto px-6 py-8">
             {loading && (
               <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+                <Loader2 className="w-6 h-6 text-brand animate-spin" />
               </div>
             )}
             {error && (
               <div className="text-center py-20">
-                <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+                <p className="text-err mb-4">{error}</p>
                 <button
                   onClick={() => { setError(null); setActivePage(null); }}
-                  className="text-sm text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1 mx-auto"
+                  className="text-sm text-brand hover:underline flex items-center gap-1 mx-auto"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to index
                 </button>
               </div>
             )}
             {!loading && !error && pageContent && (
-              <article className={`prose prose-slate dark:prose-invert ${FONT_SIZES[fontSizeIdx].class} prose-headings:scroll-mt-20 prose-img:rounded-lg prose-a:text-violet-600 dark:prose-a:text-violet-400 prose-code:before:content-none prose-code:after:content-none prose-code:bg-slate-100 prose-code:dark:bg-slate-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm max-w-none`}>
+              <article className={`prose prose-slate dark:prose-invert ${FONT_SIZES[fontSizeIdx].class} prose-headings:scroll-mt-20 prose-img:rounded-lg prose-a:text-brand prose-code:before:content-none prose-code:after:content-none prose-code:bg-surface-inset prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm max-w-none`}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeRaw, rehypeHighlight]}
@@ -324,9 +319,9 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
             )}
             {!loading && !error && !pageContent && !activePage && (
               <div className="text-center py-20">
-                <BookOpen className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200 mb-2">NEBULA Documentation</h2>
-                <p className="text-slate-500 dark:text-slate-400">Select a page from the sidebar to get started.</p>
+                <BookOpen className="w-12 h-12 text-content-muted mx-auto mb-4" />
+                <h2 className="text-xl font-semibold text-content mb-2">NEBULA Documentation</h2>
+                <p className="text-content-secondary">Select a page from the sidebar to get started.</p>
               </div>
             )}
           </div>

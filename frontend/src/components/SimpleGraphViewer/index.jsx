@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
+import { getApiUrl } from '../../config/api';
 import { Search, X, Loader2, Atom } from 'lucide-react';
 import GraphCanvas from "./GraphCanvas";
 import SettingsPanel from "./SettingsPanel";
@@ -62,7 +63,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
     setBackboneLoading(true);
     setBackboneError('');
     try {
-      const resp = await fetch('/api/substructure-search', {
+      const resp = await fetch(getApiUrl('substructure-search'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ smarts: query.trim(), compound_ids: compoundIds }),
@@ -150,10 +151,10 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   const toggleOverlay = () => setShowOverlay(prev => !prev);
 
   return (
-    <div className="relative rounded-xl border border-gray-200/40 dark:border-slate-700/40 shadow-sm bg-white dark:bg-slate-800 overflow-hidden" ref={containerRef}>
+    <div className="relative rounded-xl border border-brd/40 shadow-sm bg-surface-secondary overflow-hidden" ref={containerRef}>
       <div
         ref={wrapperRef}
-        className={`relative flex flex-col bg-neutral-50 dark:bg-slate-900 transition-all duration-300 ${
+        className={`relative flex flex-col bg-surface transition-all duration-300 ${
           isFullscreen ? 'min-h-screen' : ''
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}
@@ -164,48 +165,47 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
         <div className={`absolute top-3 left-3 z-40 transition-all duration-200 ${
           showBackboneBar ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}>
-          <div className="flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl
-            rounded-xl border border-slate-200/60 dark:border-slate-600/30 shadow-lg px-3 py-1.5">
-            <Atom className="w-4 h-4 text-violet-500 flex-shrink-0" />
+          <div className="flex items-center gap-1.5 bg-surface-overlay/90 backdrop-blur-xl
+            rounded-xl border border-brd/60 shadow-lg px-3 py-1.5">
+            <Atom className="w-4 h-4 text-brand flex-shrink-0" />
             <input
               type="text"
               value={backboneQuery}
               onChange={e => setBackboneQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') runBackboneSearch(backboneQuery); if (e.key === 'Escape') { clearBackboneSearch(); setShowBackboneBar(false); } }}
               placeholder="SMILES backbone e.g. C(=O)O"
-              className="bg-transparent text-xs text-slate-700 dark:text-slate-200 placeholder-slate-400
-                dark:placeholder-slate-500 outline-none w-48 font-mono"
+              className="bg-transparent text-xs text-content placeholder-content-muted outline-none w-48 font-mono"
             />
             {backboneLoading ? (
-              <Loader2 className="w-3.5 h-3.5 text-violet-500 animate-spin flex-shrink-0" />
+              <Loader2 className="w-3.5 h-3.5 text-brand animate-spin flex-shrink-0" />
             ) : (
               <button
                 onClick={() => runBackboneSearch(backboneQuery)}
-                className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="p-0.5 rounded hover:bg-surface-inset transition-colors"
                 title="Search backbone"
               >
-                <Search className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                <Search className="w-3.5 h-3.5 text-content-secondary" />
               </button>
             )}
             {backboneMatchIds !== null && (
               <button
                 onClick={clearBackboneSearch}
-                className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                className="p-0.5 rounded hover:bg-err-subtle transition-colors"
                 title="Clear search"
               >
-                <X className="w-3.5 h-3.5 text-slate-400 hover:text-red-500" />
+                <X className="w-3.5 h-3.5 text-content-muted hover:text-err" />
               </button>
             )}
           </div>
           {backboneError && (
-            <div className="mt-1 px-3 py-1 text-[10px] text-red-500 dark:text-red-400 bg-red-50/80
-              dark:bg-red-900/20 rounded-lg border border-red-200/40 dark:border-red-800/30">
+            <div className="mt-1 px-3 py-1 text-[10px] text-err bg-err-subtle/80
+              rounded-lg border border-err/30">
               {backboneError}
             </div>
           )}
           {backboneMatchIds !== null && !backboneError && (
-            <div className="mt-1 px-3 py-1 text-[10px] text-violet-600 dark:text-violet-300
-              bg-violet-50/80 dark:bg-violet-900/20 rounded-lg border border-violet-200/40 dark:border-violet-800/30">
+            <div className="mt-1 px-3 py-1 text-[10px] text-brand
+              bg-brand/10 rounded-lg border border-brand/30">
               {backboneCount} molecule{backboneCount !== 1 ? 's' : ''} matched
             </div>
           )}
@@ -216,9 +216,9 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
           <button
             onClick={() => setShowBackboneBar(true)}
             className="absolute top-3 left-3 z-40 p-2 rounded-lg
-              bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl
-              border border-slate-200/50 dark:border-slate-600/30
-              shadow-md text-slate-400 hover:text-violet-500 transition-all"
+              bg-surface-overlay/80 backdrop-blur-xl
+              border border-brd/50
+              shadow-md text-content-muted hover:text-brand transition-all"
             title="Search backbone (SMILES substructure)"
           >
             <Atom className="w-4 h-4" />

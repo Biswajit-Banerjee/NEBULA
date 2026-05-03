@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useContext,
 } from "react";
+import { getApiUrl } from '../../config/api';
 import * as d3 from "d3";
 import { processSimpleGraph, pruneSimpleGraph } from "./utils/graphProcessing";
 import { applySimpleLayout } from "./utils/layout";
@@ -288,7 +289,7 @@ const GraphCanvas = forwardRef(
 
       (async () => {
         try {
-          const resp = await fetch('/api/smiles', {
+          const resp = await fetch(getApiUrl('smiles'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ compound_ids: needed }),
@@ -1085,7 +1086,7 @@ const GraphCanvas = forwardRef(
         drawRef.current?.(nodesRef.current);
         return;
       }
-      fetch('/api/kegg-ortho-edges')
+      fetch(getApiUrl('kegg-ortho-edges'))
         .then(r => r.json())
         .then(data => {
           keggOrthoEdgesRef.current = data.edges || [];
@@ -1222,7 +1223,7 @@ const GraphCanvas = forwardRef(
           const matched = applyKegg(nodesCopy, linksCopy, keggPositionsRef.current, centerX, centerY);
           finalize(nodesCopy, matched);
         } else {
-          fetch('/api/kegg-layout')
+          fetch(getApiUrl('kegg-layout'))
             .then(r => r.json())
             .then(data => {
               keggPositionsRef.current = data.positions || {};

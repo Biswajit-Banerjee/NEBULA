@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Download, Upload, Layers, Loader2,
-  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical, Home,
+  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical,
 } from 'lucide-react';
 import Logo from '../Logo';
-import ThemeToggle from '../ThemeProvider/ThemeToggle';
+import ThemeSelector from '../ThemeProvider/ThemeSelector';
 import AutocompleteInput from '../SearchPanel/AutocompleteInput';
 import compoundDataJson from '../SearchPanel/compound_map.json';
 import reactionDataJson from '../SearchPanel/reaction_map.json';
@@ -174,104 +174,98 @@ const FloatingDock = ({
         if (m === 'ec') return `EC ${p.ec}` || '';
         return '';
       }).join(' · ')
-    : 'Search pathways…';
+    : 'Search paths…';
 
   return (
     <div ref={dockRef} className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[95vw] max-w-2xl pointer-events-none">
       <div className="pointer-events-auto">
 
         {/* ── Top bar ── */}
-        <div className={`flex items-center gap-1.5 bg-white/88 dark:bg-slate-800/88 backdrop-blur-2xl border border-slate-200/50 dark:border-slate-600/35 px-2.5 py-1.5 shadow-lg shadow-slate-200/20 dark:shadow-black/20 transition-all duration-200 ${expanded ? 'rounded-t-2xl rounded-b-none border-b-0' : 'rounded-2xl'}`}>
-          {/* Logo */}
-          <div className="flex-shrink-0">
+        <div className={`flex items-center gap-1.5 bg-surface-overlay/88 backdrop-blur-2xl border border-brd/50 px-2.5 py-1.5 shadow-lg shadow-brd/20 transition-all duration-200 ${expanded ? 'rounded-t-2xl rounded-b-none border-b-0' : 'rounded-2xl'}`}>
+          {/* Logo – click to return home */}
+          <button
+            onClick={hasResults && onClearResults ? onClearResults : undefined}
+            className={`flex-shrink-0 rounded-lg p-0.5 transition-all ${hasResults && onClearResults ? 'cursor-pointer hover:bg-surface-inset/70 hover:scale-110' : 'cursor-default'}`}
+            title={hasResults ? 'Clear results and return to home' : 'NEBULA'}
+          >
             <Logo className="w-7 h-7" />
-          </div>
+          </button>
 
           {/* Search summary / expand trigger */}
           <button
             onClick={() => setExpanded(prev => !prev)}
-            className="flex-1 flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors group min-w-0"
+            className="flex-1 flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-inset/50 transition-colors group min-w-0"
           >
             {isLoading ? (
-              <Loader2 className="w-4 h-4 flex-shrink-0 text-violet-500 animate-spin" />
+              <Loader2 className="w-4 h-4 flex-shrink-0 text-brand animate-spin" />
             ) : (
-              <Search className="w-4 h-4 flex-shrink-0 text-slate-400 group-hover:text-violet-400 transition-colors" />
+              <Search className="w-4 h-4 flex-shrink-0 text-content-muted group-hover:text-brand-hover transition-colors" />
             )}
-            <span className="text-sm text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors truncate">
+            <span className="text-sm text-content-secondary group-hover:text-content transition-colors truncate">
               {isLoading ? 'Searching…' : summaryText}
             </span>
-            <ChevronUp className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-200 ${expanded ? '' : 'rotate-180'}`} />
+            <ChevronUp className={`w-3.5 h-3.5 text-content-muted flex-shrink-0 transition-transform duration-200 ${expanded ? '' : 'rotate-180'}`} />
           </button>
 
           {/* Separator */}
-          <div className="w-px h-5 bg-slate-200/60 dark:bg-slate-700/40 flex-shrink-0" />
+          <div className="w-px h-5 bg-brd/60 flex-shrink-0" />
 
           {/* Result count */}
           {resultCount > 0 && (
             <div className="flex items-center gap-1 px-1.5 flex-shrink-0">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{resultCount}</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
+              <span className="text-xs font-semibold text-content">{resultCount}</span>
             </div>
           )}
 
-          {/* Home button - clear results */}
-          {hasResults && onClearResults && (
-            <button 
-              onClick={onClearResults} 
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-all flex-shrink-0" 
-              title="Clear results and return to home"
-            >
-              <Home className="w-4 h-4" />
-            </button>
-          )}
 
           {/* Combined mode */}
           {hasResults && (
-            <button onClick={toggleCombinedMode} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${combinedMode ? 'bg-violet-50 dark:bg-violet-700/20 text-violet-500 dark:text-violet-300/80' : 'text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50'}`} title={combinedMode ? 'Separate view' : 'Combined view'}>
+            <button onClick={toggleCombinedMode} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${combinedMode ? 'bg-brand/10 text-brand' : 'text-content-muted hover:text-content-secondary hover:bg-surface-inset/70'}`} title={combinedMode ? 'Separate view' : 'Combined view'}>
               <Layers className="w-4 h-4" />
             </button>
           )}
 
           {/* Hide cofactors */}
           {hasResults && (
-            <button onClick={toggleHideCofactors} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${hideCofactors ? 'bg-amber-50 dark:bg-amber-700/20 text-amber-500 dark:text-amber-300/80' : 'text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50'}`} title={hideCofactors ? 'Show cofactors (Z compounds)' : 'Hide cofactors (Z compounds)'}>
+            <button onClick={toggleHideCofactors} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${hideCofactors ? 'bg-warn/10 text-warn' : 'text-content-muted hover:text-content-secondary hover:bg-surface-inset/70'}`} title={hideCofactors ? 'Show cofactors (Z compounds)' : 'Hide cofactors (Z compounds)'}>
               <FlaskConical className="w-4 h-4" />
             </button>
           )}
 
           {/* Import */}
-          <label className={`p-1.5 rounded-lg text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-all cursor-pointer flex-shrink-0 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
+          <label className={`p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all cursor-pointer flex-shrink-0 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
             <Upload className="w-4 h-4" />
             <input type="file" accept=".json" onChange={onImportSession} className="hidden" disabled={isLoading} />
           </label>
 
           {/* Export */}
           {canExport && (
-            <button onClick={onExportSession} disabled={isLoading} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-all disabled:opacity-50 flex-shrink-0" title="Export session">
+            <button onClick={onExportSession} disabled={isLoading} className="p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all disabled:opacity-50 flex-shrink-0" title="Export session">
               <Download className="w-4 h-4" />
             </button>
           )}
 
           {/* Theme */}
           <div className="flex-shrink-0">
-            <ThemeToggle />
+            <ThemeSelector />
           </div>
         </div>
 
         {/* ── Expanded search panel ── */}
         {expanded && (
-          <div className="bg-white/92 dark:bg-slate-800/92 backdrop-blur-2xl border border-t-0 border-slate-200/50 dark:border-slate-600/35 rounded-b-2xl shadow-xl shadow-slate-300/15 dark:shadow-black/20">
+          <div className="bg-surface-overlay/92 backdrop-blur-2xl border border-t-0 border-brd/50 rounded-b-2xl shadow-xl shadow-brd/15">
             <div className="px-3 pt-2 pb-3 space-y-2">
 
               {searchPairs.map((pair, index) => {
                 const pairMode = pair.mode || 'compound';
                 return (
-                <div key={pair.id || index} className="flex items-center gap-2 rounded-xl bg-slate-50/60 dark:bg-slate-700/30 px-2.5 py-2 group">
+                <div key={pair.id || index} className="flex items-center gap-2 rounded-xl bg-surface-inset/60 px-2.5 py-2 group">
 
                   {/* Color dot — click to change */}
                   <div className="relative flex-shrink-0">
                     <div
-                      className="w-3 h-3 rounded-full cursor-pointer ring-2 ring-white dark:ring-slate-800 shadow-sm"
+                      className="w-3 h-3 rounded-full cursor-pointer ring-2 ring-surface-secondary shadow-sm"
                       style={{ backgroundColor: pair.color || '#8B5CF6' }}
                     />
                     <input
@@ -291,7 +285,7 @@ const FloatingDock = ({
                       updatePair(index, { ...cleared, mode: newMode });
                     }}
                     disabled={isLoading}
-                    className="flex-shrink-0 text-[11px] font-medium rounded-md border border-slate-200/70 dark:border-slate-600/40 bg-white/80 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 px-1 py-1 focus:ring-1 focus:ring-violet-400/30 outline-none"
+                    className="flex-shrink-0 text-[11px] font-medium rounded-md border border-brd/70 bg-input-bg/80 text-content px-1 py-1 focus:ring-1 focus:ring-brand/30 outline-none"
                   >
                     {SEARCH_MODES.map(m => (
                       <option key={m.value} value={m.value}>{m.label}</option>
@@ -309,10 +303,10 @@ const FloatingDock = ({
                           onValueSelect={(id) => updatePair(index, { source: id, sourceDisplay: '' })}
                           compoundData={compoundData}
                           disabled={isLoading}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-white/80 dark:bg-slate-700/50 border border-slate-200/70 dark:border-slate-600/40 text-sm text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:border-violet-300 focus:ring-1 focus:ring-violet-300/20 transition-all outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
                         />
                       </div>
-                      <span className="text-slate-300 dark:text-slate-500 flex-shrink-0 text-xs font-medium select-none">→</span>
+                      <span className="text-content-muted flex-shrink-0 text-xs font-medium select-none">→</span>
                       <div className="flex-1 min-w-0">
                         <AutocompleteInput
                           idPrefix={`dock-tgt-${index}`}
@@ -321,7 +315,7 @@ const FloatingDock = ({
                           onValueSelect={(id) => handleTargetSelect(index, id)}
                           compoundData={compoundData}
                           disabled={isLoading}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-white/80 dark:bg-slate-700/50 border border-slate-200/70 dark:border-slate-600/40 text-sm text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:border-violet-300 focus:ring-1 focus:ring-violet-300/20 transition-all outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
                         />
                       </div>
                     </>
@@ -340,7 +334,7 @@ const FloatingDock = ({
                         itemLabelKey="equation"
                         idPattern={/^R\d{5}$/i}
                         disabled={isLoading}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white/80 dark:bg-slate-700/50 border border-slate-200/70 dark:border-slate-600/40 text-sm text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-300 focus:ring-1 focus:ring-blue-300/20 transition-all outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
                       />
                     </div>
                   )}
@@ -358,7 +352,7 @@ const FloatingDock = ({
                         itemLabelKey="ec_number"
                         idPattern={/^\d+(\.\d+){3}$/}
                         disabled={isLoading}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white/80 dark:bg-slate-700/50 border border-slate-200/70 dark:border-slate-600/40 text-sm text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-500 focus:border-emerald-300 focus:ring-1 focus:ring-emerald-300/20 transition-all outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
                       />
                     </div>
                   )}
@@ -366,14 +360,14 @@ const FloatingDock = ({
                   {/* Fixed-width trailing zone — always same width for alignment */}
                   <div className="flex items-center gap-0.5 flex-shrink-0 w-[72px] justify-end">
                     {typeof pair.resultCount === 'number' && pair.resultCount > 0 && (
-                      <span className="text-[10px] font-bold text-emerald-600/80 dark:text-emerald-400/80 bg-emerald-50/80 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-ok bg-ok-subtle/80 px-1.5 py-0.5 rounded-full">
                         {pair.resultCount}
                       </span>
                     )}
                     {pair.hasResults !== undefined && (
                       <button
                         onClick={() => onToggleVisibility(index)}
-                        className={`p-1 rounded-md transition-all ${pair.visible ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20' : 'text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                        className={`p-1 rounded-md transition-all ${pair.visible ? 'text-ok hover:bg-ok-subtle' : 'text-content-muted hover:bg-surface-inset'}`}
                       >
                         {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                       </button>
@@ -381,7 +375,7 @@ const FloatingDock = ({
                     {searchPairs.length > 1 ? (
                       <button
                         onClick={() => removePair(index)}
-                        className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all opacity-0 group-hover:opacity-100"
+                        className="p-1 rounded-md text-content-muted hover:text-err hover:bg-err-subtle transition-all opacity-0 group-hover:opacity-100"
                         disabled={isLoading}
                       >
                         <X className="w-3.5 h-3.5" />
@@ -399,7 +393,7 @@ const FloatingDock = ({
                 <button
                   onClick={addPair}
                   disabled={isLoading}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-content-secondary hover:bg-surface-inset/70 transition-all disabled:opacity-50"
                 >
                   <Plus className="w-3 h-3" />
                   Add query
@@ -410,7 +404,7 @@ const FloatingDock = ({
                 <button
                   onClick={handleSearch}
                   disabled={isSearchDisabled}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-violet-500 hover:bg-violet-400 text-white shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                   {isLoading ? 'Searching…' : 'Explore'}

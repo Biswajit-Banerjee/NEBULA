@@ -43,7 +43,7 @@ const SearchDrawer = ({
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-50 bg-black/20 dark:bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-50 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -55,20 +55,20 @@ const SearchDrawer = ({
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="h-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-r border-slate-200/50 dark:border-slate-700/50 shadow-2xl flex flex-col">
+        <div className="h-full bg-surface/95 backdrop-blur-2xl border-r border-brd/50 shadow-2xl flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/50 dark:border-slate-700/40 flex-shrink-0">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-brd/50 flex-shrink-0">
             <div>
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">
+              <h2 className="text-base font-bold text-content">
                 Search Configuration
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-content-secondary mt-0.5">
                 Configure pathway search parameters
               </p>
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200"
+              className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-inset transition-all duration-200"
             >
               <X className="w-5 h-5" />
             </button>

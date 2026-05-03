@@ -6,33 +6,23 @@ import { ChevronRight, ChevronDown, Link2, ArrowRight } from 'lucide-react';
  */
 const LEAF_STYLES = {
   source: {
-    bg: 'bg-green-50 dark:bg-green-900/15',
-    border: 'border-green-200 dark:border-green-700/30',
-    dot: 'bg-green-400',
+    cssVar: '--tree-source',
     label: 'Source',
   },
   gen0: {
-    bg: 'bg-blue-50 dark:bg-blue-900/15',
-    border: 'border-blue-200 dark:border-blue-700/30',
-    dot: 'bg-blue-400',
+    cssVar: '--tree-seed',
     label: 'Seed',
   },
   cofactor: {
-    bg: 'bg-stone-50 dark:bg-stone-800/30',
-    border: 'border-stone-200 dark:border-stone-600/30',
-    dot: 'bg-stone-400',
+    cssVar: '--tree-cofactor',
     label: 'Cofactor',
   },
   unknown: {
-    bg: 'bg-gray-50 dark:bg-gray-800/30',
-    border: 'border-gray-200 dark:border-gray-600/30',
-    dot: 'bg-gray-400',
+    cssVar: '--tree-cofactor',
     label: 'Unknown',
   },
   no_producers: {
-    bg: 'bg-orange-50 dark:bg-orange-900/15',
-    border: 'border-orange-200 dark:border-orange-700/30',
-    dot: 'bg-orange-300',
+    cssVar: '--tree-cofactor',
     label: 'Dead end',
   },
 };
@@ -54,8 +44,8 @@ const CompoundNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
       <div className="my-1.5">
         <div
           className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs border-2 border-dashed
-            border-slate-300 dark:border-slate-600/40 bg-slate-100/60 dark:bg-slate-800/30
-            text-slate-500 dark:text-slate-400 cursor-default italic shadow-sm`}
+            border-brd bg-surface-inset/60
+            text-content-muted cursor-default italic shadow-sm`}
           title={`${node.id} — already expanded elsewhere in the tree`}
         >
           <Link2 className="w-3.5 h-3.5 flex-shrink-0 opacity-50" />
@@ -73,15 +63,15 @@ const CompoundNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
     return (
       <div className="my-1.5">
         <div
-          className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border
-            ${style.bg} ${style.border} text-slate-700 dark:text-slate-200 cursor-default shadow-sm hover:shadow transition-shadow`}
+          className="inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border border-brd text-content cursor-default shadow-sm hover:shadow transition-shadow"
+          style={{ backgroundColor: `rgb(var(${style.cssVar}) / 0.12)`, borderColor: `rgb(var(${style.cssVar}) / 0.3)` }}
           onMouseEnter={() => onHighlight(node.id)}
           onMouseLeave={() => onHighlight(null)}
         >
-          <span className={`w-2.5 h-2.5 rounded-full ${style.dot} flex-shrink-0 shadow-sm`} />
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: `rgb(var(${style.cssVar}))` }} />
           <span className="font-mono font-bold text-xs">{node.id}</span>
-          {node.generation >= 0 && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">gen {node.generation}</span>}
-          <span className={`text-[10px] px-2 py-0.5 rounded-full ${style.bg} font-semibold opacity-80`}>
+          {node.generation >= 0 && <span className="text-[10px] text-content-secondary font-medium">gen {node.generation}</span>}
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold opacity-80" style={{ backgroundColor: `rgb(var(${style.cssVar}) / 0.1)` }}>
             {style.label}
           </span>
         </div>
@@ -96,27 +86,31 @@ const CompoundNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
         onClick={() => toggleNode(node.id)}
         onMouseEnter={() => onHighlight(node.id)}
         onMouseLeave={() => onHighlight(null)}
-        className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border transition-all duration-200
+        className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border transition-all duration-200 text-content
           ${isRoot
             ? (isHighlighted
-              ? 'border-cyan-500 dark:border-cyan-400 bg-gradient-to-br from-cyan-50 to-cyan-100/80 dark:from-cyan-900/40 dark:to-cyan-900/30 shadow-lg ring-2 ring-cyan-300/50 dark:ring-cyan-600/40'
-              : 'border-cyan-400 dark:border-cyan-600/50 bg-gradient-to-br from-cyan-50/90 to-cyan-100/60 dark:from-cyan-900/30 dark:to-cyan-900/20 shadow-md')
+              ? 'shadow-lg ring-2'
+              : 'shadow-md')
             : (isHighlighted
-              ? 'border-cyan-400 dark:border-cyan-500 bg-gradient-to-br from-cyan-50/80 to-white dark:from-cyan-900/25 dark:to-slate-800/30 shadow-md'
-              : 'border-slate-300 dark:border-slate-600/40 bg-white dark:bg-slate-800/40 hover:bg-gradient-to-br hover:from-cyan-50/60 hover:to-white dark:hover:from-cyan-900/20 dark:hover:to-slate-800/40 hover:border-cyan-300 dark:hover:border-cyan-600/50 shadow-sm hover:shadow')
-          }
-          text-slate-800 dark:text-slate-100`}
+              ? 'shadow-md'
+              : 'border-brd bg-surface-secondary hover:shadow shadow-sm')
+          }`}
+        style={isRoot || isHighlighted ? {
+          borderColor: `rgb(var(--tree-metabolite))`,
+          backgroundColor: `rgb(var(--tree-metabolite) / ${isRoot ? 0.12 : 0.08})`,
+          ...(isRoot && isHighlighted ? { boxShadow: `0 0 0 2px rgb(var(--tree-metabolite) / 0.3)` } : {})
+        } : undefined}
       >
         {hasProducers && (
           isExpanded
-            ? <ChevronDown className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            : <ChevronRight className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            ? <ChevronDown className="w-4 h-4" style={{ color: 'rgb(var(--tree-metabolite))' }} />
+            : <ChevronRight className="w-4 h-4 text-content-muted" />
         )}
-        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm ${isRoot ? 'bg-cyan-500 ring-2 ring-cyan-300/60 dark:ring-cyan-600/50' : 'bg-cyan-500'}`} />
+        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm ${isRoot ? 'ring-2' : ''}`} style={{ backgroundColor: 'rgb(var(--tree-metabolite))', ...(isRoot ? { boxShadow: '0 0 0 2px rgb(var(--tree-metabolite) / 0.3)' } : {}) }} />
         <span className={`font-mono font-bold ${isRoot ? 'text-sm' : 'text-xs'}`}>{node.id}</span>
-        {node.generation >= 0 && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">gen {node.generation}</span>}
+        {node.generation >= 0 && <span className="text-[10px] text-content-secondary font-medium">gen {node.generation}</span>}
         {hasProducers && (
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold bg-slate-100/60 dark:bg-slate-700/40 px-2 py-0.5 rounded-full">
+          <span className="text-[10px] text-content-secondary font-semibold bg-surface-inset/60 px-2 py-0.5 rounded-full">
             {node.producers.length} reaction{node.producers.length > 1 ? 's' : ''}
           </span>
         )}
@@ -124,7 +118,7 @@ const CompoundNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
 
       {/* Expanded: show producing reactions */}
       {isExpanded && hasProducers && (
-        <div className="ml-4 pl-5 border-l-[3px] border-slate-300 dark:border-slate-700/50 mt-2">
+        <div className="ml-4 pl-5 border-l-[3px] border-brd mt-2">
           {node.producers.map((rxn, idx) => (
             <ReactionNode
               key={rxn.id || idx}
@@ -165,29 +159,36 @@ const ReactionNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
           onClick={() => toggleNode(node.id)}
           onMouseEnter={() => onHighlight(node.id)}
           onMouseLeave={() => onHighlight(null)}
-          className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border transition-all duration-200
+          className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs border transition-all duration-200 text-content
             ${isInSolution
-              ? 'border-emerald-400 dark:border-emerald-600/50 bg-gradient-to-br from-emerald-50/90 to-emerald-100/70 dark:from-emerald-900/30 dark:to-emerald-900/20 shadow-md ring-2 ring-emerald-300/50 dark:ring-emerald-700/30'
+              ? 'shadow-md ring-2'
               : isHighlighted
-                ? 'border-violet-400 dark:border-violet-500 bg-gradient-to-br from-violet-50/80 to-violet-100/50 dark:from-violet-900/25 dark:to-violet-900/15 shadow-md'
-                : 'border-slate-300 dark:border-slate-600/40 bg-slate-100/60 dark:bg-slate-800/30 hover:bg-gradient-to-br hover:from-violet-50/60 hover:to-white dark:hover:from-violet-900/15 dark:hover:to-slate-800/30 hover:border-violet-300 dark:hover:border-violet-600/50 shadow-sm hover:shadow'
-            }
-            text-slate-700 dark:text-slate-200`}
+                ? 'shadow-md'
+                : 'border-brd bg-surface-inset/60 hover:shadow shadow-sm'
+            }`}
+          style={isInSolution ? {
+            borderColor: 'rgb(var(--tree-solution))',
+            backgroundColor: 'rgb(var(--tree-solution) / 0.12)',
+            boxShadow: '0 0 0 2px rgb(var(--tree-solution) / 0.2)'
+          } : isHighlighted ? {
+            borderColor: 'rgb(var(--tree-reaction))',
+            backgroundColor: 'rgb(var(--tree-reaction) / 0.08)'
+          } : undefined}
         >
           {hasReactants && (
             isExpanded
-              ? <ChevronDown className="w-4 h-4 text-violet-500 dark:text-violet-400" />
-              : <ChevronRight className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              ? <ChevronDown className="w-4 h-4" style={{ color: 'rgb(var(--tree-reaction))' }} />
+              : <ChevronRight className="w-4 h-4 text-content-muted" />
           )}
-          <span className={`w-2.5 h-2.5 rounded-sm flex-shrink-0 shadow-sm ${isInSolution ? 'bg-emerald-500' : 'bg-violet-400 dark:bg-violet-400'}`} />
+          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0 shadow-sm" style={{ backgroundColor: isInSolution ? 'rgb(var(--tree-solution))' : 'rgb(var(--tree-reaction))' }} />
           <span className="font-mono font-bold text-xs">{node.reaction}</span>
           {node.ecList && node.ecList.length > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/60 dark:bg-slate-700/40 text-slate-600 dark:text-slate-400 font-semibold">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-inset/60 text-content-secondary font-semibold">
               EC {node.ecList[0]}{node.ecList.length > 1 ? ` +${node.ecList.length - 1}` : ''}
             </span>
           )}
           {hasReactants && (
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold bg-slate-100/60 dark:bg-slate-700/40 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] text-content-secondary font-semibold bg-surface-inset/60 px-2 py-0.5 rounded-full">
               {node.reactants.length} substrate{node.reactants.length > 1 ? 's' : ''}
             </span>
           )}
@@ -195,8 +196,8 @@ const ReactionNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
 
         {/* Equation — always visible when reaction is shown */}
         {node.equation && (
-          <div className="ml-9 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono max-w-2xl">
-            <ArrowRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600 flex-shrink-0" />
+          <div className="ml-9 flex items-center gap-2 text-xs text-content-secondary font-mono max-w-2xl">
+            <ArrowRight className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
             <span className="truncate" title={node.equation}>{node.equation}</span>
           </div>
         )}
@@ -204,7 +205,7 @@ const ReactionNode = memo(({ node, expandedNodes, toggleNode, highlightedNode, o
 
       {/* Expanded: show reactants */}
       {isExpanded && hasReactants && (
-        <div className={`ml-4 pl-5 border-l-[3px] mt-2 ${isInSolution ? 'border-emerald-300 dark:border-emerald-700/40' : 'border-slate-300 dark:border-slate-700/50'}`}>
+        <div className="ml-4 pl-5 border-l-[3px] mt-2" style={{ borderColor: isInSolution ? 'rgb(var(--tree-solution) / 0.5)' : 'rgb(var(--border-primary))' }}>
           {node.reactants.map((child, idx) => (
             <CompoundNode
               key={child.id || idx}

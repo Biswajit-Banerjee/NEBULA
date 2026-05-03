@@ -36,9 +36,9 @@ The tree uses AND-OR logic to represent metabolic dependencies:
 
 ---
 
-## Minimal Pathways Panel
+## Minimal Paths Panel
 
-The right-side panel lists **Minimal Pathways** — the smallest sets of reactions that can produce the target from primordial compounds:
+The right-side panel lists **Minimal Paths** — the smallest sets of reactions that can produce the target from primordial compounds:
 
 - Each pathway is numbered and shows its reaction steps with equations.
 - Click a pathway to highlight its reactions in the tree.
@@ -59,5 +59,5 @@ The header shows key metrics:
 ## Tips
 
 - Large trees (e.g. `C00251` with 890+ reactions) may take a few seconds to render.
-- Use the Minimal Pathways panel to focus on specific biosynthetic routes rather than the full tree.
+- Use the Minimal Paths panel to focus on specific biosynthetic routes rather than the full tree.
 - The tree is for understanding biosynthetic logic; the [Table](view-table) and [Network](view-network-2d) views show the complete flat reaction set.

@@ -21,8 +21,8 @@ export default function Logo({ className = "w-16 h-16" }) {
           x2="100%"
           y2="100%"
         >
-          <stop offset="0%" stopColor="#4F46E5" />
-          <stop offset="100%" stopColor="#3B82F6" />
+          <stop offset="0%" stopColor="rgb(var(--brand-primary))" />
+          <stop offset="100%" stopColor="rgb(var(--brand-primary-hover))" />
         </linearGradient>
 
         <linearGradient
@@ -32,8 +32,8 @@ export default function Logo({ className = "w-16 h-16" }) {
           x2="100%"
           y2="100%"
         >
-          <stop offset="0%" stopColor="#EC4899" />
-          <stop offset="100%" stopColor="#F472B6" />
+          <stop offset="0%" stopColor="rgb(var(--error))" />
+          <stop offset="100%" stopColor="rgb(var(--error))" />
         </linearGradient>
       </defs>
 
@@ -54,7 +54,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="20"
           y2="40"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
         <line
@@ -62,7 +62,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="15"
           y2="60"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
         <line
@@ -70,7 +70,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="20"
           y2="80"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
 
@@ -80,7 +80,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="100"
           y2="40"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
         <line
@@ -88,7 +88,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="105"
           y2="60"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
         <line
@@ -96,7 +96,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="100"
           y2="80"
-          stroke="#F472B6"
+          stroke="rgb(var(--error))"
           strokeWidth="2"
         />
 
@@ -106,7 +106,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="85"
           y2="60"
-          stroke="#4F46E5"
+          stroke="rgb(var(--brand-primary))"
           strokeWidth="1"
           strokeDasharray="6,4"
         />
@@ -117,7 +117,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="55"
           y2="85"
-          stroke="#4F46E5"
+          stroke="rgb(var(--brand-primary))"
           strokeWidth="1"
           strokeDasharray="2,6"
         />
@@ -126,7 +126,7 @@ export default function Logo({ className = "w-16 h-16" }) {
           y1="60"
           x2="65"
           y2="85"
-          stroke="#4F46E5"
+          stroke="rgb(var(--brand-primary))"
           strokeWidth="1"
           strokeDasharray="2,6"
         />

@@ -65,9 +65,9 @@ const DomainVisualization = ({
 
   return (
     <div className="mt-2" ref={containerRef}>
-      <div className="relative h-24 bg-gray-100/60 dark:bg-slate-700/50 rounded p-4">
+      <div className="relative h-24 bg-surface-inset/60 rounded p-4">
         {/* Base protein line */}
-        <div className="absolute top-8 left-4 h-1 bg-gray-300 dark:bg-slate-400" style={{ width: 'calc(100% - 2rem)' }} />
+        <div className="absolute top-8 left-4 h-1 bg-brd" style={{ width: 'calc(100% - 2rem)' }} />
 
         {/* Domains */}
         {proteinData?.domains?.map((domain, idx) => (
@@ -83,7 +83,7 @@ const DomainVisualization = ({
                 <div key={`domain-container-${idx}-${rangeIdx}`} className="relative">
                   <div
                     className={`absolute rounded cursor-pointer transition-all
-                      ${isSelected ? 'ring-2 ring-offset-1 ring-blue-400/70' : 'hover:opacity-90'}`}
+                      ${isSelected ? 'ring-2 ring-offset-1 ring-brand/70' : 'hover:opacity-90'}`}
                     style={{
                       left: `${left}px`,
                       width: `${width}px`,
@@ -105,8 +105,8 @@ const DomainVisualization = ({
                       width: `${width}px`,
                     }}
                   >
-                    <div className="truncate text-slate-800 dark:text-slate-200">{domain.domain_id}</div>
-                    <div className="text-gray-500 dark:text-gray-400">{range.start}-{range.end}</div>
+                    <div className="truncate text-content">{domain.domain_id}</div>
+                    <div className="text-content-secondary">{range.start}-{range.end}</div>
                   </div>
                 </div>
               );
@@ -121,7 +121,7 @@ const DomainVisualization = ({
           return (
             <div
               key={`feature-${idx}`}
-              className="absolute w-1 h-3 bg-red-400/80 dark:bg-red-400/70"
+              className="absolute w-1 h-3 bg-err/70"
               style={{
                 left: `${left}px`,
                 width: `${width}px`,
@@ -133,14 +133,14 @@ const DomainVisualization = ({
         })}
 
         {/* Domain range scale */}
-        <div className="absolute bottom-0 left-4 right-4 text-xs text-gray-500 dark:text-gray-400">
+        <div className="absolute bottom-0 left-4 right-4 text-xs text-content-secondary">
           <div className="absolute -bottom-4 left-0">{minPosition}</div>
           <div className="absolute -bottom-4 right-0">{maxPosition}</div>
         </div>
       </div>
       
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-6 text-xs text-gray-600 dark:text-slate-400">
+      <div className="flex flex-wrap gap-4 mt-6 text-xs text-content-secondary">
         {proteinData?.domains?.map((domain, idx) => (
           <div key={`legend-${idx}`} className="flex items-center">
             <div 
@@ -151,7 +151,7 @@ const DomainVisualization = ({
           </div>
         ))}
         <div className="flex items-center">
-          <div className="w-3 h-3 bg-red-400/80 dark:bg-red-400/70 mr-1.5" />
+          <div className="w-3 h-3 bg-err/70 mr-1.5" />
           <span>Binding Sites</span>
         </div>
       </div>

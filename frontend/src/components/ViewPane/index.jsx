@@ -7,9 +7,9 @@ const LazySimpleGraphViewer = lazy(() => import('../SimpleGraphViewer'));
 const LazyHypergraphTreeView = lazy(() => import('../HypergraphTreeView'));
 
 const LoadingFallback = ({ label }) => (
-  <div className="flex items-center justify-center h-full min-h-[200px] text-slate-500 dark:text-slate-400">
+  <div className="flex items-center justify-center h-full min-h-[200px] text-content-secondary">
     <div className="flex flex-col items-center gap-2">
-      <div className="w-6 h-6 border-2 border-slate-300 dark:border-slate-600/50 border-t-violet-400 rounded-full animate-spin" />
+      <div className="w-6 h-6 border-2 border-brd/50 border-t-brand rounded-full animate-spin" />
       <span className="text-xs">Loading {label}…</span>
     </div>
   </div>
@@ -78,7 +78,7 @@ const ViewPane = ({
     <div ref={containerRef} className="h-full w-full overflow-hidden relative">
       {/* Table */}
       <div
-        className="absolute inset-0 overflow-auto bg-white/90 dark:bg-slate-800/90"
+        className="absolute inset-0 overflow-auto bg-surface-secondary/90"
         style={{ display: viewType === 'table' ? 'block' : 'none' }}
       >
         <div className="pt-16 pb-16">

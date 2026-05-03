@@ -3,6 +3,77 @@
 @tailwind utilities;
 
 @layer base {
+  /* ── Fallback token values (Nebula Light) ──
+     The ThemeProvider applies the active theme's tokens via JS at runtime.
+     These :root values are fallbacks so nothing is unstyled before React mounts. */
+  :root {
+    --surface-primary:   214 209 199;
+    --surface-secondary: 224 220 212;
+    --surface-elevated:  230 226 219;
+    --surface-overlay:   224 220 212;
+    --surface-inset:     204 199 189;
+
+    --text-primary:   30 41 59;
+    --text-secondary: 71 85 105;
+    --text-muted:     100 116 139;
+    --text-inverse:   255 255 255;
+
+    --border-primary:   226 232 240;
+    --border-secondary: 203 213 225;
+    --border-focus:     139 92 246;
+
+    --brand-primary:       139 92 246;
+    --brand-primary-hover: 167 139 250;
+    --brand-secondary:     6 182 212;
+    --brand-gradient-from: 139 92 246;
+    --brand-gradient-via:  168 85 247;
+    --brand-gradient-to:   99 102 241;
+
+    --success:        16 185 129;
+    --success-subtle: 236 253 245;
+    --warning:        245 158 11;
+    --warning-subtle: 255 251 235;
+    --error:          239 68 68;
+    --error-subtle:   254 242 242;
+    --info:           59 130 246;
+    --info-subtle:    239 246 255;
+
+    --input-bg:     224 220 212;
+    --input-border: 203 213 225;
+    --input-focus:  139 92 246;
+    --btn-primary:  139 92 246;
+    --btn-text:     255 255 255;
+
+    --tree-metabolite: 6 182 212;
+    --tree-reaction:   139 92 246;
+    --tree-source:     34 197 94;
+    --tree-seed:       59 130 246;
+    --tree-cofactor:   168 162 158;
+    --tree-solution:   16 185 129;
+
+    --node-compound-fill:   204 251 241;
+    --node-compound-stroke: 13 148 136;
+    --node-reaction-fill:   224 231 255;
+    --node-reaction-stroke: 79 70 229;
+    --node-ec-fill:         254 243 199;
+    --node-ec-stroke:       217 119 6;
+
+    --accent-teal:    20 184 166;
+    --accent-indigo:  99 102 241;
+    --accent-amber:   245 158 11;
+    --accent-emerald: 16 185 129;
+    --accent-cyan:    6 182 212;
+    --accent-violet:  139 92 246;
+
+    --scrollbar-track:       204 199 189;
+    --scrollbar-thumb:       148 163 184;
+    --scrollbar-thumb-hover: 100 116 139;
+
+    --code-bg:   204 199 189;
+    --code-text: 30 41 59;
+    --ring:      139 92 246;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -10,14 +81,17 @@
   }
 
   body {
-    @apply font-sans bg-stone-50 text-neutral-700 dark:bg-[#1a1c2a] dark:text-slate-300;
+    font-family: theme('fontFamily.sans');
+    background-color: rgb(var(--surface-primary));
+    color: rgb(var(--text-primary));
     min-height: 100vh;
     margin: 0;
   }
 
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold text-neutral-800 dark:text-slate-200;
+    @apply font-semibold;
+    color: rgb(var(--text-primary));
   }
 
   h1 { @apply text-3xl md:text-4xl; }
@@ -30,8 +104,11 @@
   }
 
   a {
-    /* Light & dark link styles */
-    @apply text-primary hover:text-primary-dark transition-colors duration-150 dark:text-sky-300/90 dark:hover:text-purple-300/90;
+    color: rgb(var(--brand-primary));
+    transition: color 150ms;
+  }
+  a:hover {
+    color: rgb(var(--brand-primary-hover));
   }
 
   /* Optional: Subtle custom scrollbar for a more modern feel (Webkit browsers) */
@@ -40,160 +117,159 @@
     height: 8px;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-stone-100 dark:bg-slate-800/50;
+    background-color: rgb(var(--scrollbar-track));
     border-radius: 10px;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-stone-300/70 hover:bg-stone-400/70 dark:bg-slate-600/50 dark:hover:bg-slate-500/50;
+    background-color: rgb(var(--scrollbar-thumb) / 0.7);
     border-radius: 10px;
   }
-}
-
-
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--scrollbar-thumb-hover) / 0.7);
   }
-  to {
-    transform: rotate(360deg);
+
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
-}
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 
-@keyframes slide-in-from-top-4 {
-  from { transform: translateY(-1rem); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+  @keyframes slide-in-from-top-4 {
+    from { transform: translateY(-1rem); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
 
-@keyframes slide-up {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
+  @keyframes slide-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
 
-.animate-in {
-  animation: fade-in 0.3s ease-out, slide-in-from-top-4 0.3s ease-out;
-}
+  .animate-in {
+    animation: fade-in 0.3s ease-out, slide-in-from-top-4 0.3s ease-out;
+  }
 
-/* Prevent layout shift from scrollbar */
-html {
-  overflow: hidden;
-}
+  /* Prevent layout shift from scrollbar */
+  html {
+    overflow: hidden;
+  }
 
-#root {
-  height: 100vh;
-  overflow: hidden;
-}
+  #root {
+    height: 100vh;
+    overflow: hidden;
+  }
 
-/* Dual-thumb range slider — two overlaid <input type=range> on one track */
-.dual-thumb-range {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  pointer-events: none;
-  margin: 0;
-  padding: 0;
-}
+  /* Dual-thumb range slider — two overlaid <input type=range> on one track */
+  .dual-thumb-range {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+    margin: 0;
+    padding: 0;
+  }
 
-/* Invisible track so the custom painted track div shows through */
-.dual-thumb-range::-webkit-slider-runnable-track {
-  height: 4px;
-  background: transparent;
-  border: none;
-}
-.dual-thumb-range::-moz-range-track {
-  height: 4px;
-  background: transparent;
-  border: none;
-}
+  /* Invisible track so the custom painted track div shows through */
+  .dual-thumb-range::-webkit-slider-runnable-track {
+    height: 4px;
+    background: transparent;
+    border: none;
+  }
+  .dual-thumb-range::-moz-range-track {
+    height: 4px;
+    background: transparent;
+    border: none;
+  }
 
-/* Thumb: small, centered on the 4px track */
-.dual-thumb-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  pointer-events: auto;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #818cf8;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.25), 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
-  margin-top: -4px; /* (thumb_h - track_h) / 2 = (12-4)/2 */
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-.dual-thumb-range::-webkit-slider-thumb:hover {
-  transform: scale(1.3);
-  background: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.2), 0 1px 4px rgba(0,0,0,0.25);
-}
-.dual-thumb-range::-webkit-slider-thumb:active {
-  transform: scale(1.4);
-}
+  /* Thumb: small, centered on the 4px track */
+  .dual-thumb-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgb(var(--brand-primary));
+    border: 2px solid rgb(var(--surface-secondary));
+    box-shadow: 0 0 0 1px rgb(var(--brand-primary) / 0.25), 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    margin-top: -4px; /* (thumb_h - track_h) / 2 = (12-4)/2 */
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .dual-thumb-range::-webkit-slider-thumb:hover {
+    transform: scale(1.3);
+    background: rgb(var(--brand-primary-hover));
+    box-shadow: 0 0 0 3px rgb(var(--brand-primary) / 0.2), 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .dual-thumb-range::-webkit-slider-thumb:active {
+    transform: scale(1.4);
+  }
 
-.dual-thumb-range::-moz-range-thumb {
-  pointer-events: auto;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #818cf8;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.25), 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-.dual-thumb-range::-moz-range-thumb:hover {
-  transform: scale(1.3);
-  background: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.2), 0 1px 4px rgba(0,0,0,0.25);
-}
-.dual-thumb-range::-moz-range-thumb:active {
-  transform: scale(1.4);
-}
+  .dual-thumb-range::-moz-range-thumb {
+    pointer-events: auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgb(var(--brand-primary));
+    border: 2px solid rgb(var(--surface-secondary));
+    box-shadow: 0 0 0 1px rgb(var(--brand-primary) / 0.25), 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .dual-thumb-range::-moz-range-thumb:hover {
+    transform: scale(1.3);
+    background: rgb(var(--brand-primary-hover));
+    box-shadow: 0 0 0 3px rgb(var(--brand-primary) / 0.2), 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .dual-thumb-range::-moz-range-thumb:active {
+    transform: scale(1.4);
+  }
 
-/* Settings panel slider */
-.settings-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 6px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  outline: none;
-  cursor: pointer;
-}
-.dark .settings-slider {
-  background: rgba(71, 85, 105, 0.5);
-}
-.settings-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #8b5cf6;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.settings-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 3px rgba(139,92,246,0.2), 0 1px 4px rgba(0,0,0,0.25);
-}
-.settings-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #8b5cf6;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.settings-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 3px rgba(139,92,246,0.2), 0 1px 4px rgba(0,0,0,0.25);
+  /* Settings panel slider */
+  .settings-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: rgb(var(--border-primary));
+    outline: none;
+    cursor: pointer;
+  }
+  .settings-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgb(var(--brand-primary));
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .settings-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 3px rgb(var(--brand-primary) / 0.2), 0 1px 4px rgba(0,0,0,0.25);
+  }
+  .settings-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgb(var(--brand-primary));
+    border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .settings-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 3px rgb(var(--brand-primary) / 0.2), 0 1px 4px rgba(0,0,0,0.25);
+  }
 }

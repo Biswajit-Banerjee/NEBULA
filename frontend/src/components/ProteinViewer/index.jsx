@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { getApiUrl } from '../../config/api';
 import { Card, CardContent } from "@/components/ui/card";
 import { 
   Download, 
@@ -46,12 +47,12 @@ const downloadAsImage = async (ref, filename) => {
 const DomainBadge = ({ type }) => {
   // Color mapping for different domain types
   const colors = {
-    A: "bg-red-50 dark:bg-red-500/25 text-red-700 dark:text-red-300",
-    X: "bg-blue-50 dark:bg-blue-500/25 text-blue-700 dark:text-blue-300",
-    H: "bg-green-50 dark:bg-green-500/25 text-green-700 dark:text-green-300",
-    T: "bg-purple-50 dark:bg-purple-500/25 text-purple-700 dark:text-purple-300",
-    F: "bg-amber-50 dark:bg-amber-500/25 text-amber-700 dark:text-amber-300",
-    default: "bg-gray-50 dark:bg-gray-600/40 text-gray-700 dark:text-gray-200"
+    A: "bg-err-subtle text-err",
+    X: "bg-info-subtle text-info",
+    H: "bg-ok-subtle text-ok",
+    T: "bg-brand/10 text-brand",
+    F: "bg-warn-subtle text-warn",
+    default: "bg-surface-inset text-content"
   };
   
   return (
@@ -63,7 +64,7 @@ const DomainBadge = ({ type }) => {
 
 const DomainTag = ({ label, value, tooltip = "" }) => (
   <div className="flex items-center gap-1.5 text-xs">
-    <span className="text-gray-500">{label}:</span>
+    <span className="text-content-secondary">{label}:</span>
     <span className="font-medium truncate" title={tooltip || value}>
       {value || "N/A"}
     </span>
@@ -91,13 +92,13 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
     <div 
       id={`domain-cell-${domain.domain_id}-${range.start}-${range.end}`}
       className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md text-base min-w-[220px] sm:min-w-[260px] flex flex-col cursor-pointer
-        ${isSelected ? "ring-2 ring-blue-400 bg-blue-50/70 dark:bg-blue-500/25" : "hover:bg-slate-50 dark:hover:bg-slate-600/50"}`}
+        ${isSelected ? "ring-2 ring-brand bg-brand/10" : "hover:bg-surface-inset/50"}`}
       onClick={() => onClick && onClick(domain, range)}
     >
       <div className="flex justify-between items-start mb-3">
         <div>
           <div className="font-semibold">{domain.domain_id}</div>
-          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          <div className="text-xs text-content-secondary mt-1">
             Position: {range.start}-{range.end}
           </div>
         </div>
@@ -105,7 +106,7 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
           href={`http://prodata.swmed.edu/ecod/af2_pdb/domain/${proteinData.primary_accession}_F1_${domain.domain_id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-500 dark:text-blue-300 hover:text-blue-600 dark:hover:text-blue-400 p-1 rounded-full hover:bg-blue-50/70 dark:hover:bg-blue-500/20"
+          className="text-info hover:text-info p-1 rounded-full hover:bg-info-subtle"
           title="View in ECOD"
           onClick={(e) => e.stopPropagation()}
         >
@@ -115,18 +116,18 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
 
       <div className="flex flex-col gap-2 flex-1">
         <div className="flex items-center gap-1 flex-wrap">
-          <span className="bg-indigo-50 dark:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs">
+          <span className="bg-brand/10 text-brand px-2 py-1 rounded text-xs">
             {bindingSites} {bindingSites === 1 ? "binding site" : "binding sites"}
           </span>
           {domain.family_id && (
-            <span className="bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-1 rounded text-xs font-mono" title="ECOD Family ID">
+            <span className="bg-warn-subtle text-warn px-2 py-1 rounded text-xs font-mono" title="ECOD Family ID">
               {domain.family_id}
             </span>
           )}
         </div>
         
         <div className="text-xs mt-1">
-          <div className="text-gray-700 dark:text-gray-200 font-medium mb-1">Hierarchy:</div>
+          <div className="text-content font-medium mb-1">Hierarchy:</div>
           <div className="grid grid-cols-[auto,1fr] gap-x-1 gap-y-1">
             <DomainBadge type="A" />
             <div className="truncate" title={architectureInfo}>{architectureInfo}</div>
@@ -158,9 +159,9 @@ const DomainGrid = ({
 }) => {
   if (!domains || !Array.isArray(domains) || domains.length === 0) {
     return (
-      <div className="text-center py-6 bg-slate-50/70 dark:bg-slate-600/40 rounded-lg border border-dashed border-gray-200/70 dark:border-slate-500/50">
-        <Info className="w-6 h-6 mx-auto mb-2 text-gray-400" />
-        <p className="text-gray-500">No domain information available</p>
+      <div className="text-center py-6 bg-surface-inset/70 rounded-lg border border-dashed border-brd/70">
+        <Info className="w-6 h-6 mx-auto mb-2 text-content-muted" />
+        <p className="text-content-secondary">No domain information available</p>
       </div>
     );
   }
@@ -222,7 +223,7 @@ const ProteinStats = ({ proteinData }) => {
     <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
       {stats.map((stat, index) => (
         <div key={`stat-${index}`} className="flex items-center gap-1.5">
-          <span className="text-gray-400 dark:text-slate-400">{stat.label}:</span>
+          <span className="text-content-muted">{stat.label}:</span>
           <span className="font-medium">{stat.value}</span>
         </div>
       ))}
@@ -240,17 +241,17 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
   return (
     <div className="relative">
       <button
-        className="border border-gray-200/80 dark:border-slate-500/50 rounded-md py-1.5 px-3 text-sm bg-gray-50/80 dark:bg-slate-600/60 hover:bg-slate-100/70 dark:hover:bg-slate-500/50 
-                 focus:ring-2 focus:ring-blue-200/60 dark:focus:ring-blue-400/40 focus:border-blue-300 outline-none
-                 flex items-center justify-between gap-2 min-w-[280px] text-gray-700 dark:text-slate-200"
+        className="border border-brd/80 rounded-md py-1.5 px-3 text-sm bg-surface-inset/80 hover:bg-surface-inset 
+                 focus:ring-2 focus:ring-brand/40 focus:border-brand outline-none
+                 flex items-center justify-between gap-2 min-w-[280px] text-content"
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex flex-col items-start">
           <span className="font-medium text-xs">{selected.uniprot_kb_id}</span>
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[11px] text-gray-500 dark:text-slate-400">{selected.primary_accession}</span>
+            <span className="font-mono text-[11px] text-content-secondary">{selected.primary_accession}</span>
             {selected.organism_code && (
-              <span className="bg-emerald-50 dark:bg-emerald-500/25 text-emerald-600 dark:text-emerald-300 text-[10px] px-1.5 py-0.5 rounded font-medium uppercase">
+              <span className="bg-ok-subtle text-ok text-[10px] px-1.5 py-0.5 rounded font-medium uppercase">
                 {selected.organism_code}
               </span>
             )}
@@ -260,12 +261,12 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
       </button>
       
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-full bg-gray-50/95 dark:bg-slate-700/95 border border-gray-200/70 dark:border-slate-500/50 rounded-md shadow-lg max-h-60 overflow-auto backdrop-blur-sm">
+        <div className="absolute z-10 mt-1 w-full bg-surface-overlay/95 border border-brd/70 rounded-md shadow-lg max-h-60 overflow-auto backdrop-blur-sm">
           {data.map((item) => (
             <div
               key={item.uniprot_kb_id}
-              className={`px-3 py-2 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-slate-600/60 
-                        ${item.uniprot_kb_id === selectedId ? 'bg-blue-50/80 dark:bg-blue-500/20' : ''} text-gray-600 dark:text-slate-200`}
+              className={`px-3 py-2 cursor-pointer hover:bg-surface-inset/60 
+                        ${item.uniprot_kb_id === selectedId ? 'bg-brand/10' : ''} text-content`}
               onClick={() => {
                 onChange(item.uniprot_kb_id);
                 setIsOpen(false);
@@ -273,9 +274,9 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
             >
               <div className="text-sm font-medium">{item.uniprot_kb_id}</div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="font-mono text-[11px] text-gray-500 dark:text-slate-400">{item.primary_accession}</span>
+                <span className="font-mono text-[11px] text-content-secondary">{item.primary_accession}</span>
                 {item.organism_code && (
-                  <span className="bg-emerald-50 dark:bg-emerald-500/25 text-emerald-600 dark:text-emerald-300 text-[10px] px-1.5 py-0.5 rounded font-medium uppercase">
+                  <span className="bg-ok-subtle text-ok text-[10px] px-1.5 py-0.5 rounded font-medium uppercase">
                     {item.organism_code}
                   </span>
                 )}
@@ -292,10 +293,10 @@ const LoadingCard = () => (
   <Card className="w-full animate-pulse">
     <CardContent className="flex items-center justify-center h-64">
       <div className="flex items-center gap-3">
-        <div className="w-2 h-2 bg-blue-400 dark:bg-blue-400/70 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-        <div className="w-2 h-2 bg-blue-400 dark:bg-blue-400/70 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-        <div className="w-2 h-2 bg-blue-400 dark:bg-blue-400/70 rounded-full animate-bounce"></div>
-        <span className="text-blue-500 dark:text-blue-300 font-medium ml-2">Loading protein data...</span>
+        <div className="w-2 h-2 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+        <div className="w-2 h-2 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+        <div className="w-2 h-2 bg-brand rounded-full animate-bounce"></div>
+        <span className="text-brand font-medium ml-2">Loading protein data...</span>
       </div>
     </CardContent>
   </Card>
@@ -305,9 +306,9 @@ const ErrorCard = ({ message, ecNumber }) => (
   <Card className="w-full">
     <CardContent className="p-6">
       <div className="flex flex-col items-center gap-3 text-center">
-        <AlertCircle className="w-8 h-8 text-red-400 dark:text-red-400/80" />
-        <h3 className="text-lg font-medium text-red-600 dark:text-red-300">Data Error</h3>
-        <p className="text-gray-500 dark:text-slate-400">{message || `No protein data available for EC number: ${ecNumber}`}</p>
+        <AlertCircle className="w-8 h-8 text-err" />
+        <h3 className="text-lg font-medium text-err">Data Error</h3>
+        <p className="text-content-secondary">{message || `No protein data available for EC number: ${ecNumber}`}</p>
       </div>
     </CardContent>
   </Card>
@@ -316,22 +317,22 @@ const ErrorCard = ({ message, ecNumber }) => (
 const VisualizationControls = ({ scale, setScale, onReset }) => {
   return (
     <div className="flex items-center justify-end gap-2 my-2">
-      <div className="bg-gray-50/80 dark:bg-slate-700/70 border border-gray-200/70 dark:border-slate-500/50 rounded-lg shadow-sm flex items-center divide-x divide-gray-200/70 dark:divide-slate-500/50">
+      <div className="bg-surface-inset/80 border border-brd/70 rounded-lg shadow-sm flex items-center divide-x divide-brd/70">
         <button 
           onClick={() => setScale(prev => Math.max(0.5, prev - 0.1))}
-          className="p-1.5 hover:bg-slate-100/70 dark:hover:bg-slate-600/50 rounded-l-lg"
+          className="p-1.5 hover:bg-surface-inset/70 rounded-l-lg"
           title="Zoom out"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
         
-        <div className="px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300">
+        <div className="px-3 py-1 text-xs font-medium text-content">
           {Math.round(scale * 100)}%
         </div>
         
         <button 
           onClick={() => setScale(prev => Math.min(2, prev + 0.1))}
-          className="p-1.5 hover:bg-slate-100/70 dark:hover:bg-slate-600/50"
+          className="p-1.5 hover:bg-surface-inset/70"
           title="Zoom in"
         >
           <ZoomIn className="w-4 h-4" />
@@ -339,7 +340,7 @@ const VisualizationControls = ({ scale, setScale, onReset }) => {
         
         <button 
           onClick={onReset}
-          className="p-1.5 hover:bg-slate-100/70 dark:hover:bg-slate-600/50 rounded-r-lg"
+          className="p-1.5 hover:bg-surface-inset/70 rounded-r-lg"
           title="Reset view"
         >
           <Maximize className="w-4 h-4" />
@@ -357,24 +358,24 @@ const DomainDetailPanel = ({ domain, range, proteinData, onClose }) => {
   );
 
   return (
-    <div className="bg-gray-50/80 dark:bg-slate-700/70 border border-gray-200/70 dark:border-slate-500/50 rounded-lg shadow-sm mt-2 p-3 max-h-96 overflow-y-auto">
+    <div className="bg-surface-inset/80 border border-brd/70 rounded-lg shadow-sm mt-2 p-3 max-h-96 overflow-y-auto">
       <div className="flex justify-between items-center mb-2">
-        <h4 className="font-medium text-gray-700 dark:text-slate-200 text-sm">Domain Details</h4>
-        <div className="text-xs bg-blue-50 dark:bg-blue-500/25 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded">
+        <h4 className="font-medium text-content text-sm">Domain Details</h4>
+        <div className="text-xs bg-info-subtle text-info px-1.5 py-0.5 rounded">
           {bindingSites.length}
         </div>
       </div>
 
       {bindingSites.length === 0 ? (
-        <div className="text-gray-500 dark:text-gray-400 text-xs text-center py-4">No binding sites detected.</div>
+        <div className="text-content-secondary text-xs text-center py-4">No binding sites detected.</div>
       ) : (
         <ul className="space-y-1 text-xs max-h-[8rem] overflow-y-auto pr-1">
           {bindingSites.map((site, idx) => (
-            <li key={`site-${idx}`} className="flex justify-between gap-2 p-1 hover:bg-slate-50/70 dark:hover:bg-slate-600/40 rounded">
-              <span className="font-medium dark:text-slate-200">{site.location.start}</span>
-              <span className="text-gray-600 dark:text-gray-300 truncate flex-1">{site.type || "N/A"}</span>
+            <li key={`site-${idx}`} className="flex justify-between gap-2 p-1 hover:bg-surface-inset/70 rounded">
+              <span className="font-medium text-content">{site.location.start}</span>
+              <span className="text-content-secondary truncate flex-1">{site.type || "N/A"}</span>
               {site.description && (
-                <span className="text-gray-400 dark:text-gray-400 truncate max-w-[120px]" title={site.description}>
+                <span className="text-content-muted truncate max-w-[120px]" title={site.description}>
                   {site.description}
                 </span>
               )}
@@ -419,7 +420,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
         setLoadingProgress({ loaded: 0, total: 0 });
 
         // Step 1: Instantly get the accession list (no UniProt API calls)
-        const accRes = await fetch(`/api/ec/${ecNumber}/accessions`, { signal: controller.signal });
+        const accRes = await fetch(getApiUrl(`ec/${ecNumber}/accessions`), { signal: controller.signal });
         if (!accRes.ok) throw new Error("Failed to fetch accession list");
         const accData = await accRes.json();
         const accessions = accData.data || [];
@@ -435,7 +436,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
         // Step 2: Fetch the first accession and show it immediately
         const first = accessions[0];
         const firstRes = await fetch(
-          `/api/accession/${first.accession}/domains?organism_code=${encodeURIComponent(first.organism_code || "")}`,
+          getApiUrl(`accession/${first.accession}/domains?organism_code=${encodeURIComponent(first.organism_code || "")}`),
           { signal: controller.signal }
         );
         if (!firstRes.ok) throw new Error("Failed to fetch first entry");
@@ -454,7 +455,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
           const acc = accessions[i];
           try {
             const res = await fetch(
-              `/api/accession/${acc.accession}/domains?organism_code=${encodeURIComponent(acc.organism_code || "")}`,
+              getApiUrl(`accession/${acc.accession}/domains?organism_code=${encodeURIComponent(acc.organism_code || "")}`),
               { signal: controller.signal }
             );
             if (!res.ok) continue;
@@ -534,15 +535,15 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
   }
 
   return (
-    <Card className="w-full max-w-screen-xl mx-auto overflow-hidden border-gray-200/70 dark:border-slate-500/40">
+    <Card className="w-full max-w-screen-xl mx-auto overflow-hidden border-brd/70">
       <CardContent ref={viewerRef} className="p-0">
         {/* Header Section */}
-        <div className="bg-slate-50/80 dark:bg-slate-700/60 p-4 border-b border-gray-200/70 dark:border-slate-500/40">
+        <div className="bg-surface-inset/80 p-4 border-b border-brd/70">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200">EC {ecNumber}</h2>
-                <span className="bg-blue-50 dark:bg-blue-500/25 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-medium">
+                <h2 className="text-xl font-semibold text-content">EC {ecNumber}</h2>
+                <span className="bg-info-subtle text-info px-2 py-0.5 rounded text-xs font-medium">
                   Protein View
                 </span>
               </div>
@@ -557,7 +558,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                 onChange={setSelectedId}
               />
               {loadingProgress.total > 1 && loadingProgress.loaded < loadingProgress.total && (
-                <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap animate-pulse">
+                <span className="text-xs text-content-muted whitespace-nowrap animate-pulse">
                   {loadingProgress.loaded}/{loadingProgress.total}
                 </span>
               )}
@@ -567,7 +568,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                   href={`https://www.uniprot.org/uniprotkb/${proteinData?.primary_accession}/entry`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 text-gray-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-300 hover:bg-blue-50/60 dark:hover:bg-blue-500/15 rounded-full transition-colors"
+                  className="p-2 text-content-secondary hover:text-info hover:bg-info-subtle rounded-full transition-colors"
                   title="Open in UniProt"
                 >
                   <ExternalLink className="w-5 h-5" />
@@ -576,7 +577,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                 {onClose && (
                   <button
                     onClick={onClose}
-                    className="p-2 text-gray-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-300 hover:bg-red-50/60 dark:hover:bg-red-500/15 
+                    className="p-2 text-content-secondary hover:text-err hover:bg-err-subtle 
                             rounded-full transition-colors"
                     title="Close"
                   >
@@ -590,13 +591,13 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
         
         {/* Tab Navigation - For small screens */}
         {isSmallScreen && (
-          <div className="bg-gray-50/60 dark:bg-slate-700/40 border-b border-gray-200/70 dark:border-slate-500/40">
-            <div className="flex divide-x divide-gray-200/70 dark:divide-slate-500/40">
+          <div className="bg-surface-inset/60 border-b border-brd/70">
+            <div className="flex divide-x divide-brd/70">
               <button
                 className={`flex-1 py-2 text-sm font-medium ${
                   activeTab === "visualization" 
-                    ? "text-blue-500 dark:text-blue-300 border-b-2 border-blue-400" 
-                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
+                    ? "text-brand border-b-2 border-brand" 
+                    : "text-content-secondary hover:text-content"
                 }`}
                 onClick={() => setActiveTab("visualization")}
               >
@@ -605,8 +606,8 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
               <button
                 className={`flex-1 py-2 text-sm font-medium ${
                   activeTab === "domains" 
-                    ? "text-blue-500 dark:text-blue-300 border-b-2 border-blue-400" 
-                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
+                    ? "text-brand border-b-2 border-brand" 
+                    : "text-content-secondary hover:text-content"
                 }`}
                 onClick={() => setActiveTab("domains")}
               >
@@ -624,7 +625,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
               <div className="space-y-4">
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-medium text-gray-700 dark:text-slate-200 text-lg">Protein Structure</h3>
+                    <h3 className="font-medium text-content text-lg">Protein Structure</h3>
                     {/* <VisualizationControls 
                       scale={scale} 
                       setScale={setScale} 
@@ -663,8 +664,8 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
             {(!isSmallScreen || activeTab === "domains") && (
               <div className="space-y-4 self-end">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-medium text-gray-700 dark:text-slate-200 text-lg">Domain Information</h3>
-                  <span className="text-xs text-gray-500 dark:text-slate-300 bg-gray-100/60 dark:bg-slate-600/30 px-2 py-1 rounded">
+                  <h3 className="font-medium text-content text-lg">Domain Information</h3>
+                  <span className="text-xs text-content-secondary bg-surface-inset/60 px-2 py-1 rounded">
                     {proteinData.domains?.length || 0} domains
                   </span>
                 </div>

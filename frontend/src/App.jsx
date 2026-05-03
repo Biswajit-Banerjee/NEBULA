@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Zap, HelpCircle } from "lucide-react";
+import { getApiUrl } from './config/api';
 
 import Logo from "./components/Logo";
 import FloatingDock from "./components/FloatingDock";
@@ -158,7 +159,7 @@ function App() {
             const qp = new URLSearchParams();
             qp.append('target', pair.target.trim());
             if (pair.source && pair.source.trim()) qp.append('source', pair.source.trim());
-            fetchUrl = `/api/backtrace/tree?${qp.toString()}`;
+            fetchUrl = getApiUrl(`backtrace/tree?${qp.toString()}`);
             pairLabel = pair.target.trim();
           }
         } else if (mode === 'reaction') {
@@ -166,7 +167,7 @@ function App() {
           if (isValid) {
             const qp = new URLSearchParams();
             qp.append('reaction', pair.reaction.trim());
-            fetchUrl = `/api/reaction/backtrace?${qp.toString()}`;
+            fetchUrl = getApiUrl(`reaction/backtrace?${qp.toString()}`);
             pairLabel = pair.reaction.trim();
           }
         } else if (mode === 'ec') {
@@ -174,7 +175,7 @@ function App() {
           if (isValid) {
             const qp = new URLSearchParams();
             qp.append('ec', pair.ec.trim());
-            fetchUrl = `/api/ec/reactions?${qp.toString()}`;
+            fetchUrl = getApiUrl(`ec/reactions?${qp.toString()}`);
             pairLabel = pair.ec.trim();
           }
         }
@@ -445,14 +446,14 @@ function App() {
   };
 
   return (
-    <div className="fixed inset-0 bg-stone-50 dark:bg-[#1a1c2a] text-slate-700 dark:text-slate-300 overflow-hidden">
+    <div className="fixed inset-0 bg-surface text-content overflow-hidden">
 
       {/* ── Full-bleed results canvas ── */}
       {hasResults && (
         <div className="absolute inset-0 z-0 isolate">
           {isSplit ? (
             <div className="flex h-full w-full">
-              <div className="flex-1 min-w-0 h-full border-r border-slate-200/60 dark:border-slate-700/40">
+              <div className="flex-1 min-w-0 h-full border-r border-brd/60">
                 <ViewPane viewType={activeView} {...sharedViewProps} />
               </div>
               <div className="flex-1 min-w-0 h-full">
@@ -468,11 +469,11 @@ function App() {
       {/* ── Atmospheric background (only when no results) ── */}
       {!hasResults && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-violet-200/15 dark:bg-violet-900/8 blur-[120px]" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-blue-200/15 dark:bg-blue-900/8 blur-[100px]" />
-          <div className="absolute top-[30%] right-[20%] w-[30%] h-[30%] rounded-full bg-emerald-200/10 dark:bg-emerald-900/5 blur-[80px]" />
+          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-brand/15 blur-[120px]" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-nfo/15 blur-[100px]" />
+          <div className="absolute top-[30%] right-[20%] w-[30%] h-[30%] rounded-full bg-ok/10 blur-[80px]" />
           <div
-            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.04]"
+            className="absolute inset-0 opacity-[0.03]"
             style={{
               backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 0.5px, transparent 0)',
               backgroundSize: '24px 24px',
@@ -503,15 +504,15 @@ function App() {
       {/* ── Error toast ── */}
       {error && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-full animate-in">
-          <div className="bg-white/85 dark:bg-slate-800/90 backdrop-blur-xl border border-red-200/60 dark:border-red-700/30 rounded-2xl p-5 shadow-xl flex items-start gap-4">
-            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-red-500 dark:text-red-400/80" />
+          <div className="bg-surface-overlay/85 backdrop-blur-xl border border-err/30 rounded-2xl p-5 shadow-xl flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-err-subtle flex items-center justify-center">
+              <Zap className="w-5 h-5 text-err" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-red-600 dark:text-red-300/90 mb-1">Search Error</p>
-              <p className="text-xs text-red-500/70 dark:text-red-400/70 leading-relaxed">{error}</p>
+              <p className="text-sm font-semibold text-err mb-1">Search Error</p>
+              <p className="text-xs text-err/70 leading-relaxed">{error}</p>
             </div>
-            <button onClick={() => setError(null)} className="flex-shrink-0 text-slate-400 hover:text-slate-500 dark:hover:text-slate-300 transition-colors text-lg leading-none">&times;</button>
+            <button onClick={() => setError(null)} className="flex-shrink-0 text-content-muted hover:text-content-secondary transition-colors text-lg leading-none">&times;</button>
           </div>
         </div>
       )}
@@ -519,9 +520,9 @@ function App() {
       {/* ── Loading indicator ── */}
       {loading && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-violet-200/40 dark:border-violet-700/20 rounded-2xl px-5 py-3 shadow-lg">
-            <div className="w-5 h-5 border-2 border-violet-200 dark:border-violet-700/50 border-t-violet-400 rounded-full animate-spin" />
-            <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Tracing pathways…</span>
+          <div className="flex items-center gap-3 bg-surface-overlay/80 backdrop-blur-xl border border-brand/20 rounded-2xl px-5 py-3 shadow-lg">
+            <div className="w-5 h-5 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
+            <span className="text-sm text-content-secondary font-medium">Tracing paths…</span>
           </div>
         </div>
       )}
@@ -530,29 +531,29 @@ function App() {
       {!hasResults && !loading && (
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4">
           <div className="relative mb-6">
-            <div className="absolute inset-0 rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-2xl scale-150" />
+            <div className="absolute inset-0 rounded-full bg-brand/10 blur-2xl scale-150" />
             <Logo className="w-24 h-24 sm:w-28 sm:h-28 relative z-10 drop-shadow-xl" />
           </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500 dark:from-violet-400/80 dark:via-purple-400/80 dark:to-indigo-400/80 bg-clip-text text-transparent leading-tight mb-3">
+          <h1 className="text-4xl sm:text-5xl font-extrabold bg-clip-text text-transparent leading-tight mb-3" style={{ backgroundImage: `linear-gradient(to right, rgb(var(--brand-gradient-from)), rgb(var(--brand-gradient-via)), rgb(var(--brand-gradient-to)))` }}>
             NEBULA
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-6 max-w-md">
+          <p className="text-sm text-content-secondary font-medium mb-6 max-w-md">
             Network of Enzymatic Biochemical Units, Links, and Associations
           </p>
-          <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-lg text-base sm:text-lg leading-relaxed text-center">
+          <p className="text-content-secondary mb-8 max-w-lg text-base sm:text-lg leading-relaxed text-center">
             Explore the vast universe of metabolism. Map enzymes, trace reactions and unveil biochemical stories hidden within.
           </p>
-          <p className="text-sm text-slate-400 dark:text-slate-500 italic">
+          <p className="text-sm text-content-muted italic">
             Click the search bar above to begin
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
             {[
-              { label: 'Multi-target search', color: 'bg-violet-400' },
-              { label: 'Pathway analysis', color: 'bg-emerald-400' },
-              { label: 'Split-screen views', color: 'bg-blue-400' },
-              { label: 'Session import/export', color: 'bg-amber-400' },
+              { label: 'Multi-target search', color: 'bg-brand' },
+              { label: 'Pathway analysis', color: 'bg-ok' },
+              { label: 'Split-screen views', color: 'bg-info' },
+              { label: 'Session import/export', color: 'bg-warn' },
             ].map((f) => (
-              <div key={f.label} className="flex items-center gap-2 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm border border-slate-200/30 dark:border-slate-600/20 rounded-full px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <div key={f.label} className="flex items-center gap-2 bg-surface-overlay/50 backdrop-blur-sm border border-brd/30 rounded-full px-3 py-1.5 text-xs text-content-secondary">
                 <div className={`w-1.5 h-1.5 rounded-full ${f.color}`} />
                 {f.label}
               </div>
@@ -576,7 +577,7 @@ function App() {
       {/* ── Help button (bottom-right) ── */}
       <button
         onClick={() => setDocsOpen(true)}
-        className="fixed bottom-4 right-4 z-40 w-10 h-10 rounded-full bg-violet-500 hover:bg-violet-400 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-400/30 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
+        className="fixed bottom-4 right-4 z-40 w-10 h-10 rounded-full bg-brand hover:bg-brand-hover text-content-inverse shadow-lg shadow-brand/25 hover:shadow-brand-hover/30 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
         title="Help & Documentation"
       >
         <HelpCircle className="w-5 h-5" />

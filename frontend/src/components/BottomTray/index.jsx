@@ -12,7 +12,7 @@ const VIEW_OPTIONS = [
 ];
 
 const MiniTabBar = ({ activeView, onViewChange, exclude = null }) => (
-  <div className="flex items-center gap-0.5 bg-slate-100/60 dark:bg-slate-700/50 rounded-lg p-0.5">
+  <div className="flex items-center gap-0.5 bg-surface-inset/60 rounded-lg p-0.5">
     {VIEW_OPTIONS.filter(v => v.id !== exclude).map((v) => {
       const Icon = v.icon;
       const active = activeView === v.id;
@@ -22,8 +22,8 @@ const MiniTabBar = ({ activeView, onViewChange, exclude = null }) => (
           onClick={() => onViewChange(v.id)}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
             active
-              ? 'bg-white/90 dark:bg-slate-600/60 text-violet-600 dark:text-violet-300/80 shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+              ? 'bg-surface-overlay/90 text-brand shadow-sm'
+              : 'text-content-secondary hover:text-content'
           }`}
         >
           <Icon className="w-3.5 h-3.5" />
@@ -107,24 +107,24 @@ const BottomTray = ({
     <div
       className={`
         fixed bottom-0 left-0 right-0 z-40
-        bg-white/85 dark:bg-slate-800/85
+        bg-surface-overlay/85
         backdrop-blur-2xl
-        border-t border-slate-200/50 dark:border-slate-600/35
-        shadow-[0_-8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.2)]
+        border-t border-brd/50
+        shadow-[0_-8px_30px_rgba(0,0,0,0.06)]
         transition-all duration-300 ease-out
         ${trayHeight}
         ${isOpen ? 'translate-y-0' : 'translate-y-[calc(100%-44px)]'}
       `}
     >
       {/* ── Handle / Header ── */}
-      <div className="flex items-center justify-between px-4 h-11 border-b border-slate-200/40 dark:border-slate-600/30 select-none flex-shrink-0">
+      <div className="flex items-center justify-between px-4 h-11 border-b border-brd/40 select-none flex-shrink-0">
         {/* Left cluster */}
         <div className="flex items-center gap-3">
           <button
             onClick={onToggle}
-            className="flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-violet-500 dark:hover:text-violet-300/80 transition-colors"
+            className="flex items-center gap-2 text-content-secondary hover:text-brand transition-colors"
           >
-            <GripHorizontal className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+            <GripHorizontal className="w-4 h-4 text-content-muted" />
             {isOpen
               ? <ChevronDown className="w-4 h-4" />
               : <ChevronUp className="w-4 h-4" />
@@ -150,8 +150,8 @@ const BottomTray = ({
               onClick={toggleSplit}
               className={`p-1.5 rounded-lg text-xs transition-all duration-200 ${
                 isSplit
-                  ? 'bg-violet-50 dark:bg-violet-700/20 text-violet-500 dark:text-violet-300/80'
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-700/50'
+                  ? 'bg-brand/10 text-brand'
+                  : 'text-content-secondary hover:bg-surface-inset/70'
               }`}
               title={isSplit ? 'Single view' : 'Split view'}
             >
@@ -161,7 +161,7 @@ const BottomTray = ({
             {/* Expand / Minimize */}
             <button
               onClick={() => setIsExpanded(e => !e)}
-              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition-colors"
+              className="p-1.5 rounded-lg text-content-secondary hover:bg-surface-inset/70 transition-colors"
               title={isExpanded ? 'Minimize' : 'Maximize'}
             >
               {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -176,10 +176,10 @@ const BottomTray = ({
           {resultCount > 0 ? (
             isSplit ? (
               /* ── Split view ── */
-              <div className="flex h-full divide-x divide-slate-200/60 dark:divide-slate-600/30">
+              <div className="flex h-full divide-x divide-brd/60">
                 {/* Left pane */}
                 <div className="flex-1 min-w-0 flex flex-col h-full">
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50/50 dark:bg-slate-700/30 border-b border-slate-200/30 dark:border-slate-600/20">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-surface-inset/50 border-b border-brd/30">
                     <MiniTabBar activeView={leftView} onViewChange={handleLeftViewChange} exclude={rightView} />
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
@@ -189,7 +189,7 @@ const BottomTray = ({
 
                 {/* Right pane */}
                 <div className="flex-1 min-w-0 flex flex-col h-full">
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50/50 dark:bg-slate-700/30 border-b border-slate-200/30 dark:border-slate-600/20">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-surface-inset/50 border-b border-brd/30">
                     <MiniTabBar activeView={rightView} onViewChange={handleRightViewChange} exclude={leftView} />
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
@@ -205,10 +205,10 @@ const BottomTray = ({
             )
           ) : (
             /* ── Empty state ── */
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+            <div className="h-full flex flex-col items-center justify-center text-content-muted">
               <Table2 className="w-10 h-10 mb-3 opacity-40" />
               <p className="text-sm font-medium">No results yet</p>
-              <p className="text-xs mt-1">Run a search to see metabolic pathways here</p>
+              <p className="text-xs mt-1">Run a search to see metabolic paths here</p>
             </div>
           )}
         </div>

@@ -4,14 +4,13 @@ import { Search, X, Filter as FilterIcon, CheckCircle2, XCircle, Layers } from '
 // Assuming these are available from a shared utils.js or defined elsewhere.
 // For standalone example, I'll define them here.
 const GRADIENT_COLORS_PALETTE = [
-  'from-violet-400 to-purple-500', 'from-blue-400 to-cyan-400',
-  'from-emerald-400 to-teal-500', 'from-amber-400 to-orange-400',
+  'from-brand to-brand-hover', 'from-info to-info',
+  'from-ok to-ok', 'from-warn to-warn',
 ];
 
 const getRandomGradientForUI = () => {
   return GRADIENT_COLORS_PALETTE[Math.floor(Math.random() * GRADIENT_COLORS_PALETTE.length)];
 };
-// ---
 
 const FilterMenu = ({
   results,
@@ -81,18 +80,18 @@ const FilterMenu = ({
   const primaryButtonGradient = GRADIENT_COLORS_PALETTE[2]
 
   return (
-    <div className="w-72 bg-white/95 dark:bg-slate-800/95 rounded-2xl shadow-xl border border-slate-200/70 dark:border-slate-600/40 overflow-hidden">
+    <div className="w-72 bg-surface-overlay/95 rounded-2xl shadow-xl border border-brd/70 overflow-hidden">
       <div className="p-4 sm:p-5"> {/* Reduced padding */}
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-lg bg-gradient-to-br ${GRADIENT_COLORS_PALETTE[1]} opacity-20 dark:opacity-30`}> {/* Smaller icon bg */}
-              <FilterIcon className="w-4 h-4 text-violet-500 dark:text-violet-400/80" /> {/* Smaller icon */}
+            <div className={`p-1.5 rounded-lg bg-gradient-to-br ${GRADIENT_COLORS_PALETTE[1]} opacity-20`}>
+              <FilterIcon className="w-4 h-4 text-brand" />
             </div>
-            <h3 className="text-base sm:text-md font-semibold text-slate-700 dark:text-slate-200">Filter & Select</h3> {/* Shorter title */}
+            <h3 className="text-base sm:text-md font-semibold text-content">Filter & Select</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-colors"
+            className="p-1.5 rounded-full text-content-secondary hover:bg-surface-inset/70 transition-colors"
             title="Close filter menu"
           >
             <X className="w-4 h-4" /> {/* Smaller icon */}
@@ -108,7 +107,7 @@ const FilterMenu = ({
                   id="search-column-select"
                   value={searchColumn}
                   onChange={(e) => setSearchColumn(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300/70 dark:border-slate-600/70 bg-white/60 dark:bg-slate-700/40 text-xs text-slate-700 dark:text-slate-200 focus:border-violet-500 dark:focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:focus:ring-violet-400/20 transition-all duration-150"
+                  className="w-full px-3 py-2 rounded-lg border border-brd/70 bg-input-bg/60 text-xs text-content focus:border-brand focus:ring-2 focus:ring-brand/20 transition-all duration-150"
                 >
                   {columns.map(column => (
                     <option key={column.value} value={column.value}>
@@ -118,7 +117,7 @@ const FilterMenu = ({
                 </select>
             </div>
             <div className="relative flex items-center w-full sm:w-3/5"> {/* Adjusted width for input */}
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2 text-content-muted pointer-events-none" />
               <input
                 id="filter-search-term"
                 type="text"
@@ -126,12 +125,12 @@ const FilterMenu = ({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="Search..." // Shorter placeholder
-                className="w-full pl-8 pr-10 py-2 rounded-lg border border-slate-300/70 dark:border-slate-600/70 bg-white/60 dark:bg-slate-700/40 text-xs text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:border-violet-500 dark:focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20 dark:focus:ring-violet-400/20 transition-all duration-150"
+                className="w-full pl-8 pr-10 py-2 rounded-lg border border-brd/70 bg-input-bg/60 text-xs text-content placeholder-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20 transition-all duration-150"
               />
               <button
                 onClick={() => setIsRegexMode(!isRegexMode)}
-                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-0.5 rounded hover:bg-slate-200/70 dark:hover:bg-slate-600/70 transition-colors ${
-                  isRegexMode ? 'text-violet-500 dark:text-violet-400/80' : 'text-slate-400 dark:text-slate-500'
+                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-0.5 rounded hover:bg-surface-inset/70 transition-colors ${
+                  isRegexMode ? 'text-brand' : 'text-content-muted'
                 }`}
                 title={isRegexMode ? 'Regex mode (Case Insensitive)' : 'Toggle regex mode (Case Insensitive)'}
               >
@@ -144,13 +143,13 @@ const FilterMenu = ({
           <div className="flex gap-2 pt-1"> {/* Reduced gap and padding top */}
             <button
               onClick={handleClearSearchAndSelection}
-              className="flex-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600/80 text-slate-600 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium shadow-sm"
+              className="flex-1 px-3 py-2 bg-surface-inset hover:bg-brd text-content rounded-lg transition-colors text-xs font-medium shadow-sm"
             >
               Clear
             </button>
             <button
               onClick={handleSearch}
-              className={`flex-1 px-3 py-2 bg-gradient-to-r ${primaryButtonGradient} text-white rounded-lg transition-all duration-200 text-xs font-semibold shadow-md hover:shadow-lg hover:opacity-95 transform hover:scale-[1.02]`}
+              className={`flex-1 px-3 py-2 bg-brand hover:bg-brand-hover text-content-inverse rounded-lg transition-all duration-200 text-xs font-semibold shadow-md hover:shadow-lg hover:opacity-95 transform hover:scale-[1.02]`}
             >
               Search & Select
             </button>
