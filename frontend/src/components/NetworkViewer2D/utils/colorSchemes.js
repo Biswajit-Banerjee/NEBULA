@@ -40,29 +40,55 @@ export function rgbStr(rgb, alpha = 1) {
 }
 
 // ── Fixed type colors ──
-// Three visually distinct colors for compound / reaction / ec
-export const TYPE_COLORS = {
+// Hardcoded fallbacks used only when CSS custom properties aren't available
+const TYPE_COLORS_FALLBACK = {
   compound: {
-    light: { fill: '#ccfbf1', stroke: '#0d9488' },   // teal
+    light: { fill: '#ccfbf1', stroke: '#0d9488' },
     dark:  { fill: 'rgba(13,148,136,0.3)', stroke: '#2dd4bf' },
   },
   reaction: {
-    light: { fill: '#e0e7ff', stroke: '#4f46e5' },   // indigo
+    light: { fill: '#e0e7ff', stroke: '#4f46e5' },
     dark:  { fill: 'rgba(79,70,229,0.25)', stroke: '#818cf8' },
   },
   ec: {
-    light: { fill: '#fef3c7', stroke: '#d97706' },   // amber
+    light: { fill: '#fef3c7', stroke: '#d97706' },
     dark:  { fill: 'rgba(217,119,6,0.25)', stroke: '#fbbf24' },
   },
 };
 
-// Get type-based fill/stroke for a node
+// Read a CSS custom property (space-separated RGB) and return a CSS color string
+function readCssColor(varName, alpha) {
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return null;
+    const parts = raw.split(/\s+/).map(Number);
+    if (parts.length < 3 || parts.some(isNaN)) return null;
+    return alpha !== undefined
+      ? `rgba(${parts[0]},${parts[1]},${parts[2]},${alpha})`
+      : `rgb(${parts[0]},${parts[1]},${parts[2]})`;
+  } catch { return null; }
+}
+
+// CSS var names for each type
+const TYPE_VAR_MAP = {
+  compound: { fill: '--node-compound-fill', stroke: '--node-compound-stroke' },
+  reaction: { fill: '--node-reaction-fill', stroke: '--node-reaction-stroke' },
+  ec:       { fill: '--node-ec-fill',       stroke: '--node-ec-stroke' },
+};
+
+// Get type-based fill/stroke for a node — reads theme tokens at runtime
 export function getTypeColor(nodeType, isDark) {
   const base = nodeType === 'compound' ? 'compound'
     : nodeType === 'ec' ? 'ec'
-    : 'reaction'; // reaction-in, reaction-out, etc.
+    : 'reaction';
+  const vars = TYPE_VAR_MAP[base];
+  const fillAlpha = isDark ? 0.3 : undefined;
+  const fill = readCssColor(vars.fill, fillAlpha);
+  const stroke = readCssColor(vars.stroke);
+  if (fill && stroke) return { fill, stroke };
+  // Fallback to hardcoded values
   const mode = isDark ? 'dark' : 'light';
-  return TYPE_COLORS[base][mode];
+  return TYPE_COLORS_FALLBACK[base][mode];
 }
 
 // Get scheme-based fill/stroke for a normalized value t ∈ [0, 1]

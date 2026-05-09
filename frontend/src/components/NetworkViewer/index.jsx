@@ -30,7 +30,7 @@ const Container = styled.div`
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: rgb(var(--surface));
+  background: rgb(var(--surface-primary));
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   
@@ -59,7 +59,7 @@ const ControlPanel = styled.div`
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -83,7 +83,7 @@ const SliderLabel = styled.div`
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: rgb(var(--content-secondary));
+  color: rgb(var(--text-secondary));
 `;
 
 const Slider = styled.input`
@@ -118,7 +118,7 @@ const ButtonGroup = styled.div`
 
 const Button = styled.button`
   background: ${props => props.$active ? 'rgb(var(--brand-primary) / 0.2)' : 'rgb(var(--surface-inset) / 0.5)'};
-  color: ${props => props.$active ? 'rgb(var(--brand-primary))' : 'rgb(var(--content))'};
+  color: ${props => props.$active ? 'rgb(var(--brand-primary))' : 'rgb(var(--text-primary))'};
   border: 1px solid ${props => props.$active ? 'rgb(var(--brand-primary) / 0.5)' : 'rgb(var(--border-primary) / 0.3)'};
   border-radius: 6px;
   padding: 8px 12px;
@@ -155,7 +155,7 @@ const OptionsPanel = styled.div`
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -172,7 +172,7 @@ const Option = styled.div`
 
 const OptionLabel = styled.label`
   font-size: 13px;
-  color: rgb(var(--content-secondary));
+  color: rgb(var(--text-secondary));
   cursor: pointer;
 `;
 
@@ -222,7 +222,7 @@ const ToggleSlider = styled.span`
 
 const Select = styled.select`
   background: rgb(var(--surface-inset) / 0.5);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 6px 10px;
@@ -237,7 +237,7 @@ const Select = styled.select`
   }
   
   option {
-    background: rgb(var(--surface));
+    background: rgb(var(--surface-primary));
   }
 `;
 
@@ -250,9 +250,9 @@ const LoadingOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgb(var(--surface) / 0.8);
+  background: rgb(var(--surface-primary) / 0.8);
   z-index: 20;
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   font-size: 18px;
   flex-direction: column;
 `;
@@ -291,7 +291,7 @@ const ControlButton = styled.button`
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   color: ${({ $active }) =>
-    $active ? 'rgb(var(--content-inverse))' : 'rgb(var(--content))'};
+    $active ? 'rgb(var(--text-inverse))' : 'rgb(var(--text-primary))'};
   border: 1px solid
     ${({ $active }) =>
       $active
@@ -328,7 +328,7 @@ const AxisControls = styled.div`
   padding: 15px;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
@@ -338,7 +338,7 @@ const AxisControls = styled.div`
 
 const AxisButton = styled.button`
   background: rgb(var(--surface-inset) / 0.5);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 8px;
@@ -358,15 +358,15 @@ const AxisButton = styled.button`
   }
   
   &.x-axis {
-    color: #ff6b6b;
+    color: rgb(var(--error));
   }
   
   &.y-axis {
-    color: #59d4a0;
+    color: rgb(var(--success));
   }
   
   &.z-axis {
-    color: #4a9fff;
+    color: rgb(var(--info));
   }
 `;
 
@@ -382,7 +382,7 @@ const NodeInfoPanel = styled.div`
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   overflow-y: auto;
   transform: ${props => props.$visible ? 'translateX(0)' : 'translateX(320px)'};
   transition: transform 0.3s ease-in-out;
@@ -397,7 +397,7 @@ const CloseButton = styled.button`
   right: 15px;
   background: none;
   border: none;
-  color: rgb(var(--content-secondary));
+  color: rgb(var(--text-secondary));
   cursor: pointer;
   font-size: 18px;
   display: flex;
@@ -406,7 +406,7 @@ const CloseButton = styled.button`
   transition: color 0.2s ease;
   
   &:hover {
-    color: rgb(var(--content));
+    color: rgb(var(--text-primary));
   }
 `;
 
@@ -415,7 +415,7 @@ const NodeInfoTitle = styled.h3`
   margin-bottom: 15px;
   padding-bottom: 10px;
   font-size: 18px;
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   border-bottom: 1px solid rgb(var(--border-primary) / 0.3);
 `;
 
@@ -427,7 +427,7 @@ const NodeInfoSectionTitle = styled.h4`
   margin-top: 0;
   margin-bottom: 8px;
   font-size: 14px;
-  color: rgb(var(--content-secondary));
+  color: rgb(var(--text-secondary));
 `;
 
 const NodeInfoTable = styled.table`
@@ -445,12 +445,12 @@ const NodeInfoTable = styled.table`
   }
   
   td:first-child {
-    color: rgb(var(--content-secondary));
+    color: rgb(var(--text-secondary));
     width: 40%;
   }
   
   td:last-child {
-    color: rgb(var(--content));
+    color: rgb(var(--text-primary));
     width: 60%;
   }
 `;
@@ -489,14 +489,14 @@ const SearchInput = styled.input`
   border: none;
   outline: none;
   background: transparent;
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   min-width: 220px;
   font-size: 13px;
 `;
 
 const SearchBtn = styled.button`
   background: rgb(var(--surface-inset) / 0.5);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   border: 1px solid rgb(var(--border-primary) / 0.3);
   border-radius: 6px;
   padding: 6px 10px;
@@ -517,7 +517,7 @@ const HelpOverlayBackdrop = styled.div`
 
 const HelpOverlayCard = styled.div`
   background: rgb(var(--surface-overlay) / 0.96);
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
   padding: 20px;
   border-radius: 12px;
   width: 520px;
@@ -527,7 +527,7 @@ const HelpOverlayCard = styled.div`
 
 const HelpTitle = styled.h3`
   margin: 0 0 10px 0;
-  color: rgb(var(--content));
+  color: rgb(var(--text-primary));
 `;
 
 const HelpList = styled.ul`
@@ -552,6 +552,17 @@ const HelpKey = styled.code`
 // =============================================================================
 // Main Component
 // =============================================================================
+
+// Helper: read a CSS custom property (space-separated RGB) and return '#rrggbb'
+function cssVarToHex(varName, fallback = '#888888') {
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return fallback;
+    const [r, g, b] = raw.split(/\s+/).map(Number);
+    if ([r, g, b].some(v => isNaN(v))) return fallback;
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  } catch { return fallback; }
+}
 
 const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   // State variables
@@ -898,7 +909,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     if (node.id === hoverNode.id) return base;
     const neigh = neighborsMap.get(hoverNode.id);
     if (neigh && neigh.has(node.id)) return base;
-    return dark ? '#2a3342' : '#e5e7eb';
+    return cssVarToHex('--surface-inset', dark ? '#2a3342' : '#e5e7eb');
   }, [hoverNode, neighborsMap, dark]);
 
   // Generate node geometries based on node type
@@ -1056,7 +1067,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       const s = typeof link.source === 'object' ? link.source.id : link.source;
       const t = typeof link.target === 'object' ? link.target.id : link.target;
       if (s === hoverNode?.id || t === hoverNode?.id) return link.color;
-      return dark ? '#394556' : '#d1d5db';
+      return cssVarToHex('--border-primary', dark ? '#394556' : '#d1d5db');
     }
     
     // For solid links, generate a gradient color based on source and target generations
@@ -1074,15 +1085,16 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       const s = typeof link.source === 'object' ? link.source.id : link.source;
       const t = typeof link.target === 'object' ? link.target.id : link.target;
       if (s === hoverNode?.id || t === hoverNode?.id) return c;
-      return dark ? '#394556' : '#d1d5db';
+      return cssVarToHex('--border-primary', dark ? '#394556' : '#d1d5db');
     }
     
     // Fallback to provided color or default
+    const dimColor = cssVarToHex('--border-primary', dark ? '#394556' : '#d1d5db');
     if (!hoverNode) return link.color || '#ffffff';
     const s = typeof link.source === 'object' ? link.source.id : link.source;
     const t = typeof link.target === 'object' ? link.target.id : link.target;
     if (s === hoverNode?.id || t === hoverNode?.id) return link.color || '#ffffff';
-    return dark ? '#394556' : '#d1d5db';
+    return dimColor;
   }, [hoverNode, dark]);
 
   // =============================================================================
@@ -2131,7 +2143,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           </NodeInfoSection>
         ) : (
           <NodeInfoSection>
-            <p style={{ color: '#abb4c5', fontSize: '13px' }}>No additional data available</p>
+            <p style={{ color: 'rgb(var(--text-muted))', fontSize: '13px' }}>No additional data available</p>
           </NodeInfoSection>
         )}
       </NodeInfoPanel>
@@ -2193,7 +2205,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           linkDirectionalArrowLength={linkDirectionalArrowLength}
           linkColor={linkColor}
           linkOpacity={0.8}
-          backgroundColor={dark ? "#1a2130" : "#D6D1C7"}
+          backgroundColor={cssVarToHex('--surface-primary', dark ? '#1a1c2a' : '#D6D1C7')}
           linkDirectionalParticleSpeed={0.1}
           linkCurvature={link => link.type === 'dashed' ? 0.3 : 0}
           enableNodeDrag={!nodesLocked}
@@ -2215,8 +2227,8 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         <div style={{
           display: 'flex', justifyContent: 'center', alignItems: 'center',
           width: '100%', height: '100%',
-          backgroundColor: dark ? '#1a2130' : '#D6D1C7',
-          color: dark ? '#abb4c5' : '#64748b',
+          backgroundColor: 'rgb(var(--surface-primary))',
+          color: 'rgb(var(--text-muted))',
           fontSize: '14px',
         }}>
           Initializing 3D graph…
@@ -2363,8 +2375,8 @@ const NetworkViewerContainer = forwardRef(({ results, height }, ref) => {
           justifyContent: 'center', 
           alignItems: 'center', 
           height: '100%',
-          backgroundColor: dark ? '#121820' : '#D6D1C7',
-          color: dark ? '#abb4c5' : '#64748b',
+          backgroundColor: 'rgb(var(--surface-primary))',
+          color: 'rgb(var(--text-muted))',
           borderRadius: '8px'
         }}>
           No data available. Please select a reaction network.

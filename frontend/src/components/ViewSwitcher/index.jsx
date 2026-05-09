@@ -20,7 +20,7 @@ const ViewSwitcher = ({
   onSecondaryViewChange,
 }) => {
   return (
-    <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2">
+    <div data-tour="view-switcher" className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2">
       {/* Primary view tabs */}
       <div className="flex items-center gap-0.5 bg-surface-overlay/85 backdrop-blur-xl border border-brd/40 rounded-2xl p-1 shadow-lg shadow-brd/20">
         {VIEW_OPTIONS.map((v) => {
@@ -45,6 +45,7 @@ const ViewSwitcher = ({
         <div className="w-px h-5 bg-brd/60 mx-0.5" />
 
         <button
+          data-tour="split-btn"
           onClick={onToggleSplit}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
             isSplit

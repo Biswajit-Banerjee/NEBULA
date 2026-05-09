@@ -154,9 +154,7 @@ const ResultTable = ({
 
   // Get row background color based on pair colors
   const getRowStyles = (row) => {
-    const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-
-    const neutralBg = isDark ? 'rgba(255,255,255,0.05)' : 'white';
+    const neutralBg = 'rgb(var(--surface-secondary))';
 
     const colorForPair = (idx) => {
       const p = searchPairs[idx];

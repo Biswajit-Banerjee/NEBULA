@@ -91,7 +91,7 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
   return (
     <div 
       id={`domain-cell-${domain.domain_id}-${range.start}-${range.end}`}
-      className={`p-4 border rounded-lg transition-all duration-200 hover:shadow-md text-base min-w-[220px] sm:min-w-[260px] flex flex-col cursor-pointer
+      className={`p-5 border rounded-lg transition-all duration-200 hover:shadow-md text-base w-[280px] shrink-0 overflow-hidden flex flex-col cursor-pointer
         ${isSelected ? "ring-2 ring-brand bg-brand/10" : "hover:bg-surface-inset/50"}`}
       onClick={() => onClick && onClick(domain, range)}
     >
@@ -128,7 +128,7 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
         
         <div className="text-xs mt-1">
           <div className="text-content font-medium mb-1">Hierarchy:</div>
-          <div className="grid grid-cols-[auto,1fr] gap-x-1 gap-y-1">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-1 gap-y-1">
             <DomainBadge type="A" />
             <div className="truncate" title={architectureInfo}>{architectureInfo}</div>
             
@@ -188,7 +188,7 @@ const DomainGrid = ({
   };
 
   return (
-    <div className="flex gap-3 overflow-x-auto pt-2 pb-4">
+    <div className="flex gap-4 overflow-x-auto pt-2 pb-4 px-1">
       {sortedRanges.map((item, index) => (
         <DomainCell
           key={`domain-${item.domain.domain_id}-${item.range.start}-${index}`}
@@ -622,7 +622,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
           <div className="p-4 grid gap-6 md:grid-cols-2">
             {/* Left Column - Visualization */}
             {(!isSmallScreen || activeTab === "visualization") && (
-              <div className="space-y-4">
+              <div className="space-y-4 min-w-0">
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <h3 className="font-medium text-content text-lg">Protein Structure</h3>
@@ -633,7 +633,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                     /> */}
                   </div>
 
-                  <div className="relative" ref={containerRef}>
+                  <div className="relative">
                     <DomainVisualization
                       proteinData={proteinData}
                       selectedDomain={selectedDomain}
@@ -662,7 +662,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
 
             {/* Right Column - Domains Grid */}
             {(!isSmallScreen || activeTab === "domains") && (
-              <div className="space-y-4 self-end">
+              <div className="space-y-4 self-end min-w-0 overflow-x-hidden">
                 <div className="flex justify-between items-center">
                   <h3 className="font-medium text-content text-lg">Domain Information</h3>
                   <span className="text-xs text-content-secondary bg-surface-inset/60 px-2 py-1 rounded">
@@ -670,15 +670,13 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
                   </span>
                 </div>
 
-                <div className="overflow-x-auto overflow-y-auto max-h-[650px] pr-1.5 pb-1 pt-1">
-                  <DomainGrid 
-                    domains={proteinData.domains}
-                    proteinData={proteinData}
-                    selectedDomain={selectedDomain}
-                    selectedRange={selectedRange}
-                    onSelectDomain={handleSelectDomain}
-                  />
-                </div>
+                <DomainGrid 
+                  domains={proteinData.domains}
+                  proteinData={proteinData}
+                  selectedDomain={selectedDomain}
+                  selectedRange={selectedRange}
+                  onSelectDomain={handleSelectDomain}
+                />
               </div>
             )}
           </div>

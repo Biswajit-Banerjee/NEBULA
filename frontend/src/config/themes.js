@@ -100,7 +100,7 @@ export const THEMES = {
   'nebula-dark': {
     label: 'Nebula Dark',
     isDark: true,
-    swatch: { bg: '#1a1c2a', accent: '#a78bfa', text: '#cbd5e1' },
+    swatch: { bg: '#1a1c2a', accent: '#a78bfa', text: '#e2e8f0' },
     colors: {
       'surface-primary':   '26 28 42',
       'surface-secondary': '30 41 59',      // slate-800
@@ -108,9 +108,9 @@ export const THEMES = {
       'surface-overlay':   '30 41 59',
       'surface-inset':     '15 23 42',      // slate-900
 
-      'text-primary':   '203 213 225',      // slate-300
-      'text-secondary': '148 163 184',      // slate-400
-      'text-muted':     '100 116 139',      // slate-500
+      'text-primary':   '226 232 240',      // slate-200 — boosted for readability
+      'text-secondary': '178 190 205',      // slate-350 — boosted for readability
+      'text-muted':     '148 163 184',      // slate-400 — boosted from 500→400
       'text-inverse':   '15 23 42',         // slate-900
 
       'border-primary':   '51 65 85',       // slate-700
@@ -183,8 +183,8 @@ export const THEMES = {
       'surface-inset':     '33 34 44',      // slightly darker
 
       'text-primary':   '248 248 242',      // dracula fg
-      'text-secondary': '189 147 249',      // dracula purple (comments-ish)
-      'text-muted':     '98 114 164',       // dracula comment
+      'text-secondary': '207 176 255',      // dracula purple (brightened)
+      'text-muted':     '148 160 200',      // dracula comment (brightened for readability)
       'text-inverse':   '40 42 54',
 
       'border-primary':   '68 71 90',       // current line
@@ -330,9 +330,9 @@ export const THEMES = {
       'surface-overlay':   '7 54 66',
       'surface-inset':     '0 43 54',
 
-      'text-primary':   '131 148 150',      // base0
+      'text-primary':   '157 175 178',      // base0 brightened for readability
       'text-secondary': '147 161 161',      // base1
-      'text-muted':     '88 110 117',       // base01
+      'text-muted':     '131 148 150',      // base0 — boosted from base01 for readability
       'text-inverse':   '0 43 54',          // base03
 
       'border-primary':   '7 54 66',        // base02

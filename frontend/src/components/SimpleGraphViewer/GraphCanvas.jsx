@@ -418,6 +418,16 @@ const GraphCanvas = forwardRef(
 
       const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
+      // Read theme colors from CSS custom properties for canvas rendering
+      const _cs = getComputedStyle(document.documentElement);
+      const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
+      const themeTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
+      const themeTextSecondary = _rv('--text-secondary') || (dark ? '148,163,184' : '71,85,105');
+      const themeBorderPrimary = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
+      const themeSurfacePrimary = _rv('--surface-primary') || (dark ? '30,41,59' : '255,255,255');
+      const themeBrandPrimary = _rv('--brand-primary') || (dark ? '167,139,250' : '124,58,237');
+      const themeInfo = _rv('--info') || (dark ? '147,197,253' : '37,99,235');
+
       // Viewport culling
       const CULL_MARGIN = 60;
       const viewMinX = (-t.x) / t.k - CULL_MARGIN;
@@ -431,7 +441,7 @@ const GraphCanvas = forwardRef(
       const gridSpacing = 48;
       const effectiveGridColor = gridColor
         ? gridColor + "18"
-        : dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+        : `rgba(${themeBorderPrimary},0.09)`;
       ctx.save();
       ctx.strokeStyle = effectiveGridColor;
       ctx.lineWidth = 1 / t.k;
@@ -579,10 +589,7 @@ const GraphCanvas = forwardRef(
         ctx.lineTo(px - dirX * aSize * 0.45 - dirY * aSize * 0.55,
                    py - dirY * aSize * 0.45 + dirX * aSize * 0.55);
         ctx.closePath();
-        const edgeR = dark ? 140 : 160;
-        const edgeG = dark ? 160 : 170;
-        const edgeB = dark ? 190 : 185;
-        ctx.fillStyle = `rgba(${edgeR},${edgeG},${edgeB},${Math.min(alpha * 1.8, 0.95)})`;
+        ctx.fillStyle = `rgba(${themeBorderPrimary},${Math.min(alpha * 1.8, 0.95)})`;
         ctx.fill();
       };
 
@@ -637,11 +644,7 @@ const GraphCanvas = forwardRef(
           if (bbEdgeDim) alpha = Math.min(alpha, 0.04);
 
           // Clean muted color
-          const edgeR = dark ? 140 : 160;
-          const edgeG = dark ? 160 : 170;
-          const edgeB = dark ? 190 : 185;
-
-          ctx.strokeStyle = `rgba(${edgeR},${edgeG},${edgeB},${alpha})`;
+          ctx.strokeStyle = `rgba(${themeBorderPrimary},${alpha})`;
           ctx.lineWidth = isBright
             ? Math.max(1.4 / t.k, 0.9)
             : Math.max(0.5 / t.k, 0.35);
@@ -827,14 +830,12 @@ const GraphCanvas = forwardRef(
               ctx.textBaseline = "middle";
               // Background pill
               const tw = ctx.measureText(rxLabel).width + 6;
-              ctx.fillStyle = dark ? "rgba(30,41,59,0.75)" : "rgba(255,255,255,0.8)";
+              ctx.fillStyle = `rgba(${themeSurfacePrimary},0.8)`;
               const pillH = fs + 3;
               ctx.beginPath();
               ctx.roundRect(labelX - tw / 2, labelY - pillH / 2, tw, pillH, 3);
               ctx.fill();
-              ctx.fillStyle = dark
-                ? "rgba(200,210,230,0.92)"
-                : "rgba(60,70,90,0.88)";
+              ctx.fillStyle = `rgba(${themeTextSecondary},0.92)`;
               ctx.fillText(rxLabel, labelX, labelY);
               ctx.restore();
             }
@@ -983,7 +984,7 @@ const GraphCanvas = forwardRef(
         if (bbMatch && !bbDim) {
           ctx.save();
           const glowR = tex ? (SH * (tex._aspect || 1) / 2 + 8) : (R_COMPOUND + 8);
-          ctx.shadowColor = dark ? 'rgba(167,139,250,0.55)' : 'rgba(124,58,237,0.4)';
+          ctx.shadowColor = `rgba(${themeBrandPrimary},0.5)`;
           ctx.shadowBlur = 18;
           ctx.fillStyle = 'rgba(0,0,0,0)';
           ctx.beginPath();
@@ -1011,7 +1012,7 @@ const GraphCanvas = forwardRef(
         // Backbone match ring indicator
         if (bbMatch && !bbDim) {
           ctx.save();
-          ctx.strokeStyle = dark ? 'rgba(167,139,250,0.7)' : 'rgba(124,58,237,0.6)';
+          ctx.strokeStyle = `rgba(${themeBrandPrimary},0.65)`;
           ctx.lineWidth = Math.max(2 / t.k, 1.2);
           ctx.setLineDash([]);
           ctx.beginPath();
@@ -1046,10 +1047,10 @@ const GraphCanvas = forwardRef(
           if (bbLabelDim) ctx.globalAlpha = 0.1;
           else if (dimLabel) ctx.globalAlpha = 0.4;
           ctx.fillStyle = bbLabelMatch
-            ? (dark ? "#c4b5fd" : "#7c3aed")
+            ? `rgb(${themeBrandPrimary})`
             : isHl
-              ? (dark ? "#93C5FD" : "#2563EB")
-              : (dark ? "#94A3B8" : "#64748B");
+              ? `rgb(${themeInfo})`
+              : `rgb(${themeTextMuted})`;
           ctx.fillText(n.label ?? n.id, n.x, n.y + labelOffset);
           if (bbLabelDim || dimLabel) ctx.globalAlpha = 1;
         });
@@ -1689,8 +1690,12 @@ const GraphCanvas = forwardRef(
           pairCount.set(key, pairCount.get(key) + 1);
         });
 
-        const edgeR = dark ? 140 : 160, edgeG = dark ? 160 : 170, edgeB = dark ? 190 : 185;
-        const edgeCol = `rgb(${edgeR},${edgeG},${edgeB})`;
+        const _cs = getComputedStyle(document.documentElement);
+        const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
+        const svgBorder = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
+        const svgTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
+        const svgInfo = _rv('--info') || (dark ? '147,197,253' : '37,99,235');
+        const edgeCol = `rgb(${svgBorder})`;
 
         // ── Draw edges ──
         svg.push('<g fill="none" stroke-linecap="round" stroke-linejoin="round">');
@@ -1833,8 +1838,8 @@ const GraphCanvas = forwardRef(
           const isDimmed = highlightIds && !highlightIds.has(n.id);
           const opacity = isDimmed ? 0.4 : 1;
           const col = (highlightIds && highlightIds.has(n.id))
-            ? (dark ? '#93C5FD' : '#2563EB')
-            : (dark ? '#94A3B8' : '#64748B');
+            ? `rgb(${svgInfo})`
+            : `rgb(${svgTextMuted})`;
           svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" fill="${col}" opacity="${opacity}">${esc(n.label ?? n.id)}</text>`);
         });
         svg.push('</g>');

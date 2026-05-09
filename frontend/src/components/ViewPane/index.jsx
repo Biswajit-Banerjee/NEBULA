@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import ResultTable from '../ResultTable';
+import ViewTour from '../GuidedTour/ViewTour';
 
 const LazyNetworkViewer3D = lazy(() => import('../NetworkViewer'));
 const LazyNetworkViewer2D = lazy(() => import('../NetworkViewer2D'));
@@ -29,6 +30,8 @@ const ViewPane = ({
   treeData,
   treeStats,
   treeSolutions,
+  viewTourActive,
+  onViewTourClose,
 }) => {
   const containerRef = useRef(null);
   const [measuredHeight, setMeasuredHeight] = useState(0);
@@ -156,6 +159,9 @@ const ViewPane = ({
           </Suspense>
         </div>
       )}
+
+      {/* Per-view guided tour (controlled by help button popover in App) */}
+      <ViewTour viewId={viewType} active={viewTourActive} onClose={onViewTourClose} />
     </div>
   );
 };

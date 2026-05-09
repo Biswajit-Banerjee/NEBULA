@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Zap, HelpCircle } from "lucide-react";
+import { Zap, HelpCircle, Compass, BookOpen, Lightbulb } from "lucide-react";
 import { getApiUrl } from './config/api';
 
 import Logo from "./components/Logo";
@@ -8,6 +8,7 @@ import ViewSwitcher from "./components/ViewSwitcher";
 import ViewPane from "./components/ViewPane";
 import { filterCofactors } from "./components/utils/cofactorFilter";
 import DocsViewer from "./components/DocsViewer";
+import GuidedTour, { TOUR_SEEN_KEY } from "./components/GuidedTour";
 
 const SOLID_COLORS_PALETTE_APP = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#059669', '#D97706', '#DC2626', '#7C3AED'];
 
@@ -49,6 +50,44 @@ function App() {
 
   // Documentation viewer
   const [docsOpen, setDocsOpen] = useState(false);
+
+  // Guided tour
+  const [tourActive, setTourActive] = useState(false);
+  const [dockForceExpanded, setDockForceExpanded] = useState(false);
+  const [viewTourActive, setViewTourActive] = useState(false);
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false);
+  const helpMenuRef = useRef(null);
+
+  // Auto-show tour on first visit
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(TOUR_SEEN_KEY)) {
+        const timer = setTimeout(() => setTourActive(true), 800);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, []);
+
+  // Close help menu on outside click
+  useEffect(() => {
+    if (!helpMenuOpen) return;
+    const handler = (e) => {
+      if (helpMenuRef.current && !helpMenuRef.current.contains(e.target)) {
+        setHelpMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [helpMenuOpen]);
+
+  const handleStartTour = useCallback(() => setTourActive(true), []);
+  const handleEndTour = useCallback(() => {
+    setTourActive(false);
+    setDockForceExpanded(false);
+  }, []);
+  const handleTourExpandDock = useCallback(() => setDockForceExpanded(true), []);
+  const handleTourCollapseDock = useCallback(() => setDockForceExpanded(false), []);
+  const handleViewTourClose = useCallback(() => setViewTourActive(false), []);
 
   const ensureIdAndColorForPair = useCallback((pair, index) => {
     return {
@@ -454,14 +493,14 @@ function App() {
           {isSplit ? (
             <div className="flex h-full w-full">
               <div className="flex-1 min-w-0 h-full border-r border-brd/60">
-                <ViewPane viewType={activeView} {...sharedViewProps} />
+                <ViewPane viewType={activeView} {...sharedViewProps} viewTourActive={viewTourActive} onViewTourClose={handleViewTourClose} />
               </div>
               <div className="flex-1 min-w-0 h-full">
                 <ViewPane viewType={secondaryView} {...sharedViewProps} />
               </div>
             </div>
           ) : (
-            <ViewPane viewType={activeView} {...sharedViewProps} />
+            <ViewPane viewType={activeView} {...sharedViewProps} viewTourActive={viewTourActive} onViewTourClose={handleViewTourClose} />
           )}
         </div>
       )}
@@ -499,6 +538,8 @@ function App() {
         hideCofactors={hideCofactors}
         toggleHideCofactors={() => setHideCofactors(prev => !prev)}
         onClearResults={handleClearResults}
+        forceExpanded={dockForceExpanded}
+        onForceCollapse={handleTourCollapseDock}
       />
 
       {/* ── Error toast ── */}
@@ -543,8 +584,17 @@ function App() {
           <p className="text-content-secondary mb-8 max-w-lg text-base sm:text-lg leading-relaxed text-center">
             Explore the vast universe of metabolism. Map enzymes, trace reactions and unveil biochemical stories hidden within.
           </p>
-          <p className="text-sm text-content-muted italic">
-            Click the search bar above to begin
+          <div className="flex items-center gap-3 mb-2">
+            <button
+              onClick={handleStartTour}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-lg shadow-brand/25 hover:shadow-brand-hover/30 transition-all duration-200 hover:scale-105 active:scale-95"
+            >
+              <Compass className="w-4 h-4" />
+              Take a quick tour
+            </button>
+          </div>
+          <p className="text-xs text-content-muted">
+            or click the search bar above to dive right in
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
             {[
@@ -574,17 +624,66 @@ function App() {
         />
       )}
 
-      {/* ── Help button (bottom-right) ── */}
-      <button
-        onClick={() => setDocsOpen(true)}
-        className="fixed bottom-4 right-4 z-40 w-10 h-10 rounded-full bg-brand hover:bg-brand-hover text-content-inverse shadow-lg shadow-brand/25 hover:shadow-brand-hover/30 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
-        title="Help & Documentation"
-      >
-        <HelpCircle className="w-5 h-5" />
-      </button>
+      {/* ── Help button with popover (bottom-right) ── */}
+      <div ref={helpMenuRef} className="fixed bottom-4 right-4 z-40" data-tour="help-btn">
+        {/* Popover menu */}
+        {helpMenuOpen && (
+          <div className="absolute bottom-12 right-0 mb-1 w-48
+            bg-surface-overlay/95 backdrop-blur-2xl border border-brd/50
+            rounded-xl shadow-2xl shadow-black/20 overflow-hidden
+            animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
+            {hasResults && (
+              <button
+                onClick={() => {
+                  setHelpMenuOpen(false);
+                  setViewTourActive(true);
+                }}
+                className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[12px] font-medium
+                  text-content-secondary hover:text-brand hover:bg-brand/5 transition-all"
+              >
+                <Lightbulb className="w-4 h-4" />
+                Quick Help
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setHelpMenuOpen(false);
+                setDocsOpen(true);
+              }}
+              className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[12px] font-medium
+                text-content-secondary hover:text-brand hover:bg-brand/5 transition-all"
+            >
+              <BookOpen className="w-4 h-4" />
+              Documentation
+            </button>
+          </div>
+        )}
+        {/* Trigger button */}
+        <button
+          onClick={() => setHelpMenuOpen(prev => !prev)}
+          className="w-10 h-10 rounded-full bg-brand hover:bg-brand-hover text-content-inverse shadow-lg shadow-brand/25 hover:shadow-brand-hover/30 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
+          title="Help"
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
+      </div>
 
       {/* ── Documentation Viewer ── */}
       <DocsViewer isOpen={docsOpen} onClose={() => setDocsOpen(false)} initialSlug={hasResults ? activeView : null} />
+
+      {/* ── Guided Tour ── */}
+      <GuidedTour
+        active={tourActive}
+        onEnd={handleEndTour}
+        isLoading={loading}
+        hasResults={hasResults}
+        expandDock={handleTourExpandDock}
+        collapseDock={handleTourCollapseDock}
+        onSearch={handleMultiSearch}
+        onViewChange={handleActiveViewChange}
+        onSetSplit={setIsSplit}
+        onSetSecondaryView={setSecondaryView}
+      />
     </div>
   );
 }

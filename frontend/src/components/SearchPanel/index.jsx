@@ -134,7 +134,7 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
                       className="w-full h-2 rounded-lg appearance-none accent-brand"
                       style={{
                         backgroundImage: `linear-gradient(to right, ${tempColor}00 0%, ${tempColor}${Math.round(tempAlpha*255).toString(16).padStart(2,'0')} 100%)`,
-                        backgroundColor: 'var(--color-brd)'
+                        backgroundColor: 'rgb(var(--border-primary))'
                       }}
                     />
                   </div>

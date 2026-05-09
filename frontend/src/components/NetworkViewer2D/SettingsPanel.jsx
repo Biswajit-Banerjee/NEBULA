@@ -259,8 +259,8 @@ const SettingsPanel = ({
 
             <div className="h-px bg-brd/60 my-1" />
 
-            <ColorInput label="Background" value={bgColor} onChange={setBgColor} defaultColor="rgb(var(--surface))" />
-            <ColorInput label="Grid lines" value={gridColor} onChange={setGridColor} defaultColor="rgb(var(--brd))" />
+            <ColorInput label="Background" value={bgColor} onChange={setBgColor} defaultColor="rgb(var(--surface-primary))" />
+            <ColorInput label="Grid lines" value={gridColor} onChange={setGridColor} defaultColor="rgb(var(--border-primary))" />
           </div>
 
           <div className="h-px bg-brd/60" />

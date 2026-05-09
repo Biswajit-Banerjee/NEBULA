@@ -74,6 +74,17 @@
     --ring:      139 92 246;
   }
 
+  /* ── Aliases: map shorthand var names to actual theme tokens ──
+     Some styled-components and inline styles may reference these shorter
+     names.  They're computed from the real tokens so every theme works. */
+  :root {
+    --content:           var(--text-primary);
+    --content-secondary:  var(--text-secondary);
+    --content-muted:      var(--text-muted);
+    --content-inverse:    var(--text-inverse);
+    --surface:            var(--surface-primary);
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

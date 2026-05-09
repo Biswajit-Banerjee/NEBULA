@@ -34,6 +34,8 @@ const FloatingDock = ({
   hideCofactors,
   toggleHideCofactors,
   onClearResults,
+  forceExpanded,
+  onForceCollapse,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [compoundData, setCompoundData] = useState([]);
@@ -63,7 +65,7 @@ const FloatingDock = ({
       setExpanded(false);
     };
     const onEscape = (e) => {
-      if (e.key === 'Escape') setExpanded(false);
+      if (e.key === 'Escape' && !forceExpanded) setExpanded(false);
     };
     document.addEventListener('mousedown', onClickOutside);
     window.addEventListener('keydown', onEscape);
@@ -181,7 +183,7 @@ const FloatingDock = ({
       <div className="pointer-events-auto">
 
         {/* ── Top bar ── */}
-        <div className={`flex items-center gap-1.5 bg-surface-overlay/88 backdrop-blur-2xl border border-brd/50 px-2.5 py-1.5 shadow-lg shadow-brd/20 transition-all duration-200 ${expanded ? 'rounded-t-2xl rounded-b-none border-b-0' : 'rounded-2xl'}`}>
+        <div data-tour="dock-bar" className={`flex items-center gap-1.5 bg-surface-overlay/88 backdrop-blur-2xl border border-brd/50 px-2.5 py-1.5 shadow-lg shadow-brd/20 transition-all duration-200 ${(expanded || forceExpanded) ? 'rounded-t-2xl rounded-b-none border-b-0' : 'rounded-2xl'}`}>
           {/* Logo – click to return home */}
           <button
             onClick={hasResults && onClearResults ? onClearResults : undefined}
@@ -204,7 +206,7 @@ const FloatingDock = ({
             <span className="text-sm text-content-secondary group-hover:text-content transition-colors truncate">
               {isLoading ? 'Searching…' : summaryText}
             </span>
-            <ChevronUp className={`w-3.5 h-3.5 text-content-muted flex-shrink-0 transition-transform duration-200 ${expanded ? '' : 'rotate-180'}`} />
+            <ChevronUp className={`w-3.5 h-3.5 text-content-muted flex-shrink-0 transition-transform duration-200 ${(expanded || forceExpanded) ? '' : 'rotate-180'}`} />
           </button>
 
           {/* Separator */}
@@ -234,7 +236,7 @@ const FloatingDock = ({
           )}
 
           {/* Import */}
-          <label className={`p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all cursor-pointer flex-shrink-0 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
+          <label data-tour="dock-actions" className={`p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all cursor-pointer flex-shrink-0 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
             <Upload className="w-4 h-4" />
             <input type="file" accept=".json" onChange={onImportSession} className="hidden" disabled={isLoading} />
           </label>
@@ -253,8 +255,8 @@ const FloatingDock = ({
         </div>
 
         {/* ── Expanded search panel ── */}
-        {expanded && (
-          <div className="bg-surface-overlay/92 backdrop-blur-2xl border border-t-0 border-brd/50 rounded-b-2xl shadow-xl shadow-brd/15">
+        {(expanded || forceExpanded) && (
+          <div data-tour="dock-expanded" className="bg-surface-overlay/92 backdrop-blur-2xl border border-t-0 border-brd/50 rounded-b-2xl shadow-xl shadow-brd/15">
             <div className="px-3 pt-2 pb-3 space-y-2">
 
               {searchPairs.map((pair, index) => {

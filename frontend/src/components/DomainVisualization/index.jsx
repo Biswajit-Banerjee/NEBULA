@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 const DomainVisualization = ({ 
   proteinData, 
@@ -41,21 +41,29 @@ const DomainVisualization = ({
     return { min, max };
   };
 
+  const vizRef = useRef(null);
+
+  const updateScale = useCallback(() => {
+    const el = vizRef.current;
+    if (!el) return;
+    const { min, max } = findSequenceBounds();
+    const sequenceLength = max - min;
+    if (sequenceLength <= 0) return;
+    const availableWidth = el.offsetWidth - 48;
+    if (availableWidth <= 0) return;
+    setScale(availableWidth / sequenceLength);
+  }, [proteinData, setScale]);
+
   useEffect(() => {
-    const updateScale = () => {
-      if (containerRef.current) {
-        const { min, max } = findSequenceBounds();
-        const sequenceLength = max - min;
-        const containerWidth = containerRef.current.offsetWidth - 48;
-        const newScale = containerWidth / sequenceLength;
-        setScale(newScale);
-      }
-    };
+    const el = vizRef.current;
+    if (!el) return;
 
     updateScale();
-    window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
-  }, [proteinData, containerRef, setScale]);
+
+    const ro = new ResizeObserver(() => updateScale());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateScale]);
 
   const { min: minPosition, max: maxPosition } = findSequenceBounds();
 
@@ -65,9 +73,9 @@ const DomainVisualization = ({
 
   return (
     <div className="mt-2" ref={containerRef}>
-      <div className="relative h-24 bg-surface-inset/60 rounded p-4">
+      <div className="relative h-24 bg-surface-inset/60 rounded px-6 py-4 overflow-visible" ref={vizRef}>
         {/* Base protein line */}
-        <div className="absolute top-8 left-4 h-1 bg-brd" style={{ width: 'calc(100% - 2rem)' }} />
+        <div className="absolute top-8 h-1 bg-brd" style={{ left: '24px', width: 'calc(100% - 48px)' }} />
 
         {/* Domains */}
         {proteinData?.domains?.map((domain, idx) => (
@@ -133,7 +141,7 @@ const DomainVisualization = ({
         })}
 
         {/* Domain range scale */}
-        <div className="absolute bottom-0 left-4 right-4 text-xs text-content-secondary">
+        <div className="absolute bottom-0 left-6 right-6 text-xs text-content-secondary">
           <div className="absolute -bottom-4 left-0">{minPosition}</div>
           <div className="absolute -bottom-4 right-0">{maxPosition}</div>
         </div>

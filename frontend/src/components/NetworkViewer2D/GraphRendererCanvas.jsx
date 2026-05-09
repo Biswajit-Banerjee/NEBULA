@@ -197,6 +197,15 @@ const GraphRendererCanvas = forwardRef(
       // ── O(1) node lookup map for all link/overlay drawing ──
       const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
+      // Read theme colors from CSS custom properties for canvas rendering
+      const _cs = getComputedStyle(document.documentElement);
+      const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
+      const themeTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
+      const themeTextPrimary = _rv('--text-primary') || (dark ? '203,213,225' : '55,65,81');
+      const themeBorderPrimary = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
+      const themeInfoColor = _rv('--info') || (dark ? '96,165,250' : '59,130,246');
+      const themeBrandColor = _rv('--brand-primary') || (dark ? '196,181,253' : '139,92,246');
+
       // ── Visible bounds in world coords (for viewport culling) ──
       const CULL_MARGIN = 60; // px margin around viewport
       const viewMinX = (-t.x) / t.k - CULL_MARGIN;
@@ -214,7 +223,7 @@ const GraphRendererCanvas = forwardRef(
       const gridSpacing = nodeGridSize;
       const effectiveGridColor = gridColor
         ? gridColor + '18' // user color with ~10% opacity (hex alpha)
-        : dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+        : `rgba(${themeBorderPrimary},0.09)`;
 
       ctx.save();
       ctx.strokeStyle = effectiveGridColor;
@@ -245,7 +254,7 @@ const GraphRendererCanvas = forwardRef(
       /* ---------------------------------------------------------- */
       if (genMapRef.current.length > 0) {
         ctx.save();
-        const colLabelColor = dark ? "rgba(148,163,184,0.45)" : "rgba(100,116,139,0.35)";
+        const colLabelColor = `rgba(${themeTextMuted},0.4)`;
         ctx.font = `bold 9px "Inter", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
@@ -528,7 +537,7 @@ const GraphRendererCanvas = forwardRef(
         // Highlighted node (hovered or pinned) gets a soft glow ring
         if (isHighlighted) {
           ctx.save();
-          ctx.strokeStyle = dark ? "rgba(96,165,250,0.6)" : "rgba(59,130,246,0.5)";
+          ctx.strokeStyle = `rgba(${themeInfoColor},0.55)`;
           ctx.lineWidth = 3;
           ctx.beginPath();
           if (n.type === "compound") ctx.arc(n.x, n.y, R_COMPOUND + 4, 0, Math.PI * 2);
@@ -586,7 +595,7 @@ const GraphRendererCanvas = forwardRef(
           let label = n.label ?? n.id;
           if (/reaction-/.test(n.type)) label = label.split("_")[0];
 
-          ctx.fillStyle = dark ? "#CBD5E1" : "#374151";
+          ctx.fillStyle = `rgb(${themeTextPrimary})`;
           ctx.fillText(label, n.x, n.y);
         });
       }
@@ -998,6 +1007,11 @@ const GraphRendererCanvas = forwardRef(
 
         // Links – use Map for O(1) lookups
         const svgNodeMap = new Map(nodes.map((n) => [n.id, n]));
+        const _svgCs = getComputedStyle(document.documentElement);
+        const _svgRv = (v) => { const r = _svgCs.getPropertyValue(v).trim(); if (!r) return null; const p = r.split(/\s+/).map(Number); return p.some(isNaN) ? null : '#' + p.map(c => c.toString(16).padStart(2,'0')).join(''); };
+        const svgBrandHex = _svgRv('--brand-primary') || (dark ? '#c4b5fd' : '#8B5CF6');
+        const svgBorderHex = _svgRv('--border-secondary') || (dark ? '#CBD5E1' : '#9CA3AF');
+        const svgTextHex = _svgRv('--text-primary') || (dark ? '#1E293B' : '#374151');
         visibleLinks.forEach((l) => {
           const sId = l.source?.id || l.source;
           const tId = l.target?.id || l.target;
@@ -1009,9 +1023,8 @@ const GraphRendererCanvas = forwardRef(
           else if (l.type === 'reaction') dash = '6 4';
 
           let stroke;
-          if (l.type && l.type.startsWith('ec')) stroke = dark ? '#c4b5fd' : '#8B5CF6';
-          else if (l.type === 'reaction') stroke = dark ? '#CBD5E1' : '#9CA3AF';
-          else stroke = dark ? '#CBD5E1' : '#9CA3AF';
+          if (l.type && l.type.startsWith('ec')) stroke = svgBrandHex;
+          else stroke = svgBorderHex;
 
           svgParts.push(`<line x1="${src.x}" y1="${src.y}" x2="${trg.x}" y2="${trg.y}" stroke="${stroke}" stroke-width="1" stroke-linecap="round" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`);
         });
@@ -1030,7 +1043,7 @@ const GraphRendererCanvas = forwardRef(
           // label
           let label = n.label ?? n.id;
           if (/reaction-/.test(n.type)) label = label.split('_')[0];
-          const textColor = dark ? '#1E293B' : '#374151';
+          const textColor = svgTextHex;
           svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="${textColor}" font-family="Inter, sans-serif">${label}</text>`);
         });
 

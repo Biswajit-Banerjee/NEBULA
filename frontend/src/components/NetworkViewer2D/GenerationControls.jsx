@@ -179,7 +179,7 @@ const GenerationControls = ({
                 <select
                   value={transitionSpeed}
                   onChange={(e) => setTransitionSpeed(parseInt(e.target.value))}
-                  className="text-[10px] font-semibold bg-transparent border-none
+                  className="text-[10px] font-semibold bg-surface-overlay border-none
                     text-content-secondary cursor-pointer outline-none
                     appearance-none pr-0.5"
                 >
