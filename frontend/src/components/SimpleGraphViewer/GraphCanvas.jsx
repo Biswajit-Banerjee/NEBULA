@@ -18,6 +18,20 @@ import SmilesDrawer from "smiles-drawer";
 
 const R_COMPOUND = 14;
 
+const _edgeKey = (l) => {
+  const s = l.source?.id || l.source;
+  const t = l.target?.id || l.target;
+  return `${s}||${t}||${l.reactionId || l.label || ''}`;
+};
+
+const _distToSeg = (px, py, ax, ay, bx, by) => {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  const tt = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + tt * dx), py - (ay + tt * dy));
+};
+
 const GraphCanvas = forwardRef(
   (
     {
@@ -36,6 +50,7 @@ const GraphCanvas = forwardRef(
       edgeStyle = "curved",
       pruneEdges = true,
       nodeDisplay = "circle",
+      showNames = false,
       keggLayout = false,
       keggOrthoEdges = false,
       backboneMatchIds = null,
@@ -59,11 +74,18 @@ const GraphCanvas = forwardRef(
     const structTexRef = useRef(new Map());  // Map<compoundId, OffscreenCanvas>
     const nodeDisplayRef = useRef(nodeDisplay);
     nodeDisplayRef.current = nodeDisplay;
+    const compoundNamesRef = useRef(new Map()); // Map<compoundId, name string>
+    const showNamesRef = useRef(showNames);
+    showNamesRef.current = showNames;
     const keggPositionsRef = useRef(null);   // { compoundId: {x, y} } from KEGG map
     const prevKeggLayoutRef = useRef(false);
     const keggOrthoEdgesRef = useRef(null);  // [{points, color, name, reaction}, ...] from KEGG map
+    const localEditsRef = useRef({ deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] });
+    const [ctxMenu, setCtxMenu] = useState(null); // { x, y, type:'node'|'edge', nodeId?, link? }
 
     const [graph, setGraph] = useState({ nodes: [], links: [] });
+    const graphRef = useRef({ nodes: [], links: [] });
+    graphRef.current = graph;
 
     // Sync pinned → selectedNodes state
     const syncSelection = useCallback(() => {
@@ -386,6 +408,41 @@ const GraphCanvas = forwardRef(
       return () => { cancelled = true; };
     }, [graph.nodes, nodeDisplay, dark]);
 
+    /* ── Fetch compound names ── */
+    useEffect(() => {
+      if (!showNames || !graph.nodes.length) return;
+      let cancelled = false;
+
+      const compoundIds = graph.nodes
+        .filter(n => n.type === 'compound' || !n.type)
+        .map(n => n.id)
+        .filter(id => /^[CZ]\d{5}$/.test(id))
+        .filter(id => !compoundNamesRef.current.has(id));
+
+      if (compoundIds.length === 0) return;
+
+      (async () => {
+        try {
+          const resp = await fetch(getApiUrl('compound-names'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ compound_ids: compoundIds }),
+          });
+          if (!resp.ok || cancelled) return;
+          const { names } = await resp.json();
+          if (cancelled) return;
+          Object.entries(names || {}).forEach(([id, name]) => {
+            if (name) compoundNamesRef.current.set(id, name);
+          });
+          drawRef.current?.(nodesRef.current);
+        } catch (e) {
+          console.warn('[NEBULA] Compound name fetch failed:', e);
+        }
+      })();
+
+      return () => { cancelled = true; };
+    }, [graph.nodes, showNames]);
+
     /* ── Max generation for color scaling ── */
     const maxGeneration = React.useMemo(() => {
       let mg = 0;
@@ -416,7 +473,13 @@ const GraphCanvas = forwardRef(
       ctx.translate(t.x, t.y);
       ctx.scale(t.k, t.k);
 
-      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      const { deletedNodes, deletedEdges, addedEdges } = localEditsRef.current;
+      const drawNodes = nodes.filter(n => !deletedNodes.has(n.id));
+      const drawLinks = [
+        ...graph.links.filter(l => !deletedEdges.has(_edgeKey(l))),
+        ...addedEdges,
+      ];
+      const nodeMap = new Map(drawNodes.map(n => [n.id, n]));
 
       // Read theme colors from CSS custom properties for canvas rendering
       const _cs = getComputedStyle(document.documentElement);
@@ -470,7 +533,7 @@ const GraphCanvas = forwardRef(
       /* ── Edges ── */
       const visibleEdges = [];
       const linksByNode = new Map();
-      graph.links.forEach(l => {
+      drawLinks.forEach(l => {
         const srcId = l.source?.id || l.source;
         const trgId = l.target?.id || l.target;
         const src = nodeMap.get(srcId);
@@ -493,7 +556,7 @@ const GraphCanvas = forwardRef(
       // Expand highlight to include direct neighbors of selected nodes
       const highlightIds = new Set(selectedIds);
       if (selectedIds.size > 0) {
-        graph.links.forEach(l => {
+        drawLinks.forEach(l => {
           const sId = l.source?.id || l.source;
           const tId = l.target?.id || l.target;
           if (selectedIds.has(sId)) highlightIds.add(tId);
@@ -643,12 +706,15 @@ const GraphCanvas = forwardRef(
           let alpha = isBright ? brightAlpha : dimAlpha;
           if (bbEdgeDim) alpha = Math.min(alpha, 0.04);
 
+          // Bridge edges (from node deletion) drawn dashed
+          if (link._isBridge) ctx.setLineDash([4 / t.k, 4 / t.k]);
+          else ctx.setLineDash([]);
+
           // Clean muted color
           ctx.strokeStyle = `rgba(${themeBorderPrimary},${alpha})`;
           ctx.lineWidth = isBright
             ? Math.max(1.4 / t.k, 0.9)
             : Math.max(0.5 / t.k, 0.35);
-          ctx.setLineDash([]);
 
           // Parallel edge offset
           const pKey = [src.id, trg.id].sort().join('||');
@@ -842,10 +908,11 @@ const GraphCanvas = forwardRef(
           }
         });
       }
+      ctx.setLineDash([]);
 
       /* ── Path overlay (pair highlighting) ── */
       if (showOverlay) {
-        graph.links.forEach(l => {
+        drawLinks.forEach(l => {
           if (!l.pairIndices || l.pairIndices.length === 0) return;
           const srcId = l.source?.id || l.source;
           const trgId = l.target?.id || l.target;
@@ -871,7 +938,7 @@ const GraphCanvas = forwardRef(
           });
         });
 
-        nodes.forEach(n => {
+        drawNodes.forEach(n => {
           if (!n.pairIndices || n.pairIndices.length === 0) return;
           if (!inView(n.x, n.y)) return;
           n.pairIndices.forEach(pi => {
@@ -892,7 +959,7 @@ const GraphCanvas = forwardRef(
       if (keggOrthoEdges && keggOrthoEdgesRef.current) {
         // Collect reaction IDs present in the current graph
         const graphRxnIds = new Set();
-        graph.links.forEach(l => {
+        drawLinks.forEach(l => {
           if (l.reactionId) graphRxnIds.add(l.reactionId);
           if (l.reactions) l.reactions.forEach(r => { if (r.id) graphRxnIds.add(r.id); });
         });
@@ -937,7 +1004,7 @@ const GraphCanvas = forwardRef(
       /* ── Nodes ── */
       const degMap = new Map();
       if (colorMode === "degree") {
-        graph.links.forEach(l => {
+        drawLinks.forEach(l => {
           const sId = l.source?.id || l.source;
           const tId = l.target?.id || l.target;
           degMap.set(sId, (degMap.get(sId) || 0) + 1);
@@ -968,7 +1035,7 @@ const GraphCanvas = forwardRef(
       const SH = STRUCT_WORLD_H; // world height
       const halfH = SH / 2;
 
-      nodes.forEach(n => {
+      drawNodes.forEach(n => {
         if (!inView(n.x, n.y)) return;
         const isHighlighted = highlightIds.has(n.id);
         const dimmed = hasHighlight && !isHighlighted;
@@ -1038,7 +1105,7 @@ const GraphCanvas = forwardRef(
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         const labelOffset = useStructures ? halfH + 3 : R_COMPOUND + 3;
-        nodes.forEach(n => {
+        drawNodes.forEach(n => {
           if (!inView(n.x, n.y)) return;
           const isHl = highlightIds.has(n.id);
           const dimLabel = hasHighlight && !isHl;
@@ -1051,13 +1118,16 @@ const GraphCanvas = forwardRef(
             : isHl
               ? `rgb(${themeInfo})`
               : `rgb(${themeTextMuted})`;
-          ctx.fillText(n.label ?? n.id, n.x, n.y + labelOffset);
+          const displayLabel = showNames
+            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+            : (n.label ?? n.id);
+          ctx.fillText(displayLabel, n.x, n.y + labelOffset);
           if (bbLabelDim || dimLabel) ctx.globalAlpha = 1;
         });
       }
 
       ctx.restore();
-    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, keggOrthoEdges, backboneMatchIds]);
+    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggOrthoEdges, backboneMatchIds]);
 
     drawRef.current = draw;
     syncSelectionRef.current = syncSelection;
@@ -1374,7 +1444,7 @@ const GraphCanvas = forwardRef(
       let didDrag = false;
 
       const hitTest = (mx, my) => {
-        const nodes = nodesRef.current;
+        const nodes = nodesRef.current.filter(n => !localEditsRef.current.deletedNodes.has(n.id));
         const useStruct = nodeDisplayRef.current === 'structure';
         for (let i = nodes.length - 1; i >= 0; i--) {
           const n = nodes[i];
@@ -1482,6 +1552,82 @@ const GraphCanvas = forwardRef(
         window.removeEventListener("pointermove", pointermove);
         window.removeEventListener("pointerup", pointerup);
       };
+    }, []);
+
+    /* ── Right-click context menu ── */
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const handleContextMenu = (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const tr = transformRef.current;
+        const mx = (e.clientX - rect.left - tr.x) / tr.k;
+        const my = (e.clientY - rect.top  - tr.y) / tr.k;
+
+        // Hit-test nodes first
+        const nodes = nodesRef.current.filter(n => !localEditsRef.current.deletedNodes.has(n.id));
+        const useStruct = nodeDisplayRef.current === 'structure';
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          const n = nodes[i];
+          let hit = false;
+          if (useStruct && structTexRef.current.has(n.id)) {
+            const tex = structTexRef.current.get(n.id);
+            const hh = STRUCT_WORLD_H / 2;
+            const hw = hh * (tex._aspect || 1);
+            hit = Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh;
+          } else {
+            hit = (mx - n.x) ** 2 + (my - n.y) ** 2 < (R_COMPOUND + 6) ** 2;
+          }
+          if (hit) {
+            setCtxMenu({ x: e.clientX, y: e.clientY, type: 'node', nodeId: n.id });
+            return;
+          }
+        }
+
+        // Hit-test edges — check straight line + L-shape + Z-shape paths
+        // (orthogonal routing can place the actual drawn path far from the straight line)
+        const edits = localEditsRef.current;
+        const nodeMap = new Map(nodes.map(n => [n.id, n]));
+        const allLinks = [
+          ...graphRef.current.links.filter(l => !edits.deletedEdges.has(_edgeKey(l))),
+          ...edits.addedEdges,
+        ];
+        const threshold = 12 / tr.k; // ~12 screen-pixel tolerance in world units
+        const _edgeHit = (px, py, ax, ay, bx, by) => _distToSeg(px, py, ax, ay, bx, by) < threshold;
+        let bestLink = null, bestDist = Infinity;
+        for (const l of allLinks) {
+          const src = nodeMap.get(l.source?.id || l.source);
+          const tgt = nodeMap.get(l.target?.id || l.target);
+          if (!src || !tgt) continue;
+          const mx2 = (src.x + tgt.x) / 2, my2 = (src.y + tgt.y) / 2;
+          // Check: straight line, L-shape 1 (H then V), L-shape 2 (V then H),
+          //        Z-shape 1 (H, V, H), Z-shape 2 (V, H, V)
+          const hit =
+            _edgeHit(mx, my, src.x, src.y, tgt.x, tgt.y) ||
+            _edgeHit(mx, my, src.x, src.y, tgt.x, src.y) ||
+            _edgeHit(mx, my, tgt.x, src.y, tgt.x, tgt.y) ||
+            _edgeHit(mx, my, src.x, src.y, src.x, tgt.y) ||
+            _edgeHit(mx, my, src.x, tgt.y, tgt.x, tgt.y) ||
+            _edgeHit(mx, my, src.x, src.y, mx2, src.y) ||
+            _edgeHit(mx, my, mx2, src.y, mx2, tgt.y) ||
+            _edgeHit(mx, my, mx2, tgt.y, tgt.x, tgt.y);
+          if (hit) {
+            const d = _distToSeg(mx, my, src.x, src.y, tgt.x, tgt.y);
+            if (d < bestDist) { bestDist = d; bestLink = l; }
+          }
+        }
+        if (bestLink) {
+          setCtxMenu({ x: e.clientX, y: e.clientY, type: 'edge', link: bestLink });
+          return;
+        }
+
+        setCtxMenu(null);
+      };
+
+      canvas.addEventListener('contextmenu', handleContextMenu);
+      return () => canvas.removeEventListener('contextmenu', handleContextMenu);
     }, []);
 
     /* ── Imperative API ── */
@@ -1840,7 +1986,12 @@ const GraphCanvas = forwardRef(
           const col = (highlightIds && highlightIds.has(n.id))
             ? `rgb(${svgInfo})`
             : `rgb(${svgTextMuted})`;
-          svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" fill="${col}" opacity="${opacity}">${esc(n.label ?? n.id)}</text>`);
+          const svgLabel = nodeDisplayRef.current === 'structure'
+            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+            : showNamesRef.current
+              ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+              : (n.label ?? n.id);
+          svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" fill="${col}" opacity="${opacity}">${esc(svgLabel)}</text>`);
         });
         svg.push('</g>');
 
@@ -1949,8 +2100,76 @@ const GraphCanvas = forwardRef(
       },
     }));
 
+    /* ── Reset local edits when graph source data changes ── */
+    useEffect(() => {
+      localEditsRef.current = { deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] };
+    }, [graph]);
+
+    /* ── Delete handlers ── */
+    const _currentLinks = () => {
+      const edits = localEditsRef.current;
+      return [
+        ...graphRef.current.links.filter(l => !edits.deletedEdges.has(_edgeKey(l))),
+        ...edits.addedEdges,
+      ];
+    };
+
+    const handleDeleteEdge = (link) => {
+      localEditsRef.current.deletedEdges.add(_edgeKey(link));
+      setCtxMenu(null);
+      drawRef.current?.(nodesRef.current);
+    };
+
+    const handleDeleteIncoming = (nodeId) => {
+      const edits = localEditsRef.current;
+      _currentLinks().forEach(l => {
+        if ((l.target?.id || l.target) === nodeId) edits.deletedEdges.add(_edgeKey(l));
+      });
+      setCtxMenu(null);
+      drawRef.current?.(nodesRef.current);
+    };
+
+    const handleDeleteOutgoing = (nodeId) => {
+      const edits = localEditsRef.current;
+      _currentLinks().forEach(l => {
+        if ((l.source?.id || l.source) === nodeId) edits.deletedEdges.add(_edgeKey(l));
+      });
+      setCtxMenu(null);
+      drawRef.current?.(nodesRef.current);
+    };
+
+    const handleDeleteNode = (nodeId) => {
+      const edits = localEditsRef.current;
+      const currentLinks = _currentLinks();
+      const preds = new Set();
+      const succs = new Set();
+      currentLinks.forEach(l => {
+        const s = l.source?.id || l.source;
+        const t = l.target?.id || l.target;
+        if (t === nodeId && !edits.deletedNodes.has(s)) preds.add(s);
+        if (s === nodeId && !edits.deletedNodes.has(t)) succs.add(t);
+      });
+      preds.forEach(p => {
+        succs.forEach(s => {
+          if (p === s) return;
+          const bridge = { source: p, target: s, reactionId: `bridge_${p}_${s}`, label: '', _isBridge: true };
+          const bKey = _edgeKey(bridge);
+          const alreadyExists = edits.addedEdges.some(e => _edgeKey(e) === bKey)
+            || currentLinks.some(e => (e.source?.id || e.source) === p && (e.target?.id || e.target) === s);
+          if (!alreadyExists) edits.addedEdges.push(bridge);
+        });
+      });
+      edits.deletedNodes.add(nodeId);
+      setCtxMenu(null);
+      drawRef.current?.(nodesRef.current);
+    };
+
+    const ctxNodeLabel = ctxMenu?.type === 'node'
+      ? (compoundNamesRef.current.get(ctxMenu.nodeId) ?? ctxMenu.nodeId ?? '')
+      : null;
+
     return (
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full" onClick={() => setCtxMenu(null)}>
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", cursor: "grab" }} />
         <NodeInfoPanel
           selectedNodes={selectedNodes}
@@ -1958,6 +2177,47 @@ const GraphCanvas = forwardRef(
           onDeselectNode={handleDeselectNode}
           nodeReactionsMap={nodeReactionsMap}
         />
+        {ctxMenu && (
+          <div
+            className="absolute z-50 min-w-[160px] rounded-lg border border-border-primary bg-surface-primary shadow-lg py-1 text-[12px]"
+            style={{ left: ctxMenu.x - canvasRef.current?.getBoundingClientRect().left, top: ctxMenu.y - canvasRef.current?.getBoundingClientRect().top }}
+            onClick={e => e.stopPropagation()}
+          >
+            {ctxMenu.type === 'node' && (
+              <>
+                <div className="px-3 py-1 text-content-secondary font-medium truncate max-w-[200px]">{ctxNodeLabel}</div>
+                <div className="h-px bg-border-primary mx-2 my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content-primary transition-colors"
+                  onClick={() => handleDeleteIncoming(ctxMenu.nodeId)}
+                >
+                  Delete incoming edges
+                </button>
+                <button
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content-primary transition-colors"
+                  onClick={() => handleDeleteOutgoing(ctxMenu.nodeId)}
+                >
+                  Delete outgoing edges
+                </button>
+                <div className="h-px bg-border-primary mx-2 my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-red-500 hover:text-red-400 transition-colors"
+                  onClick={() => handleDeleteNode(ctxMenu.nodeId)}
+                >
+                  Delete node + bridge edges
+                </button>
+              </>
+            )}
+            {ctxMenu.type === 'edge' && (
+              <button
+                className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-red-500 hover:text-red-400 transition-colors"
+                onClick={() => handleDeleteEdge(ctxMenu.link)}
+              >
+                Delete edge
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }

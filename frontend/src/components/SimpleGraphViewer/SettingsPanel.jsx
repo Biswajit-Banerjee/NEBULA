@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
-  ChevronRight, Settings2, Download, Maximize, Minimize,
+  ChevronRight, Settings2, Download, Image, Maximize, Minimize,
   HelpCircle, Layers, RotateCcw, Palette, Circle, Activity, Scaling,
-  Spline, GitCommitHorizontal, Hexagon, Map, Route,
+  Spline, GitCommitHorizontal, Hexagon, Map, Route, Tag,
 } from 'lucide-react';
 import { SCHEME_NAMES, schemeGradientCSS } from '../NetworkViewer2D/utils/colorSchemes';
 
@@ -172,6 +172,7 @@ const SettingsPanel = ({
   showOverlay, toggleOverlay,
   isFullscreen, toggleFullscreen,
   handleDownloadSVG,
+  handleDownloadPNG,
   resetLayout,
   tightenEdges,
   toggleHelp,
@@ -182,6 +183,7 @@ const SettingsPanel = ({
   edgeStyle, setEdgeStyle,
   pruneEdges, setPruneEdges,
   nodeDisplay, setNodeDisplay,
+  showNames, setShowNames,
   keggLayout, setKeggLayout,
   keggOrthoEdges, setKeggOrthoEdges,
 }) => {
@@ -244,6 +246,7 @@ const SettingsPanel = ({
             <Toggle label="Path overlay" value={showOverlay} onChange={toggleOverlay} icon={Layers} />
             <Toggle label="Prune edges" value={pruneEdges} onChange={setPruneEdges} icon={Scaling} />
             <Toggle label="Structures" value={nodeDisplay === 'structure'} onChange={(v) => setNodeDisplay(v ? 'structure' : 'circle')} icon={Hexagon} />
+            <Toggle label="Compound names" value={showNames} onChange={setShowNames} icon={Tag} />
             <Toggle label="KEGG layout" value={keggLayout} onChange={setKeggLayout} icon={Map} />
             <Toggle label="KEGG ortho edges" value={keggOrthoEdges} onChange={setKeggOrthoEdges} icon={Route} />
             <LayoutSelector value={edgeStyle} onChange={setEdgeStyle} />
@@ -281,6 +284,7 @@ const SettingsPanel = ({
             <ActionButton label="Reset layout" onClick={resetLayout} icon={RotateCcw} />
             <ActionButton label="Minimize edge lengths" onClick={tightenEdges} icon={Scaling} />
             <ActionButton label="Download SVG" onClick={handleDownloadSVG} icon={Download} />
+            <ActionButton label="Download PNG" onClick={handleDownloadPNG} icon={Image} />
             <ActionButton
               label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               onClick={toggleFullscreen}

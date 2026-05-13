@@ -26,6 +26,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   const [edgeStyle, setEdgeStyle] = useState('orthogonal');
   const [pruneEdges, setPruneEdges] = useState(true);
   const [nodeDisplay, setNodeDisplay] = useState('circle');
+  const [showNames, setShowNames] = useState(false);
   const [keggLayout, setKeggLayout] = useState(false);
   const [keggOrthoEdges, setKeggOrthoEdges] = useState(false);
 
@@ -102,6 +103,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   const handleZoomOut = () => graphCanvasRef.current?.zoomOut();
   const handleReset = () => graphCanvasRef.current?.resetView();
   const handleDownloadSVG = () => graphCanvasRef.current?.downloadSVG();
+  const handleDownloadPNG = () => graphCanvasRef.current?.downloadPNG();
   const resetLayout = () => graphCanvasRef.current?.resetLayout();
   const tightenEdges = () => graphCanvasRef.current?.tightenEdges();
 
@@ -243,6 +245,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             edgeStyle={edgeStyle}
             pruneEdges={pruneEdges}
             nodeDisplay={nodeDisplay}
+            showNames={showNames}
             keggLayout={keggLayout}
             keggOrthoEdges={keggOrthoEdges}
             backboneMatchIds={backboneMatchIds}
@@ -258,6 +261,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             handleDownloadSVG={handleDownloadSVG}
+            handleDownloadPNG={handleDownloadPNG}
             resetLayout={resetLayout}
             tightenEdges={tightenEdges}
             toggleHelp={() => setShowHelp(prev => !prev)}
@@ -275,6 +279,8 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             setPruneEdges={setPruneEdges}
             nodeDisplay={nodeDisplay}
             setNodeDisplay={setNodeDisplay}
+            showNames={showNames}
+            setShowNames={setShowNames}
             keggLayout={keggLayout}
             setKeggLayout={setKeggLayout}
             keggOrthoEdges={keggOrthoEdges}

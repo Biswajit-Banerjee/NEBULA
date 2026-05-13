@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 from app import STATIC_DIR, DATA_DIR, DOCS_DIR
 from app.core.viewer import MetabolicViewer
-from app.utils.smiles_cache import get_smiles_batch, get_mol_batch, get_cofactor_names
+from app.utils.smiles_cache import get_smiles_batch, get_mol_batch, get_cofactor_names, get_compound_names_batch
 
 # Set up logging
 logging.basicConfig(
@@ -719,6 +719,27 @@ async def get_smiles(payload: dict):
     except Exception as e:
         logger.error(f"Error in SMILES API: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch SMILES data")
+
+@app.post("/api/compound-names")
+async def compound_names(payload: dict):
+    """
+    Return display names for a list of KEGG compound IDs.
+    C compounds: names fetched from KEGG REST API and cached locally.
+    Z compounds: names from cofactors.csv.
+
+    Body: { "compound_ids": ["C00001", "Z00001", ...] }
+    Returns: { "names": { "C00001": "H2O", ... } }
+    """
+    try:
+        compound_ids = payload.get("compound_ids", [])
+        if not compound_ids or not isinstance(compound_ids, list):
+            return {"names": {}}
+        names = get_compound_names_batch(compound_ids)
+        return {"names": names}
+    except Exception as e:
+        logger.error(f"Error in compound-names API: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch compound names")
+
 
 @app.post("/api/substructure-search")
 async def substructure_search(payload: dict):
