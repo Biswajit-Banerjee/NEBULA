@@ -405,7 +405,7 @@ const SearchPanel = ({
           <div className="flex items-start justify-between mb-6 gap-3">
             <div className="flex-1">
               <h2 className="text-lg font-bold text-content mb-1">Search Configuration</h2>
-              <p className="text-sm text-content-secondary">Configure your pathway search parameters below.</p>
+              <p className="text-sm text-content-secondary">Configure your search parameters below.</p>
             </div>
             {onCollapseSidebar && (
               <button

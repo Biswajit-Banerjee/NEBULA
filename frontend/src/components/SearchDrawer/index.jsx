@@ -63,7 +63,7 @@ const SearchDrawer = ({
                 Search Configuration
               </h2>
               <p className="text-xs text-content-secondary mt-0.5">
-                Configure pathway search parameters
+                Configure search parameters
               </p>
             </div>
             <button

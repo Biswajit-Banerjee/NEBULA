@@ -30,6 +30,8 @@ const ViewPane = ({
   treeData,
   treeStats,
   treeSolutions,
+  focusedPath,
+  onFocusPath,
   viewTourActive,
   onViewTourClose,
 }) => {
@@ -146,15 +148,20 @@ const ViewPane = ({
         </div>
       )}
 
-      {/* Tree — conditionally rendered (lightweight, no expensive state) */}
-      {viewType === 'tree' && (
-        <div className="absolute inset-0">
+      {/* Tree — always mounted once treeData exists to avoid loading flash */}
+      {treeData && (
+        <div
+          className="absolute inset-0"
+          style={{ display: viewType === 'tree' ? 'block' : 'none' }}
+        >
           <Suspense fallback={<LoadingFallback label="Tree View" />}>
             <LazyHypergraphTreeView
               treeData={treeData}
               height={pixelHeight}
               stats={treeStats}
               solutions={treeSolutions}
+              focusedPath={focusedPath}
+              onFocusPath={onFocusPath}
             />
           </Suspense>
         </div>

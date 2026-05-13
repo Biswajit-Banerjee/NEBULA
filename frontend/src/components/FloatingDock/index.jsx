@@ -179,243 +179,246 @@ const FloatingDock = ({
     : 'Search paths…';
 
   return (
-    <div ref={dockRef} className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[95vw] max-w-2xl pointer-events-none">
-      <div className="pointer-events-auto">
+    <div ref={dockRef} className="fixed top-0 inset-x-0 z-50">
 
-        {/* ── Top bar ── */}
-        <div data-tour="dock-bar" className={`flex items-center gap-1.5 bg-surface-overlay/88 backdrop-blur-2xl border border-brd/50 px-2.5 py-1.5 shadow-lg shadow-brd/20 transition-all duration-200 ${(expanded || forceExpanded) ? 'rounded-t-2xl rounded-b-none border-b-0' : 'rounded-2xl'}`}>
-          {/* Logo – click to return home */}
+      {/* ── Top navigation bar ── */}
+      <div
+        data-tour="dock-bar"
+        className="flex items-center justify-center h-14 px-4 bg-surface-overlay/95 backdrop-blur-xl border-b border-brd/40 shadow-sm"
+      >
+        {/* Centered content group */}
+        <div className="flex items-center gap-3 w-full max-w-3xl">
+
+          {/* Logo + brand name */}
           <button
             onClick={hasResults && onClearResults ? onClearResults : undefined}
-            className={`flex-shrink-0 rounded-lg p-0.5 transition-all ${hasResults && onClearResults ? 'cursor-pointer hover:bg-surface-inset/70 hover:scale-110' : 'cursor-default'}`}
-            title={hasResults ? 'Clear results and return to home' : 'NEBULA'}
+            className={`flex items-center gap-2.5 flex-shrink-0 rounded-xl px-2.5 py-1.5 transition-colors ${hasResults && onClearResults ? 'hover:bg-surface-inset/60 cursor-pointer' : 'cursor-default'}`}
+            title={hasResults ? 'Clear results — return home' : 'NEBULA'}
           >
             <Logo className="w-7 h-7" />
+            <span className="text-base font-bold text-content tracking-tight">NEBULA</span>
           </button>
 
-          {/* Search summary / expand trigger */}
+          {/* Divider */}
+          <div className="w-px h-6 bg-brd/50 flex-shrink-0" />
+
+          {/* Search trigger — styled like an input */}
           <button
             onClick={() => setExpanded(prev => !prev)}
-            className="flex-1 flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-inset/50 transition-colors group min-w-0"
+            className="flex items-center gap-2.5 flex-1 min-w-0 px-3.5 py-2 rounded-xl border border-brd/60 bg-surface-inset/60 hover:border-brand/50 hover:bg-surface-inset transition-colors text-left"
           >
             {isLoading ? (
               <Loader2 className="w-4 h-4 flex-shrink-0 text-brand animate-spin" />
             ) : (
-              <Search className="w-4 h-4 flex-shrink-0 text-content-muted group-hover:text-brand-hover transition-colors" />
+              <Search className="w-4 h-4 flex-shrink-0 text-content-muted" />
             )}
-            <span className="text-sm text-content-secondary group-hover:text-content transition-colors truncate">
+            <span className="text-sm text-content-secondary truncate flex-1">
               {isLoading ? 'Searching…' : summaryText}
             </span>
-            <ChevronUp className={`w-3.5 h-3.5 text-content-muted flex-shrink-0 transition-transform duration-200 ${(expanded || forceExpanded) ? '' : 'rotate-180'}`} />
+            <ChevronUp className={`w-4 h-4 text-content-muted flex-shrink-0 transition-transform duration-150 ${(expanded || forceExpanded) ? '' : 'rotate-180'}`} />
           </button>
 
-          {/* Separator */}
-          <div className="w-px h-5 bg-brd/60 flex-shrink-0" />
+          {/* Divider */}
+          <div className="w-px h-6 bg-brd/50 flex-shrink-0" />
 
-          {/* Result count */}
-          {resultCount > 0 && (
-            <div className="flex items-center gap-1 px-1.5 flex-shrink-0">
-              <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
-              <span className="text-xs font-semibold text-content">{resultCount}</span>
-            </div>
-          )}
+          {/* Actions */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {resultCount > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-ok/10">
+                <div className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse" />
+                <span className="text-xs font-bold text-ok">{resultCount}</span>
+              </div>
+            )}
 
+            {hasResults && (
+              <button onClick={toggleCombinedMode} className={`p-2 rounded-xl transition-colors ${combinedMode ? 'bg-brand/10 text-brand' : 'text-content-muted hover:text-content hover:bg-surface-inset/60'}`} title={combinedMode ? 'Separate view' : 'Combined view'}>
+                <Layers className="w-4.5 h-4.5" />
+              </button>
+            )}
 
-          {/* Combined mode */}
-          {hasResults && (
-            <button onClick={toggleCombinedMode} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${combinedMode ? 'bg-brand/10 text-brand' : 'text-content-muted hover:text-content-secondary hover:bg-surface-inset/70'}`} title={combinedMode ? 'Separate view' : 'Combined view'}>
-              <Layers className="w-4 h-4" />
-            </button>
-          )}
+            {hasResults && (
+              <button onClick={toggleHideCofactors} className={`p-2 rounded-xl transition-colors ${hideCofactors ? 'bg-warn/10 text-warn' : 'text-content-muted hover:text-content hover:bg-surface-inset/60'}`} title={hideCofactors ? 'Show cofactors' : 'Hide cofactors'}>
+                <FlaskConical className="w-4.5 h-4.5" />
+              </button>
+            )}
 
-          {/* Hide cofactors */}
-          {hasResults && (
-            <button onClick={toggleHideCofactors} className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${hideCofactors ? 'bg-warn/10 text-warn' : 'text-content-muted hover:text-content-secondary hover:bg-surface-inset/70'}`} title={hideCofactors ? 'Show cofactors (Z compounds)' : 'Hide cofactors (Z compounds)'}>
-              <FlaskConical className="w-4 h-4" />
-            </button>
-          )}
+            <label data-tour="dock-actions" className={`p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-inset/60 transition-colors cursor-pointer ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
+              <Upload className="w-4.5 h-4.5" />
+              <input type="file" accept=".json" onChange={onImportSession} className="hidden" disabled={isLoading} />
+            </label>
 
-          {/* Import */}
-          <label data-tour="dock-actions" className={`p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all cursor-pointer flex-shrink-0 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`} title="Import session">
-            <Upload className="w-4 h-4" />
-            <input type="file" accept=".json" onChange={onImportSession} className="hidden" disabled={isLoading} />
-          </label>
+            {canExport && (
+              <button onClick={onExportSession} disabled={isLoading} className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-inset/60 transition-colors disabled:opacity-50" title="Export session">
+                <Download className="w-4.5 h-4.5" />
+              </button>
+            )}
 
-          {/* Export */}
-          {canExport && (
-            <button onClick={onExportSession} disabled={isLoading} className="p-1.5 rounded-lg text-content-muted hover:text-content-secondary hover:bg-surface-inset/70 transition-all disabled:opacity-50 flex-shrink-0" title="Export session">
-              <Download className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Theme */}
-          <div className="flex-shrink-0">
             <ThemeSelector />
           </div>
         </div>
+      </div>
 
-        {/* ── Expanded search panel ── */}
-        {(expanded || forceExpanded) && (
-          <div data-tour="dock-expanded" className="bg-surface-overlay/92 backdrop-blur-2xl border border-t-0 border-brd/50 rounded-b-2xl shadow-xl shadow-brd/15">
-            <div className="px-3 pt-2 pb-3 space-y-2">
+      {/* ── Expanded search panel ── */}
+      {(expanded || forceExpanded) && (
+        <div data-tour="dock-expanded" className="bg-surface-overlay/95 backdrop-blur-xl border-b border-brd/40 shadow-lg">
+          <div className="px-4 py-3 space-y-2 max-w-3xl mx-auto">
 
-              {searchPairs.map((pair, index) => {
-                const pairMode = pair.mode || 'compound';
-                return (
-                <div key={pair.id || index} className="flex items-center gap-2 rounded-xl bg-surface-inset/60 px-2.5 py-2 group">
+            {searchPairs.map((pair, index) => {
+              const pairMode = pair.mode || 'compound';
+              return (
+              <div key={pair.id || index} className="flex items-center gap-2 rounded-xl bg-surface-inset/60 px-2.5 py-2 group">
 
-                  {/* Color dot — click to change */}
-                  <div className="relative flex-shrink-0">
-                    <div
-                      className="w-3 h-3 rounded-full cursor-pointer ring-2 ring-surface-secondary shadow-sm"
-                      style={{ backgroundColor: pair.color || '#8B5CF6' }}
-                    />
-                    <input
-                      type="color"
-                      value={pair.color || '#8B5CF6'}
-                      onChange={(e) => updatePair(index, { color: e.target.value })}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    />
-                  </div>
-
-                  {/* Mode selector */}
-                  <select
-                    value={pairMode}
-                    onChange={(e) => {
-                      const newMode = e.target.value;
-                      const cleared = { source: '', target: '', reaction: '', ec: '', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
-                      updatePair(index, { ...cleared, mode: newMode });
-                    }}
-                    disabled={isLoading}
-                    className="flex-shrink-0 text-[11px] font-medium rounded-md border border-brd/70 bg-input-bg/80 text-content px-1 py-1 focus:ring-1 focus:ring-brand/30 outline-none"
-                  >
-                    {SEARCH_MODES.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-
-                  {/* Compound mode: Source → Target */}
-                  {pairMode === 'compound' && (
-                    <>
-                      <div className="flex-1 min-w-0">
-                        <AutocompleteInput
-                          idPrefix={`dock-src-${index}`}
-                          placeholder="Source (optional)"
-                          value={pair.source}
-                          onValueSelect={(id) => updatePair(index, { source: id, sourceDisplay: '' })}
-                          compoundData={compoundData}
-                          disabled={isLoading}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
-                        />
-                      </div>
-                      <span className="text-content-muted flex-shrink-0 text-xs font-medium select-none">→</span>
-                      <div className="flex-1 min-w-0">
-                        <AutocompleteInput
-                          idPrefix={`dock-tgt-${index}`}
-                          placeholder="Target *"
-                          value={pair.target}
-                          onValueSelect={(id) => handleTargetSelect(index, id)}
-                          compoundData={compoundData}
-                          disabled={isLoading}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {/* Reaction mode */}
-                  {pairMode === 'reaction' && (
-                    <div className="flex-1 min-w-0">
-                      <AutocompleteInput
-                        idPrefix={`dock-rxn-${index}`}
-                        placeholder="Reaction ID (e.g. R00217)"
-                        value={pair.reaction || ''}
-                        onValueSelect={(id) => handleReactionSelect(index, id)}
-                        compoundData={reactionData}
-                        itemIdKey="reaction_id"
-                        itemLabelKey="equation"
-                        idPattern={/^R\d{5}$/i}
-                        disabled={isLoading}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
-                      />
-                    </div>
-                  )}
-
-                  {/* EC mode */}
-                  {pairMode === 'ec' && (
-                    <div className="flex-1 min-w-0">
-                      <AutocompleteInput
-                        idPrefix={`dock-ec-${index}`}
-                        placeholder="EC number (e.g. 1.1.1.1)"
-                        value={pair.ec || ''}
-                        onValueSelect={(id) => handleEcSelect(index, id)}
-                        compoundData={ecData}
-                        itemIdKey="ec_number"
-                        itemLabelKey="ec_number"
-                        idPattern={/^\d+(\.\d+){3}$/}
-                        disabled={isLoading}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
-                      />
-                    </div>
-                  )}
-
-                  {/* Fixed-width trailing zone — always same width for alignment */}
-                  <div className="flex items-center gap-0.5 flex-shrink-0 w-[72px] justify-end">
-                    {typeof pair.resultCount === 'number' && pair.resultCount > 0 && (
-                      <span className="text-[10px] font-bold text-ok bg-ok-subtle/80 px-1.5 py-0.5 rounded-full">
-                        {pair.resultCount}
-                      </span>
-                    )}
-                    {pair.hasResults !== undefined && (
-                      <button
-                        onClick={() => onToggleVisibility(index)}
-                        className={`p-1 rounded-md transition-all ${pair.visible ? 'text-ok hover:bg-ok-subtle' : 'text-content-muted hover:bg-surface-inset'}`}
-                      >
-                        {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                    {searchPairs.length > 1 ? (
-                      <button
-                        onClick={() => removePair(index)}
-                        className="p-1 rounded-md text-content-muted hover:text-err hover:bg-err-subtle transition-all opacity-0 group-hover:opacity-100"
-                        disabled={isLoading}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    ) : (
-                      <div className="w-[22px]" />
-                    )}
-                  </div>
+                {/* Color dot — click to change */}
+                <div className="relative flex-shrink-0">
+                  <div
+                    className="w-3 h-3 rounded-full cursor-pointer ring-2 ring-surface-secondary shadow-sm"
+                    style={{ backgroundColor: pair.color || '#8B5CF6' }}
+                  />
+                  <input
+                    type="color"
+                    value={pair.color || '#8B5CF6'}
+                    onChange={(e) => updatePair(index, { color: e.target.value })}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
                 </div>
-              );
-              })}
 
-              {/* Bottom row */}
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={addPair}
+                {/* Mode selector */}
+                <select
+                  value={pairMode}
+                  onChange={(e) => {
+                    const newMode = e.target.value;
+                    const cleared = { source: '', target: '', reaction: '', ec: '', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
+                    updatePair(index, { ...cleared, mode: newMode });
+                  }}
                   disabled={isLoading}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-content-secondary hover:bg-surface-inset/70 transition-all disabled:opacity-50"
+                  className="flex-shrink-0 text-[11px] font-medium rounded-md border border-brd/70 bg-input-bg/80 text-content px-1 py-1 focus:ring-1 focus:ring-brand/30 outline-none"
                 >
-                  <Plus className="w-3 h-3" />
-                  Add query
-                </button>
+                  {SEARCH_MODES.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
 
-                <div className="flex-1" />
+                {/* Compound mode: Source → Target */}
+                {pairMode === 'compound' && (
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <AutocompleteInput
+                        idPrefix={`dock-src-${index}`}
+                        placeholder="Source (optional)"
+                        value={pair.source}
+                        onValueSelect={(id) => updatePair(index, { source: id, sourceDisplay: '' })}
+                        compoundData={compoundData}
+                        disabled={isLoading}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
+                      />
+                    </div>
+                    <span className="text-content-muted flex-shrink-0 text-xs font-medium select-none">→</span>
+                    <div className="flex-1 min-w-0">
+                      <AutocompleteInput
+                        idPrefix={`dock-tgt-${index}`}
+                        placeholder="Target *"
+                        value={pair.target}
+                        onValueSelect={(id) => handleTargetSelect(index, id)}
+                        compoundData={compoundData}
+                        disabled={isLoading}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
+                      />
+                    </div>
+                  </>
+                )}
 
-                <button
-                  onClick={handleSearch}
-                  disabled={isSearchDisabled}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  {isLoading ? 'Searching…' : 'Explore'}
-                </button>
+                {/* Reaction mode */}
+                {pairMode === 'reaction' && (
+                  <div className="flex-1 min-w-0">
+                    <AutocompleteInput
+                      idPrefix={`dock-rxn-${index}`}
+                      placeholder="Reaction ID (e.g. R00217)"
+                      value={pair.reaction || ''}
+                      onValueSelect={(id) => handleReactionSelect(index, id)}
+                      compoundData={reactionData}
+                      itemIdKey="reaction_id"
+                      itemLabelKey="equation"
+                      idPattern={/^R\d{5}$/i}
+                      disabled={isLoading}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* EC mode */}
+                {pairMode === 'ec' && (
+                  <div className="flex-1 min-w-0">
+                    <AutocompleteInput
+                      idPrefix={`dock-ec-${index}`}
+                      placeholder="EC number (e.g. 1.1.1.1)"
+                      value={pair.ec || ''}
+                      onValueSelect={(id) => handleEcSelect(index, id)}
+                      compoundData={ecData}
+                      itemIdKey="ec_number"
+                      itemLabelKey="ec_number"
+                      idPattern={/^\d+(\.\d+){3}$/}
+                      disabled={isLoading}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* Fixed-width trailing zone — always same width for alignment */}
+                <div className="flex items-center gap-0.5 flex-shrink-0 w-[72px] justify-end">
+                  {typeof pair.resultCount === 'number' && pair.resultCount > 0 && (
+                    <span className="text-[10px] font-bold text-ok bg-ok-subtle/80 px-1.5 py-0.5 rounded-full">
+                      {pair.resultCount}
+                    </span>
+                  )}
+                  {pair.hasResults !== undefined && (
+                    <button
+                      onClick={() => onToggleVisibility(index)}
+                      className={`p-1 rounded-md transition-all ${pair.visible ? 'text-ok hover:bg-ok-subtle' : 'text-content-muted hover:bg-surface-inset'}`}
+                    >
+                      {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                  {searchPairs.length > 1 ? (
+                    <button
+                      onClick={() => removePair(index)}
+                      className="p-1 rounded-md text-content-muted hover:text-err hover:bg-err-subtle transition-all opacity-0 group-hover:opacity-100"
+                      disabled={isLoading}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <div className="w-[22px]" />
+                  )}
+                </div>
               </div>
+            );
+            })}
+
+            {/* Bottom row */}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={addPair}
+                disabled={isLoading}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-content-secondary hover:bg-surface-inset/70 transition-all disabled:opacity-50"
+              >
+                <Plus className="w-3 h-3" />
+                Add query
+              </button>
+
+              <div className="flex-1" />
+
+              <button
+                onClick={handleSearch}
+                disabled={isSearchDisabled}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {isLoading ? 'Searching…' : 'Explore'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

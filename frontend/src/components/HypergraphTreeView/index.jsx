@@ -1,20 +1,13 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Link2, ChevronsDownUp, ChevronsUpDown, Route, X, ArrowRight } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, Route, X, Crosshair, Eye, EyeOff } from 'lucide-react';
 import TreeNode from './TreeNode';
 
 /**
- * HypergraphTreeView — full-width collapsible AND-OR tree with solution browser.
- *
- * Props:
- *   treeData   — the AND-OR tree JSON from /api/backtrace/tree
- *   height     — container height (CSS string)
- *   stats      — tree stats from the backend
- *   solutions  — array of solution objects from enumerate_solutions
+ * HypergraphTreeView — compact AND-OR tree with solution browser.
  */
-const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] }) => {
+const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [], focusedPath, onFocusPath }) => {
   const [expandedNodes, setExpandedNodes] = useState(new Set());
-  const [highlightedNode, setHighlightedNode] = useState(null);
-  const [activeSolution, setActiveSolution] = useState(null); // index or null
+  const [activeSolution, setActiveSolution] = useState(null);
   const [showSolutions, setShowSolutions] = useState(false);
   const treeContainerRef = useRef(null);
 
@@ -42,10 +35,6 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
     });
   }, []);
 
-  const handleHighlight = useCallback((nodeId) => {
-    setHighlightedNode(nodeId);
-  }, []);
-
   // Set of reaction names in the active solution (for tree highlighting)
   const activeReactions = useMemo(() => {
     if (activeSolution === null || !solutions[activeSolution]) return new Set();
@@ -63,7 +52,6 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
     if (!treeData || !solutions[idx]) return;
     const solRxnNames = new Set(solutions[idx].reactions.map(r => r.reaction));
 
-    // Walk the tree to find which nodes belong to this solution
     const toExpand = new Set();
     const walk = (node) => {
       if (!node) return false;
@@ -114,9 +102,8 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
     return (
       <div className="flex items-center justify-center h-full text-content-muted">
         <div className="text-center">
-          <Route className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No backtrace data available</p>
-          <p className="text-xs mt-1 opacity-60">Search for a compound to trace its biosynthetic origins</p>
+          <Route className="w-10 h-10 mx-auto mb-2 opacity-20" />
+          <p className="text-sm">No backtrace data</p>
         </div>
       </div>
     );
@@ -124,101 +111,64 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
 
   return (
     <div className="flex flex-col h-full w-full bg-surface" style={{ height }}>
-      {/* ── Header bar ── */}
-      <div className="flex-shrink-0 z-10 bg-surface-overlay/80 backdrop-blur-xl border-b border-brd/60 px-6 py-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-base font-bold text-content tracking-tight flex items-center gap-2">
-                <span className="w-1 h-5 rounded-full" style={{ background: `linear-gradient(to bottom, rgb(var(--brand-secondary)), rgb(var(--brand-primary)))` }}></span>
-                Biosynthetic Backtrace
-              </h2>
-              <p className="text-xs text-content-secondary font-medium ml-3">
-                Pathway origins of <span className="font-mono font-bold text-brand-secondary bg-brand-secondary/10 px-1.5 py-0.5 rounded">{treeData.id}</span>
-              </p>
-            </div>
-            {/* Stats pills */}
+      {/* ── Compact toolbar ── */}
+      <div className="flex-shrink-0 z-10 bg-surface-overlay/80 backdrop-blur border-b border-brd/50 px-4 py-2">
+        <div className="flex items-center justify-between gap-3">
+          {/* Left: title + stats inline */}
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-sm font-bold text-content whitespace-nowrap">Backtrace</span>
+            <span className="font-mono text-xs font-bold text-brand-secondary bg-brand-secondary/10 px-1.5 py-0.5 rounded">{treeData.id}</span>
             {stats && (
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-secondary/10 border border-brand-secondary/20 shadow-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-brand-secondary animate-pulse"></div>
-                  <span className="text-xs font-bold text-brand-secondary">{stats.total_compounds}</span>
-                  <span className="text-[10px] font-medium text-brand-secondary/70">metabolites</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand/10 border border-brand/20 shadow-sm">
-                  <div className="w-1.5 h-1.5 rounded-sm bg-brand"></div>
-                  <span className="text-xs font-bold text-brand">{stats.total_reactions}</span>
-                  <span className="text-[10px] font-medium text-brand/70">reactions</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-inset border border-brd/50 shadow-sm">
-                  <span className="text-xs font-bold text-content">depth {stats.max_depth}</span>
-                </div>
-              </div>
+              <span className="text-[10px] text-content-muted whitespace-nowrap">
+                {stats.total_compounds}c · {stats.total_reactions}r · d{stats.max_depth}
+              </span>
+            )}
+            {/* Active state indicators */}
+            {activeSolution !== null && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-ok bg-ok-subtle/50 px-1.5 py-0.5 rounded">
+                Path {activeSolution + 1}
+                <button onClick={() => setActiveSolution(null)} className="hover:text-err" title="Clear"><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {focusedPath && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand bg-brand/10 px-1.5 py-0.5 rounded">
+                <Crosshair className="w-3 h-3" /> Focused
+                <button onClick={() => onFocusPath && onFocusPath(null)} className="hover:text-err" title="Clear focus"><X className="w-3 h-3" /></button>
+              </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Right: action buttons */}
+          <div className="flex items-center gap-1">
             <button
               onClick={expandAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-content-secondary hover:text-content bg-surface-overlay/60 hover:bg-surface-overlay border border-brd/60 hover:border-brd transition-all shadow-sm hover:shadow"
-              title="Expand all nodes"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-content-secondary hover:text-content hover:bg-surface-overlay/80"
+              title="Expand all"
             >
-              <ChevronsUpDown className="w-3.5 h-3.5" /> Expand all
+              <ChevronsUpDown className="w-3.5 h-3.5" /> Expand
             </button>
             <button
               onClick={collapseAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-content-secondary hover:text-content bg-surface-overlay/60 hover:bg-surface-overlay border border-brd/60 hover:border-brd transition-all shadow-sm hover:shadow"
-              title="Collapse to root"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-content-secondary hover:text-content hover:bg-surface-overlay/80"
+              title="Collapse"
             >
               <ChevronsDownUp className="w-3.5 h-3.5" /> Collapse
             </button>
-
             {solutions.length > 0 && (
               <button
-                onClick={() => { setShowSolutions(s => !s); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all shadow-sm hover:shadow ${
+                onClick={() => setShowSolutions(s => !s)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium ${
                   showSolutions
-                    ? 'text-ok bg-ok-subtle/60 border-ok/30'
-                    : 'text-content-secondary bg-surface-overlay/60 hover:bg-ok-subtle/30 border-brd/60 hover:border-ok/30'
+                    ? 'text-ok bg-ok-subtle/50'
+                    : 'text-content-secondary hover:text-content hover:bg-surface-overlay/80'
                 }`}
-                title="Toggle minimal paths panel"
+                title="Toggle paths panel"
               >
                 <Route className="w-3.5 h-3.5" />
-                {solutions.length} pathway{solutions.length !== 1 ? 's' : ''}
+                {solutions.length} path{solutions.length !== 1 ? 's' : ''}
               </button>
             )}
           </div>
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-5 mt-3 text-[11px] text-content-secondary font-medium">
-          <span className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: 'rgb(var(--tree-metabolite))' }} /> Metabolite
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-sm shadow-sm" style={{ backgroundColor: 'rgb(var(--tree-reaction))' }} /> Reaction
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: 'rgb(var(--tree-source))' }} /> Source
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: 'rgb(var(--tree-seed))' }} /> Seed
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: 'rgb(var(--tree-cofactor))' }} /> Cofactor
-          </span>
-          <span className="flex items-center gap-2">
-            <Link2 className="w-3 h-3" /> Shared
-          </span>
-          {activeSolution !== null && (
-            <span className="flex items-center gap-2 text-ok font-bold bg-ok-subtle/60 px-2.5 py-1 rounded-lg border border-ok/30">
-              <span className="w-2.5 h-2.5 rounded-sm bg-ok shadow-sm ring-2 ring-ok/20" />
-              Pathway #{activeSolution + 1}
-              <button onClick={() => setActiveSolution(null)} className="ml-1 hover:text-err transition-colors" title="Clear pathway selection">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </span>
-          )}
         </div>
       </div>
 
@@ -227,7 +177,7 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
         {/* Tree panel */}
         <div
           ref={treeContainerRef}
-          className={`h-full overflow-auto py-6 px-8 transition-all duration-200 ${
+          className={`h-full overflow-auto py-6 px-8 ${
             showSolutions ? 'flex-1 min-w-0' : 'w-full'
           }`}
         >
@@ -236,91 +186,89 @@ const HypergraphTreeView = ({ treeData, height = '600px', stats, solutions = [] 
               node={treeData}
               expandedNodes={expandedNodes}
               toggleNode={toggleNode}
-              highlightedNode={highlightedNode}
-              onHighlight={handleHighlight}
               activeReactions={activeReactions}
               depth={0}
             />
           </div>
         </div>
 
-        {/* Minimal Paths panel */}
+        {/* Paths panel — compact */}
         {showSolutions && solutions.length > 0 && (
-          <div className="w-96 flex-shrink-0 h-full border-l border-brd/60 bg-surface-inset/90 backdrop-blur-sm flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-brd/60 bg-surface-overlay/40">
-              <div>
-                <h3 className="text-sm font-bold text-content flex items-center gap-2">
-                  <Route className="w-4 h-4 text-ok" />
-                  Minimal Paths
-                </h3>
-                <p className="text-[10px] text-content-muted mt-1 leading-relaxed">
-                  Minimal reaction sets producing <span className="font-mono font-bold text-ok">{treeData.id}</span>
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSolutions(false)}
-                className="text-content-muted hover:text-content transition-all p-1.5 rounded-lg hover:bg-surface-inset/60 hover:shadow-sm"
-                title="Close paths panel"
-              >
-                <X className="w-4 h-4" />
+          <div className="w-80 flex-shrink-0 h-full border-l border-brd/50 bg-surface-inset/80 flex flex-col">
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-brd/50">
+              <span className="text-xs font-bold text-content flex items-center gap-1.5">
+                <Route className="w-3.5 h-3.5 text-ok" />
+                Paths
+                <span className="text-content-muted font-normal">for {treeData.id}</span>
+              </span>
+              <button onClick={() => setShowSolutions(false)} className="text-content-muted hover:text-content p-0.5 rounded" title="Close">
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* Path list */}
             <div className="flex-1 overflow-auto">
               {solutions.map((sol, idx) => {
                 const isActive = activeSolution === idx;
+                const isFocused = focusedPath && focusedPath.id === sol.id;
                 return (
-                  <button
+                  <div
                     key={sol.id}
                     onClick={() => selectSolution(idx)}
-                    className={`w-full text-left px-5 py-4 border-b border-brd/20 transition-all ${
-                      isActive
-                        ? 'bg-ok-subtle/40 border-l-4 border-l-ok shadow-sm'
-                        : 'hover:bg-surface-overlay/80 border-l-4 border-l-transparent hover:border-l-brd'
+                    className={`px-3 py-2 border-b border-brd/15 cursor-pointer ${
+                      isFocused
+                        ? 'bg-brand/8 border-l-2 border-l-brand'
+                        : isActive
+                          ? 'bg-ok-subtle/30 border-l-2 border-l-ok'
+                          : 'border-l-2 border-l-transparent hover:bg-surface-overlay/40'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`text-sm font-bold ${
-                        isActive ? 'text-ok' : 'text-content'
-                      }`}>
-                        Pathway {idx + 1}
-                      </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                        isActive 
-                          ? 'bg-ok/20 text-ok'
-                          : 'bg-surface-inset text-content-secondary'
-                      }`}>
-                        {sol.reactionCount} step{sol.reactionCount !== 1 ? 's' : ''}
-                      </span>
+                    {/* Compact header */}
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-bold ${
+                          isFocused ? 'text-brand' : isActive ? 'text-ok' : 'text-content'
+                        }`}>
+                          {idx + 1}
+                        </span>
+                        <span className="text-[10px] text-content-muted">
+                          {sol.reactionCount} step{sol.reactionCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => onFocusPath && onFocusPath(sol)}
+                          className={`p-1 rounded ${
+                            isFocused ? 'text-brand bg-brand/15' : 'text-content-muted hover:text-brand hover:bg-brand/8'
+                          }`}
+                          title={isFocused ? 'Unfocus' : 'Focus — filter all views to this path'}
+                        >
+                          <Crosshair className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => selectSolution(idx)}
+                          className={`p-1 rounded ${
+                            isActive ? 'text-ok bg-ok/15' : 'text-content-muted hover:text-ok hover:bg-ok/8'
+                          }`}
+                          title={isActive ? 'Deselect' : 'Highlight in tree'}
+                        >
+                          {isActive ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    {/* Reaction list — compact, one line each */}
+                    <div className="flex flex-col gap-0.5 ml-1">
                       {sol.reactions.map((r, rIdx) => (
-                        <div key={r.reaction} className="flex items-start gap-2.5">
-                          <span className={`text-[10px] font-bold mt-0.5 w-5 text-right flex-shrink-0 ${
-                            isActive ? 'text-ok/80' : 'text-content-muted'
-                          }`}>
-                            {rIdx + 1}.
+                        <div key={r.reaction} className="flex items-baseline gap-1.5 text-[10px]">
+                          <span className="text-content-muted w-3 text-right flex-shrink-0">{rIdx + 1}</span>
+                          <span className={`font-mono font-semibold truncate ${isActive ? 'text-ok' : 'text-content'}`}>
+                            {r.reaction}
                           </span>
-                          <div className="min-w-0 flex-1">
-                            <span className={`text-[11px] font-mono font-bold ${
-                              isActive ? 'text-ok' : 'text-content'
-                            }`}>
-                              {r.reaction}
-                            </span>
-                            {r.equation && (
-                              <div className="flex items-center gap-1.5 mt-1">
-                                <ArrowRight className={`w-3 h-3 flex-shrink-0 ${
-                                  isActive ? 'text-ok/60' : 'text-content-muted'
-                                }`} />
-                                <span className="text-[10px] font-mono text-content-secondary truncate leading-relaxed" title={r.equation}>
-                                  {r.equation}
-                                </span>
-                              </div>
-                            )}
-                          </div>
                         </div>
                       ))}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

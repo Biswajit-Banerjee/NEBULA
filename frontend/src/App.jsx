@@ -48,6 +48,9 @@ function App() {
   const [treeStats, setTreeStats] = useState(null);
   const [treeSolutions, setTreeSolutions] = useState([]);
 
+  // Focused path — when set, filters all viewers to only show reactions in this path
+  const [focusedPath, setFocusedPath] = useState(null);
+
   // Documentation viewer
   const [docsOpen, setDocsOpen] = useState(false);
 
@@ -123,6 +126,7 @@ function App() {
     setLoading(true);
     setError(null);
     setSelectedRows(new Set());
+    setFocusedPath(null);
 
     const processedPairsInput = pairsFromPanel.map((p, idx) => ensureIdAndColorForPair(p, idx));
 
@@ -305,6 +309,7 @@ function App() {
     setTreeData(null);
     setTreeStats(null);
     setTreeSolutions([]);
+    setFocusedPath(null);
     setSelectedRows(new Set());
     setError(null);
     // Reset search pairs to initial state
@@ -321,6 +326,15 @@ function App() {
       .filter(index => index !== -1);
     return results.filter(result => result.pairIndex !== undefined && visiblePairIndices.includes(result.pairIndex));
   }, [results, searchPairs]);
+
+  // Focused-path filter: restrict to reactions in the selected path
+  const handleFocusPath = useCallback((solution) => {
+    setFocusedPath(prev => {
+      // Toggle off if same path
+      if (prev && solution && prev.id === solution.id) return null;
+      return solution || null;
+    });
+  }, []);
 
   // Apply cofactor filter before combined-mode dedup
   const cofactorFiltered = useMemo(() => {
@@ -344,10 +358,17 @@ function App() {
     return combined;
   }, [cofactorFiltered, combinedMode]);
 
-  const [viewFilteredResults, setViewFilteredResults] = useState(processedResults);
+  // Apply focused-path filter after dedup
+  const pathFilteredResults = useMemo(() => {
+    if (!processedResults || !focusedPath) return processedResults;
+    const focusedReactions = new Set(focusedPath.reactions.map(r => r.reaction));
+    return processedResults.filter(row => focusedReactions.has(row.reaction));
+  }, [processedResults, focusedPath]);
+
+  const [viewFilteredResults, setViewFilteredResults] = useState(pathFilteredResults);
   useEffect(() => {
-    setViewFilteredResults(processedResults);
-  }, [processedResults]);
+    setViewFilteredResults(pathFilteredResults);
+  }, [pathFilteredResults]);
 
   /* ------------------------------------------------------------------ */
   /* Apply imported positions once results are rendered                 */
@@ -482,6 +503,8 @@ function App() {
     treeData,
     treeStats,
     treeSolutions,
+    focusedPath,
+    onFocusPath: handleFocusPath,
   };
 
   return (
@@ -489,7 +512,7 @@ function App() {
 
       {/* ── Full-bleed results canvas ── */}
       {hasResults && (
-        <div className="absolute inset-0 z-0 isolate">
+        <div className="absolute inset-x-0 bottom-0 top-14 z-0 isolate">
           {isSplit ? (
             <div className="flex h-full w-full">
               <div className="flex-1 min-w-0 h-full border-r border-brd/60">
@@ -544,7 +567,7 @@ function App() {
 
       {/* ── Error toast ── */}
       {error && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-full animate-in">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-full animate-in">
           <div className="bg-surface-overlay/85 backdrop-blur-xl border border-err/30 rounded-2xl p-5 shadow-xl flex items-start gap-4">
             <div className="flex-shrink-0 w-10 h-10 rounded-full bg-err-subtle flex items-center justify-center">
               <Zap className="w-5 h-5 text-err" />
@@ -560,7 +583,7 @@ function App() {
 
       {/* ── Loading indicator ── */}
       {loading && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-3 bg-surface-overlay/80 backdrop-blur-xl border border-brand/20 rounded-2xl px-5 py-3 shadow-lg">
             <div className="w-5 h-5 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
             <span className="text-sm text-content-secondary font-medium">Tracing paths…</span>
@@ -599,7 +622,7 @@ function App() {
           <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
             {[
               { label: 'Multi-target search', color: 'bg-brand' },
-              { label: 'Pathway analysis', color: 'bg-ok' },
+              { label: 'Path analysis', color: 'bg-ok' },
               { label: 'Split-screen views', color: 'bg-info' },
               { label: 'Session import/export', color: 'bg-warn' },
             ].map((f) => (

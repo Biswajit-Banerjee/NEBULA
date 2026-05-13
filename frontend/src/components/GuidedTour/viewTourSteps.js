@@ -164,8 +164,8 @@ export const treeTourSteps = [
   },
   {
     icon: Route,
-    title: 'Minimal Pathways',
-    body: 'The "Minimal Pathways" panel on the right lists the shortest complete biosynthetic routes. Click a pathway to highlight its reactions in the tree. Each pathway shows numbered reaction steps with equations.',
+    title: 'Minimal Paths',
+    body: 'The "Minimal Paths" panel on the right lists the shortest complete biosynthetic routes. Click a path to highlight its reactions in the tree. Each path shows numbered reaction steps with equations. Use the focus button to filter all views to only show reactions in that path.',
     placement: 'center',
   },
   {
