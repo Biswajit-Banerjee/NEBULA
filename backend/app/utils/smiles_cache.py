@@ -21,16 +21,19 @@ _MOL_CACHE_FILE = _DATA_DIR / "mol_cache.json"
 _COFACTORS_FILE = _DATA_DIR / "cofactors.csv"
 _PUBCHEM_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/property/CanonicalSMILES/JSON"
 _KEGG_MOL_URL = "https://rest.kegg.jp/get/{}/mol"
+_KEGG_GET_URL = "https://rest.kegg.jp/get/{}"
+_NAME_CACHE_FILE = _DATA_DIR / "name_cache.json"
 
 # In-memory caches
 _cache: Dict[str, Optional[str]] = {}
 _mol_cache: Dict[str, Optional[str]] = {}
 _cofactors: Dict[str, str] = {}  # Z00001 -> "Iron sulfur (2Fe2S)"
+_name_cache: Dict[str, str] = {}  # C00001 -> "H2O"
 _loaded = False
 
 
 def _load_cache():
-    global _cache, _mol_cache, _cofactors, _loaded
+    global _cache, _mol_cache, _cofactors, _name_cache, _loaded
     if _loaded:
         return
     if _CACHE_FILE.exists():
@@ -59,6 +62,13 @@ def _load_cache():
             logger.info(f"Cofactors loaded: {len(_cofactors)} entries")
         except Exception as e:
             logger.warning(f"Could not load cofactors: {e}")
+    if _NAME_CACHE_FILE.exists():
+        try:
+            _name_cache = json.loads(_NAME_CACHE_FILE.read_text(encoding="utf-8"))
+            logger.info(f"Name cache loaded: {len(_name_cache)} entries")
+        except Exception as e:
+            logger.warning(f"Could not load name cache: {e}")
+            _name_cache = {}
     _loaded = True
 
 
@@ -188,3 +198,79 @@ def get_cofactor_names(compound_ids: list) -> Dict[str, str]:
     """Return cofactor display names for Z compound IDs."""
     _load_cache()
     return {cid: _cofactors[cid] for cid in compound_ids if cid in _cofactors}
+
+
+def _save_name_cache():
+    try:
+        _NAME_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _NAME_CACHE_FILE.write_text(json.dumps(_name_cache, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not persist name cache: {e}")
+
+
+def _fetch_kegg_names_batch(compound_ids: list) -> Dict[str, str]:
+    """Fetch compound names from KEGG in batches of 10."""
+    result = {}
+    BATCH = 10
+    for i in range(0, len(compound_ids), BATCH):
+        batch = compound_ids[i:i + BATCH]
+        query = '+'.join(batch)
+        try:
+            resp = requests.get(_KEGG_GET_URL.format(query), timeout=15)
+            if resp.status_code != 200:
+                continue
+            for entry in resp.text.split('///'):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                entry_id = None
+                name = None
+                for line in entry.split('\n'):
+                    if line.startswith('ENTRY') and entry_id is None:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            entry_id = parts[1]
+                    elif line.startswith('NAME') and name is None:
+                        name = line[4:].strip().rstrip(';')
+                if entry_id and name:
+                    result[entry_id] = name
+            if i + BATCH < len(compound_ids):
+                time.sleep(0.35)
+        except Exception as e:
+            logger.debug(f"KEGG name fetch failed for batch starting {batch[0]}: {e}")
+    return result
+
+
+def get_compound_names_batch(compound_ids: list) -> Dict[str, str]:
+    """
+    Return display names for a list of C and Z compound IDs.
+    Z compounds: always resolved from cofactors.csv (never cached in name_cache).
+    C compounds: name_cache.json first, then fetched from KEGG and cached.
+    """
+    _load_cache()
+    result: Dict[str, str] = {}
+    c_to_fetch = []
+
+    for cid in compound_ids:
+        if cid.startswith('Z'):
+            # Z compounds live only in _cofactors — check directly every time
+            if cid in _cofactors:
+                result[cid] = _cofactors[cid]
+        elif cid.startswith('C'):
+            if cid in _name_cache:
+                if _name_cache[cid]:  # skip empty-string sentinels (known misses)
+                    result[cid] = _name_cache[cid]
+            else:
+                c_to_fetch.append(cid)
+
+    if c_to_fetch:
+        logger.info(f"Fetching names for {len(c_to_fetch)} compounds from KEGG...")
+        fetched = _fetch_kegg_names_batch(c_to_fetch)
+        result.update(fetched)
+        for cid in c_to_fetch:
+            _name_cache[cid] = fetched.get(cid, '')  # '' = not found, avoid re-fetching
+        _save_name_cache()
+        found = sum(1 for c in c_to_fetch if fetched.get(c))
+        logger.info(f"Fetched {found}/{len(c_to_fetch)} names successfully")
+
+    return result
