@@ -7,11 +7,58 @@ import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
 import HelpOverlay from "./HelpOverlay";
 
+// Parse node positions and edge colors out of an exported SVG.
+// Returns { posMap: { label: [{x,y}] }, edgeColors: { edgeKey: color } }
+const parseSVGLayout = (svgText) => {
+  const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+  const root = doc.querySelector('svg');
+  if (!root) return { posMap: {}, edgeColors: {} };
+  const posMap = {};
+  const edgeColors = {};
+  const push = (label, pos) => {
+    if (!label) return;
+    if (!posMap[label]) posMap[label] = [];
+    posMap[label].push(pos);
+  };
+  let pendingPos = null;
+  for (const el of root.children) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'circle') {
+      pendingPos = { x: parseFloat(el.getAttribute('cx')), y: parseFloat(el.getAttribute('cy')) };
+    } else if (tag === 'ellipse') {
+      pendingPos = { x: parseFloat(el.getAttribute('cx')), y: parseFloat(el.getAttribute('cy')) };
+    } else if (tag === 'rect') {
+      const x = parseFloat(el.getAttribute('x'));
+      const y = parseFloat(el.getAttribute('y'));
+      const w = parseFloat(el.getAttribute('width')) || 0;
+      const h = parseFloat(el.getAttribute('height')) || 0;
+      pendingPos = { x: x + w / 2, y: y + h / 2 };
+    } else if (tag === 'image') {
+      const x = parseFloat(el.getAttribute('x'));
+      const y = parseFloat(el.getAttribute('y'));
+      const w = parseFloat(el.getAttribute('width')) || 0;
+      const h = parseFloat(el.getAttribute('height')) || 0;
+      pendingPos = { x: x + w / 2, y: y + h / 2 };
+    } else if (tag === 'path') {
+      pendingPos = null; // edge — reset
+      const edgeKey = el.getAttribute('data-edge-key');
+      const customColor = el.getAttribute('data-custom-color');
+      if (edgeKey && customColor) edgeColors[edgeKey] = customColor;
+    } else if (tag === 'text' && pendingPos) {
+      const label = el.textContent.trim();
+      if (label) push(label, pendingPos);
+      pendingPos = null;
+    }
+  }
+  return { posMap, edgeColors };
+};
+
 const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const graphRendererRef = useRef(null);
+  const importFileRef = useRef(null);
 
   // Help overlay
   const [showHelp, setShowHelp] = useState(false);
@@ -21,6 +68,19 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   // User customization
   const [edgeOpacity, setEdgeOpacity] = useState(0.5);
   const [spacingScale, setSpacingScale] = useState(1.0);
+
+  // Label settings
+  const [showNodeNames, setShowNodeNames] = useState(false);
+  const [showStructures, setShowStructures] = useState(false);
+  const [curvedEdges, setCurvedEdges] = useState(true);
+
+  // Edge brush tool
+  const [brushMode, setBrushMode] = useState(false);
+  const [brushColor, setBrushColor] = useState('#e11d48');
+
+  const handleClearEdgeColors = () => {
+    if (graphRendererRef.current) graphRendererRef.current.clearEdgeColors();
+  };
 
   // Color settings
   const [colorMode, setColorMode] = useState('generation'); // 'generation' | 'type' | 'degree'
@@ -97,6 +157,26 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     if (graphRendererRef.current) {
       graphRendererRef.current.downloadSVG();
     }
+  };
+
+  const handleImportSVG = () => {
+    importFileRef.current?.click();
+  };
+
+  const onImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const { posMap, edgeColors } = parseSVGLayout(ev.target.result);
+      if (graphRendererRef.current) {
+        graphRendererRef.current.importLayout(posMap);
+        if (Object.keys(edgeColors).length > 0)
+          graphRendererRef.current.importEdgeColors(edgeColors);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const resetSpiral = () => {
@@ -234,6 +314,11 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             colorScheme={colorScheme}
             bgColor={bgColor}
             gridColor={gridColor}
+            showNodeNames={showNodeNames}
+            showStructures={showStructures}
+            curvedEdges={curvedEdges}
+            brushMode={brushMode}
+            brushColor={brushColor}
           />
 
           {/* Right-side settings panel (arrow toggle) */}
@@ -247,6 +332,12 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             handleDownloadSVG={handleDownloadSVG}
+            handleImportSVG={handleImportSVG}
+            brushMode={brushMode}
+            setBrushMode={setBrushMode}
+            brushColor={brushColor}
+            setBrushColor={setBrushColor}
+            clearEdgeColors={handleClearEdgeColors}
             resetSpiral={resetSpiral}
             tightenEdges={tightenEdges}
             toggleHelp={() => setShowHelp(prev => !prev)}
@@ -258,6 +349,20 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             setBgColor={setBgColor}
             gridColor={gridColor}
             setGridColor={setGridColor}
+            showNodeNames={showNodeNames}
+            setShowNodeNames={setShowNodeNames}
+            showStructures={showStructures}
+            setShowStructures={setShowStructures}
+            curvedEdges={curvedEdges}
+            setCurvedEdges={setCurvedEdges}
+          />
+          {/* Hidden file input for SVG layout import */}
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".svg,image/svg+xml"
+            className="hidden"
+            onChange={onImportFileChange}
           />
         </div>
 

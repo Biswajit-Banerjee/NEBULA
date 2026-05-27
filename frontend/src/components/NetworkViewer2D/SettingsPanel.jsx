@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   ChevronRight, Settings2, Download, Maximize, Minimize,
-  HelpCircle, Layers, RotateCcw, Palette, Circle, Hexagon, Activity, Scaling,
+  HelpCircle, Layers, RotateCcw, Palette, Circle, Hexagon, Activity, Scaling, Tag, Atom, Spline, Upload, Paintbrush, Trash2,
 } from 'lucide-react';
 import { SCHEME_NAMES, schemeGradientCSS } from './utils/colorSchemes';
 
@@ -152,8 +152,15 @@ const SettingsPanel = ({
   edgeOpacity, setEdgeOpacity,
   spacingScale, setSpacingScale,
   showOverlay, toggleOverlay,
+  showNodeNames, setShowNodeNames,
+  showStructures, setShowStructures,
+  curvedEdges, setCurvedEdges,
   isFullscreen, toggleFullscreen,
   handleDownloadSVG,
+  handleImportSVG,
+  brushMode, setBrushMode,
+  brushColor, setBrushColor,
+  clearEdgeColors,
   resetSpiral,
   tightenEdges,
   toggleHelp,
@@ -222,6 +229,9 @@ const SettingsPanel = ({
               displayValue={Math.round(spacingScale * 100)} unit="%"
             />
             <Toggle label="Path overlay" value={showOverlay} onChange={toggleOverlay} icon={Layers} />
+            <Toggle label="Show compound names" value={showNodeNames} onChange={setShowNodeNames} icon={Tag} />
+            <Toggle label="Show structures" value={showStructures} onChange={setShowStructures} icon={Atom} />
+            <Toggle label="Curved edges" value={curvedEdges} onChange={setCurvedEdges} icon={Spline} />
           </div>
 
           <div className="h-px bg-brd/60" />
@@ -265,12 +275,45 @@ const SettingsPanel = ({
 
           <div className="h-px bg-brd/60" />
 
+          {/* ── Edge brush ── */}
+          <div className="space-y-2">
+            <SectionTitle>Edge brush</SectionTitle>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBrushMode(m => !m)}
+                className={`flex items-center gap-1.5 flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                  brushMode
+                    ? 'bg-brand/20 text-brand border border-brand/40'
+                    : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary border border-brd/40'
+                }`}
+              >
+                <Paintbrush className="w-3.5 h-3.5" />
+                {brushMode ? 'Painting…' : 'Paint edges'}
+              </button>
+              <input
+                type="color"
+                value={brushColor}
+                onChange={e => setBrushColor(e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer border border-brd/40 bg-transparent p-0.5"
+                title="Brush color"
+              />
+              <button
+                onClick={clearEdgeColors}
+                className="p-1.5 rounded-md text-content-secondary hover:text-content hover:bg-surface-tertiary border border-brd/40 transition-colors"
+                title="Clear all colored edges"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
           {/* ── Actions ── */}
           <div className="space-y-1">
             <SectionTitle>Actions</SectionTitle>
             <ActionButton label="Reset layout" onClick={resetSpiral} icon={RotateCcw} />
             <ActionButton label="Minimize edge lengths" onClick={tightenEdges} icon={Scaling} />
             <ActionButton label="Download SVG" onClick={handleDownloadSVG} icon={Download} />
+            <ActionButton label="Import SVG layout" onClick={handleImportSVG} icon={Upload} />
             <ActionButton
               label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               onClick={toggleFullscreen}
