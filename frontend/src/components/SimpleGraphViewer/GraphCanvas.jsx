@@ -17,6 +17,7 @@ import NodeInfoPanel from "../NetworkViewer2D/NodeInfoPanel";
 import SmilesDrawer from "smiles-drawer";
 
 const R_COMPOUND = 14;
+const KEGG_SCALE = 5;
 
 const _edgeKey = (l) => {
   const s = l.source?.id || l.source;
@@ -53,6 +54,9 @@ const GraphCanvas = forwardRef(
       showNames = false,
       keggLayout = false,
       keggOrthoEdges = false,
+      showAllKegg = false,
+      showKeggLines = false,
+      hideEdges = false,
       backboneMatchIds = null,
     },
     ref
@@ -65,6 +69,9 @@ const GraphCanvas = forwardRef(
     const positionCacheRef = useRef({});
     const hoveredNodeRef = useRef(null);
     const pinnedNodesRef = useRef(new Set());
+    const lockedNodesRef = useRef(new Set()); // locked (immovable) node IDs
+    const selBoxRef = useRef(null);           // ctrl+drag selection rect {x1,y1,x2,y2}
+    const multiDragRef = useRef(null);        // [{node,offX,offY}] for group drag
     const [selectedNodes, setSelectedNodes] = useState([]);
     const drawRef = useRef(null);
     const syncSelectionRef = useRef(null);
@@ -78,8 +85,14 @@ const GraphCanvas = forwardRef(
     const showNamesRef = useRef(showNames);
     showNamesRef.current = showNames;
     const keggPositionsRef = useRef(null);   // { compoundId: {x, y} } from KEGG map
+    const keggPosArrayRef = useRef([]);       // pre-cached [[id, {x,y}], ...] — avoids Object.entries() every frame
     const prevKeggLayoutRef = useRef(false);
+    const keggLayoutRef = useRef(keggLayout);
+    keggLayoutRef.current = keggLayout;
     const keggOrthoEdgesRef = useRef(null);  // [{points, color, name, reaction}, ...] from KEGG map
+    const keggBgPathRef = useRef(null);        // pre-built Path2D for background lines (static, built once)
+    const zoomRafRef = useRef(null);            // rAF handle to throttle zoom redraws
+    const orthoRouteCacheRef = useRef({ posHash: null, routes: new Map() }); // cached orthogonal edge routes
     const localEditsRef = useRef({ deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] });
     const [ctxMenu, setCtxMenu] = useState(null); // { x, y, type:'node'|'edge', nodeId?, link? }
 
@@ -138,6 +151,29 @@ const GraphCanvas = forwardRef(
       syncSelection();
       drawRef.current?.(nodesRef.current);
     }, [syncSelection]);
+
+    // Apply a spatial transform to all selected (pinned) nodes around their centroid
+    const applyGroupTransform = useCallback((type) => {
+      const pinned = pinnedNodesRef.current;
+      if (!pinned.size) return;
+      const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]));
+      const sel = [];
+      pinned.forEach(id => { const n = nodeMap.get(id); if (n) sel.push(n); });
+      if (!sel.length) return;
+      const cx = sel.reduce((s, n) => s + n.x, 0) / sel.length;
+      const cy = sel.reduce((s, n) => s + n.y, 0) / sel.length;
+      sel.forEach(n => {
+        const dx = n.x - cx, dy = n.y - cy;
+        if      (type === 'flipH')    { n.x = cx - dx; }
+        else if (type === 'flipV')    { n.y = cy - dy; }
+        else if (type === 'rot90cw')  { n.x = cx + dy; n.y = cy - dx; }
+        else if (type === 'rot90ccw') { n.x = cx - dy; n.y = cy + dx; }
+        else if (type === 'rot180')   { n.x = cx - dx; n.y = cy - dy; }
+        positionCacheRef.current[n.id] = { x: n.x, y: n.y };
+      });
+      drawRef.current?.(nodesRef.current);
+      setCtxMenu(null);
+    }, []);
 
     /* ── Build graph when raw data or pruning changes ── */
     useEffect(() => {
@@ -500,27 +536,43 @@ const GraphCanvas = forwardRef(
       const inView = (x, y) =>
         x >= viewMinX && x <= viewMaxX && y >= viewMinY && y <= viewMaxY;
 
-      /* ── Grid ── */
+      /* ── Grid (skip when zoomed out too far — lines would be sub-pixel) ── */
       const gridSpacing = 48;
-      const effectiveGridColor = gridColor
-        ? gridColor + "18"
-        : `rgba(${themeBorderPrimary},0.09)`;
-      ctx.save();
-      ctx.strokeStyle = effectiveGridColor;
-      ctx.lineWidth = 1 / t.k;
-      const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
-      const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
-      ctx.beginPath();
-      for (let x = startX; x <= viewMaxX; x += gridSpacing) {
-        ctx.moveTo(x, viewMinY); ctx.lineTo(x, viewMaxY);
+      const gridScreenPx = gridSpacing * t.k;
+      if (gridScreenPx >= 3) {
+        const effectiveGridColor = gridColor
+          ? gridColor + "18"
+          : `rgba(${themeBorderPrimary},0.09)`;
+        ctx.save();
+        ctx.strokeStyle = effectiveGridColor;
+        ctx.lineWidth = 1 / t.k;
+        const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
+        const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
+        ctx.beginPath();
+        for (let x = startX; x <= viewMaxX; x += gridSpacing) {
+          ctx.moveTo(x, viewMinY); ctx.lineTo(x, viewMaxY);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        for (let y = startY; y <= viewMaxY; y += gridSpacing) {
+          ctx.moveTo(viewMinX, y); ctx.lineTo(viewMaxX, y);
+        }
+        ctx.stroke();
+        ctx.restore();
       }
-      ctx.stroke();
-      ctx.beginPath();
-      for (let y = startY; y <= viewMaxY; y += gridSpacing) {
-        ctx.moveTo(viewMinX, y); ctx.lineTo(viewMaxX, y);
+
+      /* ── KEGG background pathway lines (show all / show lines mode) ── */
+      if ((showAllKegg || showKeggLines) && keggLayout && keggBgPathRef.current) {
+        const bgLineColor = dark ? '#94a3b8' : '#475569';
+        ctx.save();
+        ctx.globalAlpha = 0.1;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(0.6 / t.k, 0.4);
+        ctx.strokeStyle = bgLineColor;
+        ctx.stroke(keggBgPathRef.current);
+        ctx.restore();
       }
-      ctx.stroke();
-      ctx.restore();
 
       /* ── Surface point on compound circle ── */
       const surfacePoint = (node, dx, dy) => {
@@ -583,8 +635,12 @@ const GraphCanvas = forwardRef(
           ? 0.45 - (edgeCount - 80) / 320 * 0.30
           : Math.max(0.05, 0.15 - (edgeCount - 400) / 2000 * 0.10);
       const baseAlpha = autoAlpha * (edgeOpacity * 2);
-      const dimAlpha = hasHighlight ? Math.min(baseAlpha * 0.18, 0.035) : baseAlpha;
-      const brightAlpha = 0.9;
+      const inKeggMode = keggLayout;
+      const keggEdgeRGB = dark ? '140,140,145' : '90,90,95';
+      const dimAlpha = hasHighlight
+        ? Math.min(baseAlpha * 0.18, 0.035)
+        : inKeggMode ? Math.min(baseAlpha, 0.08) : baseAlpha;
+      const brightAlpha = inKeggMode ? dimAlpha : 0.9;
 
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -605,46 +661,134 @@ const GraphCanvas = forwardRef(
       // Helper: snap value to nearest grid line
       const snap = (v) => Math.round(v / G) * G;
 
-      // Node occupancy: mark grid cells within R_COMPOUND+margin of each node
-      const nodeOccGrid = new Map();
+      // ── Orthogonal route caching: only recompute when node positions change ──
       if (isOrtho) {
-        nodes.forEach(n => {
-          const gx = snap(n.x), gy = snap(n.y);
-          // Mark center + immediate neighbors (covers the node's visual radius)
-          for (let ox = -G; ox <= G; ox += G) {
-            for (let oy = -G; oy <= G; oy += G) {
-              const cx = gx + ox, cy = gy + oy;
-              // Only mark if grid cell is actually close to node center
-              if (Math.abs(cx - n.x) < G * 0.8 && Math.abs(cy - n.y) < G * 0.8) {
-                nodeOccGrid.set(`${cx},${cy}`, n.id);
+        // Cheap position hash: sum of all x,y + count
+        let posHash = nodes.length;
+        for (let ni = 0; ni < nodes.length; ni++) posHash += nodes[ni].x * 31 + nodes[ni].y * 17;
+        const edgeCount_key = drawLinks.length;
+        const cacheKey = `${posHash}|${edgeCount_key}`;
+
+        if (orthoRouteCacheRef.current.posHash !== cacheKey) {
+          // Rebuild occupancy grid
+          const occGrid = new Map();
+          nodes.forEach(n => {
+            const gx = snap(n.x), gy = snap(n.y);
+            for (let ox = -G; ox <= G; ox += G) {
+              for (let oy = -G; oy <= G; oy += G) {
+                const cx = gx + ox, cy = gy + oy;
+                if (Math.abs(cx - n.x) < G * 0.8 && Math.abs(cy - n.y) < G * 0.8) {
+                  occGrid.set(`${cx},${cy}`, n.id);
+                }
               }
             }
-          }
-        });
-      }
+          });
+          const hBlk = (segY, x1, x2, sA, sB) => {
+            const lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+            for (let gx = snap(lo); gx <= hi + G / 2; gx += G) {
+              const o = occGrid.get(`${gx},${snap(segY)}`);
+              if (o && o !== sA && o !== sB) return true;
+            }
+            return false;
+          };
+          const vBlk = (segX, y1, y2, sA, sB) => {
+            const lo = Math.min(y1, y2), hi = Math.max(y1, y2);
+            for (let gy = snap(lo); gy <= hi + G / 2; gy += G) {
+              const o = occGrid.get(`${snap(segX)},${gy}`);
+              if (o && o !== sA && o !== sB) return true;
+            }
+            return false;
+          };
 
-      // Check if a horizontal segment at y=segY from x=x1..x2 hits any node (excluding src/trg)
-      const hSegBlocked = (segY, x1, x2, skipA, skipB) => {
-        const lo = Math.min(x1, x2), hi = Math.max(x1, x2);
-        for (let gx = snap(lo); gx <= hi + G / 2; gx += G) {
-          const occ = nodeOccGrid.get(`${gx},${snap(segY)}`);
-          if (occ && occ !== skipA && occ !== skipB) return true;
+          // Compute routes for ALL edges (not just visible) so cache is complete
+          const routeMap = new Map();
+          const pc = new Map(); const pi = new Map();
+          drawLinks.forEach((l, li) => {
+            const sId = l.source?.id || l.source;
+            const tId = l.target?.id || l.target;
+            const k = [sId, tId].sort().join('||');
+            if (!pc.has(k)) pc.set(k, 0);
+            pi.set(li, pc.get(k));
+            pc.set(k, pc.get(k) + 1);
+          });
+          drawLinks.forEach((l, li) => {
+            const sId = l.source?.id || l.source;
+            const tId = l.target?.id || l.target;
+            const src = nodeMap.get(sId), trg = nodeMap.get(tId);
+            if (!src || !trg) return;
+            const R = R_COMPOUND;
+            const dx_raw = trg.x - src.x, dy_raw = trg.y - src.y;
+            const pK = [sId, tId].sort().join('||');
+            const total = pc.get(pK) || 1;
+            const myIdx = pi.get(li) || 0;
+            const offset = total === 1 ? 0 : (myIdx - (total - 1) / 2) * G;
+
+            let sp, tp, routeType;
+            if (Math.abs(dx_raw) >= Math.abs(dy_raw)) {
+              sp = dx_raw >= 0 ? { x: src.x + R, y: src.y } : { x: src.x - R, y: src.y };
+              tp = dx_raw >= 0 ? { x: trg.x - R, y: trg.y } : { x: trg.x + R, y: trg.y };
+              routeType = 'h';
+            } else {
+              sp = dy_raw >= 0 ? { x: src.x, y: src.y + R } : { x: src.x, y: src.y - R };
+              tp = dy_raw >= 0 ? { x: trg.x, y: trg.y - R } : { x: trg.x, y: trg.y + R };
+              routeType = 'v';
+            }
+            let path;
+            if (routeType === 'h') {
+              if (Math.abs(sp.y - tp.y) < 2 && Math.abs(offset) < 2 && !hBlk(sp.y, sp.x, tp.x, sId, tId)) {
+                path = [sp, tp];
+              } else {
+                const baseChX = snap((sp.x + tp.x) / 2) + offset;
+                let bestChX = baseChX, found = false;
+                for (let a = 0; a < 12; a++) {
+                  const testX = a === 0 ? baseChX : baseChX + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
+                  const snX = snap(testX);
+                  if (!hBlk(sp.y, sp.x, snX, sId, tId) && !vBlk(snX, sp.y, tp.y, sId, tId) && !hBlk(tp.y, snX, tp.x, sId, tId)) {
+                    bestChX = snX; found = true; break;
+                  }
+                }
+                if (!found) {
+                  for (let a = 0; a < 12; a++) {
+                    const testX = a === 0 ? baseChX : baseChX + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
+                    const snX = snap(testX);
+                    if (!vBlk(snX, sp.y, tp.y, sId, tId)) { bestChX = snX; break; }
+                  }
+                }
+                path = [sp, { x: bestChX, y: sp.y }, { x: bestChX, y: tp.y }, tp];
+              }
+            } else {
+              if (Math.abs(sp.x - tp.x) < 2 && Math.abs(offset) < 2 && !vBlk(sp.x, sp.y, tp.y, sId, tId)) {
+                path = [sp, tp];
+              } else {
+                const baseChY = snap((sp.y + tp.y) / 2) + offset;
+                let bestChY = baseChY, found = false;
+                for (let a = 0; a < 12; a++) {
+                  const testY = a === 0 ? baseChY : baseChY + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
+                  const snY = snap(testY);
+                  if (!vBlk(sp.x, sp.y, snY, sId, tId) && !hBlk(snY, sp.x, tp.x, sId, tId) && !vBlk(tp.x, snY, tp.y, sId, tId)) {
+                    bestChY = snY; found = true; break;
+                  }
+                }
+                if (!found) {
+                  for (let a = 0; a < 12; a++) {
+                    const testY = a === 0 ? baseChY : baseChY + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
+                    const snY = snap(testY);
+                    if (!hBlk(snY, sp.x, tp.x, sId, tId)) { bestChY = snY; break; }
+                  }
+                }
+                path = [sp, { x: sp.x, y: bestChY }, { x: tp.x, y: bestChY }, tp];
+              }
+            }
+            const rKey = `${sId}||${tId}||${myIdx}`;
+            routeMap.set(rKey, path);
+          });
+          orthoRouteCacheRef.current = { posHash: cacheKey, routes: routeMap };
         }
-        return false;
-      };
-      // Check if a vertical segment at x=segX from y=y1..y2 hits any node
-      const vSegBlocked = (segX, y1, y2, skipA, skipB) => {
-        const lo = Math.min(y1, y2), hi = Math.max(y1, y2);
-        for (let gy = snap(lo); gy <= hi + G / 2; gy += G) {
-          const occ = nodeOccGrid.get(`${snap(segX)},${gy}`);
-          if (occ && occ !== skipA && occ !== skipB) return true;
-        }
-        return false;
-      };
+      }
 
       // Helper: filled triangle arrow at a point along a direction
       const drawMidArrow = (px, py, dirX, dirY, alpha) => {
-        const aSize = Math.max(8 / t.k, 6);
+        const aSize = Math.min(Math.max(8 / t.k, 6), 40);
         ctx.beginPath();
         ctx.moveTo(px + dirX * aSize, py + dirY * aSize);
         ctx.lineTo(px - dirX * aSize * 0.45 + dirY * aSize * 0.55,
@@ -652,7 +796,7 @@ const GraphCanvas = forwardRef(
         ctx.lineTo(px - dirX * aSize * 0.45 - dirY * aSize * 0.55,
                    py - dirY * aSize * 0.45 + dirX * aSize * 0.55);
         ctx.closePath();
-        ctx.fillStyle = `rgba(${themeBorderPrimary},${Math.min(alpha * 1.8, 0.95)})`;
+        ctx.fillStyle = `rgba(${inKeggMode ? keggEdgeRGB : themeBorderPrimary},${Math.min(alpha * 1.8, 0.95)})`;
         ctx.fill();
       };
 
@@ -690,7 +834,7 @@ const GraphCanvas = forwardRef(
       };
 
       // Draw edges in 2 passes: dim first, bright on top
-      for (let pass = 0; pass < 2; pass++) {
+      for (let pass = 0; pass < 2; pass++) { if (hideEdges) break;
         visibleEdges.forEach(({ src, trg, link }, idx) => {
           const isBright = hasHighlight && highlightedEdgeSet.has(idx);
           if (pass === 0 && isBright) return;
@@ -711,119 +855,24 @@ const GraphCanvas = forwardRef(
           else ctx.setLineDash([]);
 
           // Clean muted color
-          ctx.strokeStyle = `rgba(${themeBorderPrimary},${alpha})`;
+          ctx.strokeStyle = `rgba(${inKeggMode ? keggEdgeRGB : themeBorderPrimary},${alpha})`;
           ctx.lineWidth = isBright
             ? Math.max(1.4 / t.k, 0.9)
             : Math.max(0.5 / t.k, 0.35);
 
-          // Parallel edge offset
+          // Parallel edge info (for arrow placement + curved offset)
           const pKey = [src.id, trg.id].sort().join('||');
           const total = pairCount.get(pKey) || 1;
           const myIdx = pairIdx.get(idx) || 0;
-          const offset = total === 1 ? 0 : (myIdx - (total - 1) / 2) * G;
 
           // Label midpoint (computed per-mode)
           let labelX, labelY;
 
           if (isOrtho) {
-            // ── Orthogonal grid routing: 4 cardinal ports, full node avoidance ──
-            const R = R_COMPOUND;
-            const dx_raw = trg.x - src.x;
-            const dy_raw = trg.y - src.y;
-            const sId = src.id, tId = trg.id;
-
-            // Choose cardinal ports based on primary direction
-            let sp, tp, routeType;
-            if (Math.abs(dx_raw) >= Math.abs(dy_raw)) {
-              if (dx_raw >= 0) {
-                sp = { x: src.x + R, y: src.y };
-                tp = { x: trg.x - R, y: trg.y };
-              } else {
-                sp = { x: src.x - R, y: src.y };
-                tp = { x: trg.x + R, y: trg.y };
-              }
-              routeType = 'h';
-            } else {
-              if (dy_raw >= 0) {
-                sp = { x: src.x, y: src.y + R };
-                tp = { x: trg.x, y: trg.y - R };
-              } else {
-                sp = { x: src.x, y: src.y - R };
-                tp = { x: trg.x, y: trg.y + R };
-              }
-              routeType = 'v';
-            }
-
-            // Try to find a collision-free 3-segment route.
-            // For H routing: sp →(chX, sp.y)→(chX, tp.y)→ tp
-            //   Segments: H1 at y=sp.y from sp.x..chX, V at x=chX from sp.y..tp.y, H2 at y=tp.y from chX..tp.x
-            // For V routing: sp →(sp.x, chY)→(tp.x, chY)→ tp
-            //   Segments: V1 at x=sp.x from sp.y..chY, H at y=chY from sp.x..tp.x, V2 at x=tp.x from chY..tp.y
-
-            let path;
-
-            if (routeType === 'h') {
-              if (Math.abs(sp.y - tp.y) < 2 && Math.abs(offset) < 2
-                  && !hSegBlocked(sp.y, sp.x, tp.x, sId, tId)) {
-                // Same row, no obstacles: straight horizontal
-                path = [sp, tp];
-              } else {
-                // Search for a clear vertical channel
-                const baseChX = snap((sp.x + tp.x) / 2) + offset;
-                let bestChX = baseChX;
-                let found = false;
-                for (let a = 0; a < 12; a++) {
-                  const testX = a === 0 ? baseChX : baseChX + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
-                  const snX = snap(testX);
-                  // Check all 3 segments
-                  if (!hSegBlocked(sp.y, sp.x, snX, sId, tId)
-                      && !vSegBlocked(snX, sp.y, tp.y, sId, tId)
-                      && !hSegBlocked(tp.y, snX, tp.x, sId, tId)) {
-                    bestChX = snX; found = true; break;
-                  }
-                }
-                if (!found) {
-                  // Fallback: just check the vertical channel alone
-                  for (let a = 0; a < 12; a++) {
-                    const testX = a === 0 ? baseChX : baseChX + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
-                    const snX = snap(testX);
-                    if (!vSegBlocked(snX, sp.y, tp.y, sId, tId)) {
-                      bestChX = snX; break;
-                    }
-                  }
-                }
-                path = [sp, { x: bestChX, y: sp.y }, { x: bestChX, y: tp.y }, tp];
-              }
-            } else {
-              if (Math.abs(sp.x - tp.x) < 2 && Math.abs(offset) < 2
-                  && !vSegBlocked(sp.x, sp.y, tp.y, sId, tId)) {
-                // Same column, no obstacles: straight vertical
-                path = [sp, tp];
-              } else {
-                const baseChY = snap((sp.y + tp.y) / 2) + offset;
-                let bestChY = baseChY;
-                let found = false;
-                for (let a = 0; a < 12; a++) {
-                  const testY = a === 0 ? baseChY : baseChY + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
-                  const snY = snap(testY);
-                  if (!vSegBlocked(sp.x, sp.y, snY, sId, tId)
-                      && !hSegBlocked(snY, sp.x, tp.x, sId, tId)
-                      && !vSegBlocked(tp.x, snY, tp.y, sId, tId)) {
-                    bestChY = snY; found = true; break;
-                  }
-                }
-                if (!found) {
-                  for (let a = 0; a < 12; a++) {
-                    const testY = a === 0 ? baseChY : baseChY + ((a % 2 ? 1 : -1) * Math.ceil(a / 2) * G);
-                    const snY = snap(testY);
-                    if (!hSegBlocked(snY, sp.x, tp.x, sId, tId)) {
-                      bestChY = snY; break;
-                    }
-                  }
-                }
-                path = [sp, { x: sp.x, y: bestChY }, { x: tp.x, y: bestChY }, tp];
-              }
-            }
+            // Look up pre-computed route from cache
+            const rKey = `${src.id}||${trg.id}||${myIdx}`;
+            const path = orthoRouteCacheRef.current.routes.get(rKey);
+            if (!path) { /* fallback: skip this edge if not cached */ return; }
 
             // Draw with rounded corners
             const bR = Math.min(G * 0.35, 8);
@@ -845,6 +894,7 @@ const GraphCanvas = forwardRef(
               labelX = (path[1].x + path[2].x) / 2;
               labelY = (path[1].y + path[2].y) / 2 - 9;
             } else {
+              const sp = path[0], tp = path[path.length - 1];
               labelX = (sp.x + tp.x) / 2;
               labelY = Math.min(sp.y, tp.y) - 9;
             }
@@ -911,7 +961,7 @@ const GraphCanvas = forwardRef(
       ctx.setLineDash([]);
 
       /* ── Path overlay (pair highlighting) ── */
-      if (showOverlay) {
+      if (showOverlay && !inKeggMode) {
         drawLinks.forEach(l => {
           if (!l.pairIndices || l.pairIndices.length === 0) return;
           const srcId = l.source?.id || l.source;
@@ -925,7 +975,7 @@ const GraphCanvas = forwardRef(
             if (!col) return;
             ctx.save();
             ctx.strokeStyle = col;
-            ctx.lineWidth = Math.max(5 / t.k, 2.5);
+            ctx.lineWidth = Math.min(Math.max(5 / t.k, 2.5), 20);
             ctx.lineCap = "round";
             const odx = trg.x - src.x, ody = trg.y - src.y;
             const oSrc = surfacePoint(src, odx, ody);
@@ -956,7 +1006,7 @@ const GraphCanvas = forwardRef(
       }
 
       /* ── KEGG ortho edges (polylines from KGML, filtered to graph reactions) ── */
-      if (keggOrthoEdges && keggOrthoEdgesRef.current) {
+      if (keggOrthoEdges && keggLayout && keggOrthoEdgesRef.current && !showAllKegg && !showKeggLines) {
         // Collect reaction IDs present in the current graph
         const graphRxnIds = new Set();
         drawLinks.forEach(l => {
@@ -964,38 +1014,30 @@ const GraphCanvas = forwardRef(
           if (l.reactions) l.reactions.forEach(r => { if (r.id) graphRxnIds.add(r.id); });
         });
 
+        const orthoColor = dark ? '#94a3b8' : '#475569';
         ctx.save();
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        ctx.lineWidth = Math.max(1.5 / t.k, 0.8);
-        ctx.globalAlpha = 0.55;
-        let drawnCount = 0;
+        ctx.lineWidth = Math.max(0.6 / t.k, 0.4);
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = orthoColor;
+        ctx.fillStyle = orthoColor;
+        const as = Math.max(5 / t.k, 4);
         keggOrthoEdgesRef.current.forEach(edge => {
-          // Filter: only draw if this edge's reaction is in the graph
-          // edge.reaction is like "rn:R02253" — extract R-id(s)
-          const rxnField = edge.reaction || "";
-          const rxnIds = rxnField.split(/\s+/).map(r => r.replace(/^rn:/, ""));
-          if (!rxnIds.some(rid => graphRxnIds.has(rid))) return;
-
-          const pts = edge.points;
-          if (!pts || pts.length < 2) return;
-          // Quick viewport test
-          let eMinX = Infinity, eMinY = Infinity, eMaxX = -Infinity, eMaxY = -Infinity;
-          for (const p of pts) {
-            if (p[0] < eMinX) eMinX = p[0];
-            if (p[0] > eMaxX) eMaxX = p[0];
-            if (p[1] < eMinY) eMinY = p[1];
-            if (p[1] > eMaxY) eMaxY = p[1];
-          }
+          if (!edge._path) return;
+          if (!edge._rxnIds.some(rid => graphRxnIds.has(rid))) return;
+          const [eMinX, eMinY, eMaxX, eMaxY] = edge._bounds;
           if (eMaxX < viewMinX || eMinX > viewMaxX || eMaxY < viewMinY || eMinY > viewMaxY) return;
-          ctx.strokeStyle = edge.color || "#F06292";
+          ctx.stroke(edge._path);
+          // Arrowhead at end
+          const [lx, ly] = edge._endXY;
+          const ang = edge._arrowAngle;
           ctx.beginPath();
-          ctx.moveTo(pts[0][0], pts[0][1]);
-          for (let i = 1; i < pts.length; i++) {
-            ctx.lineTo(pts[i][0], pts[i][1]);
-          }
-          ctx.stroke();
-          drawnCount++;
+          ctx.moveTo(lx, ly);
+          ctx.lineTo(lx - as * Math.cos(ang - Math.PI / 6), ly - as * Math.sin(ang - Math.PI / 6));
+          ctx.lineTo(lx - as * Math.cos(ang + Math.PI / 6), ly - as * Math.sin(ang + Math.PI / 6));
+          ctx.closePath();
+          ctx.fill();
         });
         ctx.globalAlpha = 1;
         ctx.restore();
@@ -1030,10 +1072,39 @@ const GraphCanvas = forwardRef(
         return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
       };
 
+      // In KEGG layout, ensure nodes are always visible at any zoom level
+      const nodeDrawR = keggLayout ? Math.max(R_COMPOUND, 3.5 / t.k) : R_COMPOUND;
+
       // Structures: fixed world HEIGHT, width adapts per molecule's aspect ratio
       const useStructures = nodeDisplay === 'structure';
       const SH = STRUCT_WORLD_H; // world height
       const halfH = SH / 2;
+
+      /* ── KEGG global-orientation ghost nodes ── */
+      if (showAllKegg && keggLayout && keggPositionsRef.current) {
+        const searchNodeIds = new Set(drawNodes.map(n => n.id));
+        const ghostR = Math.max(R_COMPOUND * 0.8, 2 / t.k);
+        const ghostFill = dark ? '#94a3b8' : '#64748b';
+        const ghostStroke = dark ? '#cbd5e1' : '#475569';
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.lineWidth = Math.max(0.8, 0.5 / t.k);
+        ctx.fillStyle = ghostFill;
+        ctx.strokeStyle = ghostStroke;
+        // Batch all ghost nodes into two paths (fill + stroke) — single draw call each
+        ctx.beginPath();
+        for (const [cid, pos] of keggPosArrayRef.current) {
+          if (searchNodeIds.has(cid)) continue;
+          const sx = pos.x * KEGG_SCALE;
+          const sy = pos.y * KEGG_SCALE;
+          if (!inView(sx, sy)) continue;
+          ctx.moveTo(sx + ghostR, sy);
+          ctx.arc(sx, sy, ghostR, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
 
       drawNodes.forEach(n => {
         if (!inView(n.x, n.y)) return;
@@ -1071,7 +1142,7 @@ const GraphCanvas = forwardRef(
           ctx.strokeStyle = stroke;
           ctx.lineWidth = 1.2;
           ctx.beginPath();
-          ctx.arc(n.x, n.y, R_COMPOUND, 0, Math.PI * 2);
+          ctx.arc(n.x, n.y, nodeDrawR, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
         }
@@ -1096,6 +1167,25 @@ const GraphCanvas = forwardRef(
         }
 
         if (bbDim || dimmed) ctx.globalAlpha = 1;
+
+        // Locked node indicator: amber dashed ring
+        if (lockedNodesRef.current.has(n.id)) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(251, 57, 36, 0.9)';
+          ctx.lineWidth = Math.max(1.5 / t.k, 0.8);
+          ctx.setLineDash([3 / t.k, 2 / t.k]);
+          ctx.beginPath();
+          if (tex) {
+            const aspect = tex._aspect || 1;
+            const hw = SH * aspect / 2 + 5, hh = SH / 2 + 5;
+            ctx.roundRect(n.x - hw, n.y - hh, hw * 2, hh * 2, 6);
+          } else {
+            ctx.arc(n.x, n.y, R_COMPOUND + 5, 0, Math.PI * 2);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
       });
 
       /* ── Labels (below nodes for readability) ── */
@@ -1126,11 +1216,39 @@ const GraphCanvas = forwardRef(
         });
       }
 
+      // Ctrl+drag selection box (world coords)
+      if (selBoxRef.current) {
+        const { x1, y1, x2, y2 } = selBoxRef.current;
+        const selRx = Math.min(x1, x2), selRy = Math.min(y1, y2);
+        const selRw = Math.abs(x2 - x1), selRh = Math.abs(y2 - y1);
+        ctx.save();
+        ctx.strokeStyle = `rgba(${themeInfo},0.85)`;
+        ctx.fillStyle = `rgba(${themeInfo},0.08)`;
+        ctx.lineWidth = 1.5 / t.k;
+        ctx.setLineDash([5 / t.k, 3 / t.k]);
+        ctx.beginPath();
+        ctx.rect(selRx, selRy, selRw, selRh);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       ctx.restore();
-    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggOrthoEdges, backboneMatchIds]);
+    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggOrthoEdges, keggLayout, showAllKegg, showKeggLines, hideEdges, backboneMatchIds]);
 
     drawRef.current = draw;
     syncSelectionRef.current = syncSelection;
+
+    // Redraw canvas whenever any display setting changes.
+    // Deferred to rAF so layout effects (applyKegg, simulation) finish positioning nodes first.
+    useEffect(() => {
+      if (!nodesRef.current?.length) return;
+      const raf = requestAnimationFrame(() => {
+        drawRef.current?.(nodesRef.current);
+      });
+      return () => cancelAnimationFrame(raf);
+    }, [draw]);
 
     // Prune stale pins on graph change
     useEffect(() => {
@@ -1147,9 +1265,10 @@ const GraphCanvas = forwardRef(
       draw(graph.nodes);
     }, [showOverlay, graph, draw]);
 
-    // Fetch KEGG ortho edges on first toggle-on, then redraw
+    // Fetch KEGG ortho edges on first toggle-on (keggOrthoEdges or showAllKegg), then redraw
     useEffect(() => {
-      if (!keggOrthoEdges) {
+      const needEdges = keggOrthoEdges || showAllKegg || showKeggLines;
+      if (!needEdges) {
         drawRef.current?.(nodesRef.current);
         return;
       }
@@ -1161,11 +1280,80 @@ const GraphCanvas = forwardRef(
         .then(r => r.json())
         .then(data => {
           keggOrthoEdgesRef.current = data.edges || [];
-          console.log(`[NEBULA] KEGG ortho edges: ${keggOrthoEdgesRef.current.length} polylines loaded`);
+          // Pre-build the static background Path2D once
+          const bgPath = new Path2D();
+          for (const edge of keggOrthoEdgesRef.current) {
+            const pts = edge.points;
+            if (!pts || pts.length < 2) continue;
+            const firstX = pts[0][0] * KEGG_SCALE, firstY = pts[0][1] * KEGG_SCALE;
+            const lastX = pts[pts.length-1][0] * KEGG_SCALE, lastY = pts[pts.length-1][1] * KEGG_SCALE;
+            let totalTurn = 0;
+            for (let i = 1; i < pts.length - 1; i++) {
+              const ax = pts[i][0]-pts[i-1][0], ay = pts[i][1]-pts[i-1][1];
+              const bx = pts[i+1][0]-pts[i][0], by = pts[i+1][1]-pts[i][1];
+              totalTurn += Math.abs(Math.atan2(ax*by - ay*bx, ax*bx + ay*by));
+            }
+            bgPath.moveTo(firstX, firstY);
+            if (pts.length <= 2 || totalTurn <= 0.8) {
+              for (let i = 1; i < pts.length - 1; i++) {
+                bgPath.arcTo(pts[i][0]*KEGG_SCALE, pts[i][1]*KEGG_SCALE, pts[i+1][0]*KEGG_SCALE, pts[i+1][1]*KEGG_SCALE, 6);
+              }
+              bgPath.lineTo(lastX, lastY);
+            } else {
+              for (let i = 1; i < pts.length - 1; i++) {
+                const px = pts[i][0]*KEGG_SCALE, py = pts[i][1]*KEGG_SCALE;
+                const nx = pts[i+1][0]*KEGG_SCALE, ny = pts[i+1][1]*KEGG_SCALE;
+                bgPath.quadraticCurveTo(px, py, (px+nx)/2, (py+ny)/2);
+              }
+              bgPath.lineTo(lastX, lastY);
+            }
+          }
+          keggBgPathRef.current = bgPath;
+          // Pre-build per-edge Path2D, bounding boxes, reaction IDs for filtered rendering
+          for (const edge of keggOrthoEdgesRef.current) {
+            const pts = edge.points;
+            if (!pts || pts.length < 2) { edge._path = null; continue; }
+            const p = new Path2D();
+            const fx = pts[0][0]*KEGG_SCALE, fy = pts[0][1]*KEGG_SCALE;
+            const ex = pts[pts.length-1][0]*KEGG_SCALE, ey = pts[pts.length-1][1]*KEGG_SCALE;
+            let minX=fx, minY=fy, maxX=fx, maxY=fy;
+            let turn = 0;
+            for (let i = 1; i < pts.length - 1; i++) {
+              const ax=pts[i][0]-pts[i-1][0], ay=pts[i][1]-pts[i-1][1];
+              const bx=pts[i+1][0]-pts[i][0], by=pts[i+1][1]-pts[i][1];
+              turn += Math.abs(Math.atan2(ax*by-ay*bx, ax*bx+ay*by));
+            }
+            p.moveTo(fx, fy);
+            if (pts.length <= 2 || turn <= 0.8) {
+              for (let i = 1; i < pts.length - 1; i++) {
+                const cx=pts[i][0]*KEGG_SCALE, cy=pts[i][1]*KEGG_SCALE;
+                const dnx=pts[i+1][0]*KEGG_SCALE, dny=pts[i+1][1]*KEGG_SCALE;
+                if(cx<minX) minX=cx; if(cx>maxX) maxX=cx; if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
+                p.arcTo(cx, cy, dnx, dny, 6);
+              }
+              p.lineTo(ex, ey);
+            } else {
+              for (let i = 1; i < pts.length - 1; i++) {
+                const cx=pts[i][0]*KEGG_SCALE, cy=pts[i][1]*KEGG_SCALE;
+                const dnx=pts[i+1][0]*KEGG_SCALE, dny=pts[i+1][1]*KEGG_SCALE;
+                if(cx<minX) minX=cx; if(cx>maxX) maxX=cx; if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
+                p.quadraticCurveTo(cx, cy, (cx+dnx)/2, (cy+dny)/2);
+              }
+              p.lineTo(ex, ey);
+            }
+            if(ex<minX) minX=ex; if(ex>maxX) maxX=ex; if(ey<minY) minY=ey; if(ey>maxY) maxY=ey;
+            edge._path = p;
+            edge._bounds = [minX, minY, maxX, maxY];
+            edge._endXY = [ex, ey];
+            const ppx = pts[pts.length-2][0]*KEGG_SCALE, ppy = pts[pts.length-2][1]*KEGG_SCALE;
+            edge._arrowAngle = Math.atan2(ey - ppy, ex - ppx);
+            edge._rxnIds = (edge.reaction || '').split(/\s+/).map(r => r.replace(/^rn:/, ''));
+          }
+          console.log(`[NEBULA] KEGG ortho edges: ${keggOrthoEdgesRef.current.length} polylines loaded, Path2D cached`);
           drawRef.current?.(nodesRef.current);
         })
         .catch(e => console.warn('[NEBULA] Failed to fetch KEGG ortho edges:', e));
-    }, [keggOrthoEdges]);
+    }, [keggOrthoEdges, showAllKegg, showKeggLines]);
 
     /* ── Helper: fit view to nodes ── */
     const fitViewToNodes = useCallback((nodesCopy) => {
@@ -1185,6 +1373,23 @@ const GraphCanvas = forwardRef(
       const scale = Math.min(cw / gw, ch / gh, 1.5);
       const tx = (cw - gw * scale) / 2 - minX * scale;
       const ty = (ch - gh * scale) / 2 - minY * scale;
+      const tr = d3.zoomIdentity.translate(tx, ty).scale(scale);
+      transformRef.current = tr;
+      d3.select(canvas).call(zoomRef.current.transform, tr);
+    }, []);
+
+    /* Fit view to an explicit world-space bounding box */
+    const fitViewToBounds = useCallback((minX, minY, maxX, maxY) => {
+      if (!canvasRef.current || !zoomRef.current) return;
+      const canvas = canvasRef.current;
+      const cw = canvas.clientWidth || 800;
+      const ch = canvas.clientHeight || 600;
+      const pad = 150;
+      const gw = (maxX - minX) + pad * 2 || 1;
+      const gh = (maxY - minY) + pad * 2 || 1;
+      const scale = Math.min(cw / gw, ch / gh);
+      const tx = (cw - gw * scale) / 2 - (minX - pad) * scale;
+      const ty = (ch - gh * scale) / 2 - (minY - pad) * scale;
       const tr = d3.zoomIdentity.translate(tx, ty).scale(scale);
       transformRef.current = tr;
       d3.select(canvas).call(zoomRef.current.transform, tr);
@@ -1213,13 +1418,14 @@ const GraphCanvas = forwardRef(
           let matched = 0;
           nds.forEach(n => {
             const pos = positions[n.id];
-            if (pos) { n.x = pos.x; n.y = pos.y; matched++; }
+            if (pos) { n.x = pos.x * KEGG_SCALE; n.y = pos.y * KEGG_SCALE; matched++; }
           });
 
           // Place unplaced nodes near their positioned neighbors
           const nodeMap = new Map(nds.map(n => [n.id, n]));
           const unplaced = nds.filter(n => !positions[n.id]);
-          const MIN_SEP = 30; // minimum distance between any two nodes
+          // Larger separation for structure-mode nodes (STRUCT_WORLD_H=70, so need 70+R for struct+circle)
+          const MIN_SEP = nodeDisplay === 'structure' ? 90 : R_COMPOUND * 2 + 8;
 
           unplaced.forEach((n, idx) => {
             const neighbors = [];
@@ -1244,7 +1450,7 @@ const GraphCanvas = forwardRef(
           });
 
           // Collision resolution: push overlapping nodes apart
-          for (let iter = 0; iter < 10; iter++) {
+          for (let iter = 0; iter < 20; iter++) {
             let moved = false;
             for (let i = 0; i < nds.length; i++) {
               for (let j = i + 1; j < nds.length; j++) {
@@ -1254,7 +1460,6 @@ const GraphCanvas = forwardRef(
                 if (dist < MIN_SEP && dist > 0) {
                   const push = (MIN_SEP - dist) / 2 + 1;
                   const ux = dx / dist, uy = dy / dist;
-                  // Only push nodes that aren't pinned to KEGG positions
                   const iFixed = !!positions[nds[i].id];
                   const jFixed = !!positions[nds[j].id];
                   if (!iFixed && !jFixed) {
@@ -1267,9 +1472,13 @@ const GraphCanvas = forwardRef(
                   } else if (!jFixed) {
                     nds[j].x += ux * push * 2; nds[j].y += uy * push * 2;
                     moved = true;
+                  } else {
+                    // Both KEGG-placed: gentle mutual push to clear overlap
+                    nds[i].x -= ux * push * 0.4; nds[i].y -= uy * push * 0.4;
+                    nds[j].x += ux * push * 0.4; nds[j].y += uy * push * 0.4;
+                    moved = true;
                   }
                 } else if (dist === 0) {
-                  // Exactly same position — nudge randomly
                   nds[j].x += MIN_SEP * (0.5 + Math.random());
                   nds[j].y += MIN_SEP * (0.5 + Math.random());
                   moved = true;
@@ -1285,7 +1494,19 @@ const GraphCanvas = forwardRef(
           nds.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
           nodesRef.current = nds;
           needsFitRef.current = false;
-          fitViewToNodes(nds);
+          if (showAllKegg && keggPositionsRef.current) {
+            const allPos = Object.values(keggPositionsRef.current);
+            if (allPos.length > 10) {
+              // Use 5th–95th percentile to center on the dense compound region
+              const sortedX = allPos.map(p => p.x * KEGG_SCALE).sort((a, b) => a - b);
+              const sortedY = allPos.map(p => p.y * KEGG_SCALE).sort((a, b) => a - b);
+              const lo = Math.floor(allPos.length * 0.05);
+              const hi = Math.floor(allPos.length * 0.95);
+              fitViewToBounds(sortedX[lo], sortedY[lo], sortedX[hi], sortedY[hi]);
+            } else { fitViewToNodes(nds); }
+          } else {
+            fitViewToNodes(nds);
+          }
           drawRef.current?.(nds);
           console.log(`[NEBULA] KEGG layout: ${matched}/${nds.length} compounds placed`);
         };
@@ -1298,6 +1519,7 @@ const GraphCanvas = forwardRef(
             .then(r => r.json())
             .then(data => {
               keggPositionsRef.current = data.positions || {};
+              keggPosArrayRef.current = Object.entries(keggPositionsRef.current);
               const freshCopy = graph.nodes.map(n => ({ ...n }));
               const freshLinks = graph.links.map(l => ({ ...l }));
               const matched = applyKegg(freshCopy, freshLinks, keggPositionsRef.current, centerX, centerY);
@@ -1379,7 +1601,7 @@ const GraphCanvas = forwardRef(
       }
 
       drawRef.current?.(nodesCopy);
-    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, fitViewToNodes]);
+    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, showAllKegg, nodeDisplay, fitViewToNodes, fitViewToBounds]);
 
     /* ── Canvas & Zoom setup ── */
     useEffect(() => {
@@ -1404,8 +1626,9 @@ const GraphCanvas = forwardRef(
 
       const zoom = d3
         .zoom()
-        .scaleExtent([0.1, 10])
+        .scaleExtent([0.01, 10])
         .filter(ev => {
+          if (ev.ctrlKey) return false; // ctrl reserved for selection box
           if (ev.type !== "mousedown" && ev.type !== "pointerdown") return true;
           const rect = canvas.getBoundingClientRect();
           const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
@@ -1424,7 +1647,12 @@ const GraphCanvas = forwardRef(
         })
         .on("zoom", ev => {
           transformRef.current = ev.transform;
-          drawRef.current?.(nodesRef.current);
+          if (!zoomRafRef.current) {
+            zoomRafRef.current = requestAnimationFrame(() => {
+              zoomRafRef.current = null;
+              drawRef.current?.(nodesRef.current);
+            });
+          }
         });
       d3.select(canvas).call(zoom);
       zoomRef.current = zoom;
@@ -1432,6 +1660,7 @@ const GraphCanvas = forwardRef(
       return () => {
         window.removeEventListener("resize", handleResize);
         d3.select(canvas).on(".zoom", null);
+        if (zoomRafRef.current) { cancelAnimationFrame(zoomRafRef.current); zoomRafRef.current = null; }
       };
     }, [containerRef, height, isFullscreen]);
 
@@ -1468,29 +1697,128 @@ const GraphCanvas = forwardRef(
         };
       };
 
+      // ── Pointer down ──
       const pointerdown = e => {
+        // Middle click: toggle node lock
+        if (e.button === 1) {
+          e.preventDefault();
+          const { mx, my } = worldCoords(e);
+          const node = hitTest(mx, my);
+          if (node) {
+            const locked = lockedNodesRef.current;
+            if (locked.has(node.id)) locked.delete(node.id);
+            else locked.add(node.id);
+            drawRef.current?.(nodesRef.current);
+          }
+          return;
+        }
+        if (e.button !== 0) return;
+
         const { mx, my } = worldCoords(e);
         const node = hitTest(mx, my);
-        if (node) { dragging = node; didDrag = false; canvas.style.cursor = "grabbing"; }
+
+        // Ctrl+drag on empty space = start selection box
+        if (e.ctrlKey && !node) {
+          selBoxRef.current = { x1: mx, y1: my, x2: mx, y2: my };
+          canvas.style.cursor = 'crosshair';
+          return;
+        }
+
+        if (node && !keggLayoutRef.current) {
+          const pinned = pinnedNodesRef.current;
+          if (pinned.has(node.id) && pinned.size > 1) {
+            // Group drag: move all pinned non-locked nodes together
+            const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]));
+            multiDragRef.current = [];
+            pinned.forEach(id => {
+              const n = nodeMap.get(id);
+              if (n && !lockedNodesRef.current.has(id)) {
+                multiDragRef.current.push({ node: n, offX: n.x - mx, offY: n.y - my });
+              }
+            });
+            didDrag = false;
+            canvas.style.cursor = 'grabbing';
+          } else if (!lockedNodesRef.current.has(node.id)) {
+            dragging = node;
+            didDrag = false;
+            canvas.style.cursor = 'grabbing';
+          }
+        }
       };
 
+      // ── Pointer move ──
       const pointermove = e => {
         const { mx, my } = worldCoords(e);
+
+        if (selBoxRef.current) {
+          selBoxRef.current.x2 = mx;
+          selBoxRef.current.y2 = my;
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
+        if (multiDragRef.current) {
+          multiDragRef.current.forEach(({ node, offX, offY }) => {
+            node.x = mx + offX;
+            node.y = my + offY;
+          });
+          didDrag = true;
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
         if (dragging) {
           dragging.x = mx; dragging.y = my; didDrag = true;
           drawRef.current?.(nodesRef.current);
           return;
         }
+
         const hit = hitTest(mx, my);
         const found = hit ? hit.id : null;
         if (found !== hoveredNodeRef.current) {
           hoveredNodeRef.current = found;
-          canvas.style.cursor = found ? "pointer" : "grab";
+          const isLocked = found && lockedNodesRef.current.has(found);
+          canvas.style.cursor = found ? (isLocked ? 'not-allowed' : 'pointer') : 'grab';
           drawRef.current?.(nodesRef.current);
         }
       };
 
+      // ── Pointer up ──
       const pointerup = () => {
+        // Finish selection box → add enclosed nodes to pinned set
+        if (selBoxRef.current) {
+          const { x1, y1, x2, y2 } = selBoxRef.current;
+          const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+          const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+          if (maxX - minX > 4 || maxY - minY > 4) {
+            nodesRef.current.forEach(n => {
+              if (!localEditsRef.current.deletedNodes.has(n.id)) {
+                if (n.x >= minX && n.x <= maxX && n.y >= minY && n.y <= maxY) {
+                  pinnedNodesRef.current.add(n.id);
+                }
+              }
+            });
+            syncSelectionRef.current?.();
+          }
+          selBoxRef.current = null;
+          didDrag = true;
+          canvas.style.cursor = 'grab';
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
+        // Finish group drag
+        if (multiDragRef.current) {
+          multiDragRef.current.forEach(({ node }) => {
+            positionCacheRef.current[node.id] = { x: node.x, y: node.y };
+          });
+          multiDragRef.current = null;
+          didDrag = true;
+          canvas.style.cursor = 'grab';
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
         if (dragging) {
           const MIN_DIST = R_COMPOUND * 3;
           for (const other of nodesRef.current) {
@@ -1507,7 +1835,7 @@ const GraphCanvas = forwardRef(
           positionCacheRef.current[dragging.id] = { x: dragging.x, y: dragging.y };
           drawRef.current?.(nodesRef.current);
           dragging = null;
-          canvas.style.cursor = "grab";
+          canvas.style.cursor = 'grab';
         }
       };
 
@@ -1565,6 +1893,12 @@ const GraphCanvas = forwardRef(
         const tr = transformRef.current;
         const mx = (e.clientX - rect.left - tr.x) / tr.k;
         const my = (e.clientY - rect.top  - tr.y) / tr.k;
+
+        // If there's an active selection, show group transform menu regardless of hit
+        if (pinnedNodesRef.current.size > 0) {
+          setCtxMenu({ x: e.clientX, y: e.clientY, type: 'group' });
+          return;
+        }
 
         // Hit-test nodes first
         const nodes = nodesRef.current.filter(n => !localEditsRef.current.deletedNodes.has(n.id));
@@ -2179,10 +2513,36 @@ const GraphCanvas = forwardRef(
         />
         {ctxMenu && (
           <div
-            className="absolute z-50 min-w-[160px] rounded-lg border border-border-primary bg-surface-primary shadow-lg py-1 text-[12px]"
-            style={{ left: ctxMenu.x - canvasRef.current?.getBoundingClientRect().left, top: ctxMenu.y - canvasRef.current?.getBoundingClientRect().top }}
+            className="fixed z-50 min-w-[170px] rounded-xl border border-brd/50 bg-surface-overlay/95 backdrop-blur-xl shadow-2xl py-1 text-xs"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
             onClick={e => e.stopPropagation()}
           >
+            {ctxMenu.type === 'group' && (() => {
+              const GROUP_ACTIONS = [
+                { type: 'flipH',    label: 'Flip Horizontal', icon: '↔' },
+                { type: 'flipV',    label: 'Flip Vertical',   icon: '↕' },
+                { type: 'rot90cw',  label: 'Rotate 90° CW',   icon: '↻' },
+                { type: 'rot90ccw', label: 'Rotate 90° CCW',  icon: '↺' },
+                { type: 'rot180',   label: 'Rotate 180°',     icon: '⟳' },
+              ];
+              return (
+                <>
+                  <div className="px-3 py-1.5 text-[10px] font-semibold text-content-muted uppercase tracking-wide border-b border-brd/40">
+                    {pinnedNodesRef.current.size} node{pinnedNodesRef.current.size !== 1 ? 's' : ''} selected
+                  </div>
+                  {GROUP_ACTIONS.map(a => (
+                    <button
+                      key={a.type}
+                      onClick={() => applyGroupTransform(a.type)}
+                      className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                    >
+                      <span className="text-base leading-none text-content-muted select-none">{a.icon}</span>
+                      {a.label}
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
             {ctxMenu.type === 'node' && (
               <>
                 <div className="px-3 py-1 text-content-secondary font-medium truncate max-w-[200px]">{ctxNodeLabel}</div>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   ChevronRight, Settings2, Download, Image, Maximize, Minimize,
   HelpCircle, Layers, RotateCcw, Palette, Circle, Activity, Scaling,
-  Spline, GitCommitHorizontal, Hexagon, Map, Route, Tag,
+  Spline, GitCommitHorizontal, Hexagon, Map, Route, Tag, Globe2, Network, EyeOff,
 } from 'lucide-react';
 import { SCHEME_NAMES, schemeGradientCSS } from '../NetworkViewer2D/utils/colorSchemes';
 
@@ -186,6 +186,9 @@ const SettingsPanel = ({
   showNames, setShowNames,
   keggLayout, setKeggLayout,
   keggOrthoEdges, setKeggOrthoEdges,
+  showAllKegg, setShowAllKegg,
+  showKeggLines, setShowKeggLines,
+  hideEdges, setHideEdges,
 }) => {
   const [open, setOpen] = useState(false);
 
@@ -245,10 +248,17 @@ const SettingsPanel = ({
             />
             <Toggle label="Path overlay" value={showOverlay} onChange={toggleOverlay} icon={Layers} />
             <Toggle label="Prune edges" value={pruneEdges} onChange={setPruneEdges} icon={Scaling} />
+            <Toggle label="Hide edges" value={hideEdges} onChange={setHideEdges} icon={EyeOff} />
             <Toggle label="Structures" value={nodeDisplay === 'structure'} onChange={(v) => setNodeDisplay(v ? 'structure' : 'circle')} icon={Hexagon} />
             <Toggle label="Compound names" value={showNames} onChange={setShowNames} icon={Tag} />
             <Toggle label="KEGG layout" value={keggLayout} onChange={setKeggLayout} icon={Map} />
             <Toggle label="KEGG ortho edges" value={keggOrthoEdges} onChange={setKeggOrthoEdges} icon={Route} />
+            {keggLayout && (
+              <Toggle label="Show all map compounds" value={showAllKegg} onChange={setShowAllKegg} icon={Globe2} />
+            )}
+            {keggLayout && (
+              <Toggle label="Show map lines" value={showKeggLines} onChange={setShowKeggLines} icon={Network} />
+            )}
             <LayoutSelector value={edgeStyle} onChange={setEdgeStyle} />
           </div>
 

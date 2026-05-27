@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import re
 import requests
+import json
 import xml.etree.ElementTree as ET
 
 from app import STATIC_DIR, DATA_DIR, DOCS_DIR
@@ -46,34 +47,24 @@ async def health_check():
 _kegg_layout_cache = None
 
 def _parse_kegg_layout():
-    """Parse ko01100.kgml and return {compound_id: {x, y}} for all compound entries."""
+    """Load kegg_pos_extended.json (or kegg_pos.json fallback) and return {compound_id: {x, y}}."""
     global _kegg_layout_cache
     if _kegg_layout_cache is not None:
         return _kegg_layout_cache
 
-    kgml_path = DATA_DIR / "ko01100.kgml"
-    if not kgml_path.exists():
-        logger.warning("ko01100.kgml not found in data directory")
+    json_path = DATA_DIR / "kegg_pos_extended.json"
+    if not json_path.exists():
+        json_path = DATA_DIR / "kegg_pos.json"
+    if not json_path.exists():
+        logger.warning("No KEGG position file found in data directory")
         return {}
 
-    positions = {}
-    tree = ET.parse(str(kgml_path))
-    root = tree.getroot()
-    for entry in root.findall("entry"):
-        if entry.get("type") != "compound":
-            continue
-        # name is like "cpd:C00001" or "gl:G13352"
-        raw_name = entry.get("name", "")
-        cid = raw_name.split(":")[-1] if ":" in raw_name else raw_name
-        graphics = entry.find("graphics")
-        if graphics is not None:
-            x = graphics.get("x")
-            y = graphics.get("y")
-            if x is not None and y is not None and cid not in positions:
-                positions[cid] = {"x": float(x), "y": float(y)}
+    with open(json_path, "r") as f:
+        raw = json.load(f)
 
+    positions = {cid: {"x": float(xy[0]), "y": float(xy[1])} for cid, xy in raw.items()}
     _kegg_layout_cache = positions
-    logger.info(f"Parsed KEGG layout: {len(positions)} compound positions from ko01100.kgml")
+    logger.info(f"Loaded KEGG layout: {len(positions)} compound positions from {json_path.name}")
     return _kegg_layout_cache
 
 @app.get("/api/kegg-layout")
@@ -702,7 +693,7 @@ async def get_smiles(payload: dict):
         c_ids = [c for c in compound_ids if c.startswith('C')]
         z_ids = [c for c in compound_ids if c.startswith('Z')]
 
-        # 1) SMILES from PubChem
+        # 1) SMILES from PubChem (primary)
         smiles_result = get_smiles_batch(c_ids) if c_ids else {}
 
         # 2) MOL from KEGG for C compounds that have no SMILES

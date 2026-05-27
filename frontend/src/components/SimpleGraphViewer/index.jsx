@@ -29,6 +29,9 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   const [showNames, setShowNames] = useState(false);
   const [keggLayout, setKeggLayout] = useState(false);
   const [keggOrthoEdges, setKeggOrthoEdges] = useState(false);
+  const [showAllKegg, setShowAllKegg] = useState(false);
+  const [showKeggLines, setShowKeggLines] = useState(false);
+  const [hideEdges, setHideEdges] = useState(false);
 
   const safeResults = Array.isArray(results) ? results : [];
 
@@ -248,6 +251,9 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             showNames={showNames}
             keggLayout={keggLayout}
             keggOrthoEdges={keggOrthoEdges}
+            showAllKegg={showAllKegg}
+            showKeggLines={showKeggLines}
+            hideEdges={hideEdges}
             backboneMatchIds={backboneMatchIds}
           />
 
@@ -285,6 +291,12 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             setKeggLayout={setKeggLayout}
             keggOrthoEdges={keggOrthoEdges}
             setKeggOrthoEdges={setKeggOrthoEdges}
+            showAllKegg={showAllKegg}
+            setShowAllKegg={setShowAllKegg}
+            showKeggLines={showKeggLines}
+            setShowKeggLines={setShowKeggLines}
+            hideEdges={hideEdges}
+            setHideEdges={setHideEdges}
           />
         </div>
       </div>
