@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import requests
 import json
-import xml.etree.ElementTree as ET
 
 from app import STATIC_DIR, DATA_DIR, DOCS_DIR
 from app.core.viewer import MetabolicViewer
@@ -47,94 +46,189 @@ async def health_check():
 _kegg_layout_cache = None
 
 def _parse_kegg_layout():
-    """Load kegg_pos_extended.json (or kegg_pos.json fallback) and return {compound_id: {x, y}}."""
+    """Load compound positions from kegg_pos_svg.json — positions taken directly
+    from map01100.svg's own ellipses (matched to compound IDs via the iPath3
+    backend's authoritative id lookup), reprojected into KEGG world space so
+    they land exactly on top of the background art's own dots.
+
+    We intentionally do NOT fall back to kegg_pos_conf.json (KEGG REST conf
+    coordinates) here: that file was built from a completely different render
+    of the map (map01100.conf + map01100_kegg.png) whose layout does not match
+    map01100.svg at all — verified case-by-case, the same compound's conf vs.
+    SVG position can differ by 100-1800+ world units with no consistent offset.
+    Using it as a "fallback" used to silently place ~1800 compounds at visibly
+    wrong, shifted locations. Compounds not covered here are instead placed by
+    the frontend's weighted-centroid/local-BFS fallback (applyKegg() in
+    GraphCanvas.jsx), which is far more accurate than a wrong absolute
+    coordinate.
+    """
     global _kegg_layout_cache
     if _kegg_layout_cache is not None:
         return _kegg_layout_cache
 
-    json_path = DATA_DIR / "kegg_pos_extended.json"
-    if not json_path.exists():
-        json_path = DATA_DIR / "kegg_pos.json"
-    if not json_path.exists():
-        logger.warning("No KEGG position file found in data directory")
-        return {}
-
-    with open(json_path, "r") as f:
-        raw = json.load(f)
+    raw = {}
+    svg_path = DATA_DIR / "kegg_pos_svg.json"
+    if svg_path.exists():
+        with open(svg_path, "r") as f:
+            raw.update(json.load(f))
+    else:
+        logger.warning("kegg_pos_svg.json not found in data directory")
 
     positions = {cid: {"x": float(xy[0]), "y": float(xy[1])} for cid, xy in raw.items()}
     _kegg_layout_cache = positions
-    logger.info(f"Loaded KEGG layout: {len(positions)} compound positions from {json_path.name}")
+    logger.info(f"KEGG layout: {len(positions)} positions (from kegg_pos_svg.json only)")
     return _kegg_layout_cache
 
 @app.get("/api/kegg-layout")
 async def get_kegg_layout():
-    """Return KEGG global metabolic map (ko01100) compound positions."""
+    """Return KEGG global metabolic map (ko01100) compound positions (SVG coordinate space)."""
+    from fastapi.responses import JSONResponse
     try:
         positions = _parse_kegg_layout()
-        return {"positions": positions, "count": len(positions)}
+        return JSONResponse(
+            content={"positions": positions, "count": len(positions)},
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+        )
     except Exception as e:
         logger.error(f"Error parsing KEGG layout: {e}")
         raise HTTPException(status_code=500, detail="Failed to parse KEGG layout")
 
-# ── KEGG ortholog edges (polylines, parsed once, cached) ──
-_kegg_ortho_cache = None
+# ── KEGG conf reaction lines (parsed from map01100.conf, cached) ──
+_kegg_conf_lines_cache = None
 
-def _parse_kegg_ortho_edges():
-    """Parse ko01100.kgml and return ortholog polylines (type='line' graphics)."""
-    global _kegg_ortho_cache
-    if _kegg_ortho_cache is not None:
-        return _kegg_ortho_cache
+def _parse_kegg_conf_lines():
+    """Parse map01100.conf → reaction lines + compound→line index mapping."""
+    global _kegg_conf_lines_cache
+    if _kegg_conf_lines_cache is not None:
+        return _kegg_conf_lines_cache
 
-    kgml_path = DATA_DIR / "ko01100.kgml"
-    if not kgml_path.exists():
-        logger.warning("ko01100.kgml not found in data directory")
-        return []
+    conf_path = DATA_DIR / "map01100.conf"
+    if not conf_path.exists():
+        logger.warning("map01100.conf not found")
+        return {"lines": [], "compound_lines": {}}
 
-    edges = []
-    tree = ET.parse(str(kgml_path))
-    root = tree.getroot()
-    for entry in root.findall("entry"):
-        if entry.get("type") != "ortholog":
-            continue
-        reaction = entry.get("reaction", "")
-        name = entry.get("name", "")
-        for graphics in entry.findall("graphics"):
-            if graphics.get("type") != "line":
+    # Load PNG for color sampling
+    png_path = DATA_DIR / "map01100_kegg.png"
+    px = None
+    img_w, img_h = 0, 0
+    if png_path.exists():
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(str(png_path))
+            px = img.load()
+            img_w, img_h = img.size
+        except Exception:
+            logger.warning("Could not load PNG for color sampling")
+
+    def sample_color(coords):
+        if px is None:
+            return "#8888cc"
+        for i in range(0, len(coords) - 2, 2):
+            mx = (coords[i] + coords[i + 2]) // 2
+            my = (coords[i + 1] + coords[i + 3]) // 2
+            if 0 <= mx < img_w and 0 <= my < img_h:
+                r, g, b = px[mx, my][:3]
+                if not (r > 210 and g > 210 and b > 210):
+                    return f"#{r:02x}{g:02x}{b:02x}"
+        return "#8888cc"
+
+    lines_out = []   # [{points, width, color}, ...]
+    compounds = []   # [(cid, x, y), ...]
+    regions = []     # [{x, y, width, height, name}, ...]
+
+    for raw in conf_path.read_text(encoding="utf-8").splitlines():
+        if raw.startswith("line"):
+            m = re.match(r"line \(([^)]+)\) (\d+)", raw)
+            if not m:
                 continue
-            coords_str = graphics.get("coords", "")
-            if not coords_str:
-                continue
-            # coords is "x1,y1,x2,y2,..." — parse into list of [x, y] pairs
-            nums = coords_str.split(",")
-            points = []
-            for i in range(0, len(nums) - 1, 2):
-                try:
-                    points.append([float(nums[i]), float(nums[i + 1])])
-                except (ValueError, IndexError):
-                    continue
-            if len(points) >= 2:
-                fgcolor = graphics.get("fgcolor", "#F06292")
-                edges.append({
-                    "name": name,
-                    "reaction": reaction,
-                    "points": points,
-                    "color": fgcolor,
-                })
+            nums = [int(x) for x in m.group(1).split(",")]
+            pts = [[nums[i], nums[i+1]] for i in range(0, len(nums)-1, 2)]
+            width = int(m.group(2))
+            color = sample_color(nums)
+            lines_out.append({"points": pts, "width": width, "color": color})
+        elif raw.startswith("filled_circ"):
+            m = re.match(r"filled_circ \((\d+),(\d+)\) \d+\t/dbget-bin/www_bget\?(\w+)", raw)
+            if m:
+                compounds.append((m.group(3), int(m.group(1)), int(m.group(2))))
+        elif raw.startswith("rect"):
+            m = re.match(r"rect \((\d+),(\d+)\) \((\d+),(\d+)\)", raw)
+            if m:
+                x1, y1, x2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+                parts = raw.split("\t")
+                label = parts[2] if len(parts) >= 3 else ""
+                # Strip "mapXXXXX: " prefix
+                label = re.sub(r"^map\d+:\s*", "", label).strip()
+                if label:
+                    regions.append({"x": (x1+x2)/2, "y": (y1+y2)/2,
+                                    "width": abs(x2-x1), "height": abs(y2-y1), "name": label})
 
-    _kegg_ortho_cache = edges
-    logger.info(f"Parsed KEGG ortho edges: {len(edges)} polylines from ko01100.kgml")
-    return _kegg_ortho_cache
+    # Build compound → line indices using spatial grid (O(n+m) instead of O(n*m))
+    THRESHOLD = 8  # compound circles are r=7; only match lines actually touching
+    CELL = THRESHOLD  # grid cell size
+    # Index line endpoints into grid
+    endpoint_grid = {}  # (gx, gy) → [(line_idx, px, py), ...]
+    for li, line in enumerate(lines_out):
+        pts = line["points"]
+        for px_pt, py_pt in [pts[0], pts[-1]]:
+            gx, gy = px_pt // CELL, py_pt // CELL
+            endpoint_grid.setdefault((gx, gy), []).append((li, px_pt, py_pt))
 
-@app.get("/api/kegg-ortho-edges")
-async def get_kegg_ortho_edges():
-    """Return KEGG ortholog edge polylines from ko01100."""
+    THRESHOLD_SQ = THRESHOLD * THRESHOLD
+    cpd_lines = {}  # cid → [line_idx, ...]
+    for ci, (cid, cx, cy) in enumerate(compounds):
+        gx, gy = cx // CELL, cy // CELL
+        matched = set()
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                for li, px_pt, py_pt in endpoint_grid.get((gx + dx, gy + dy), []):
+                    if (px_pt - cx)**2 + (py_pt - cy)**2 <= THRESHOLD_SQ:
+                        matched.add(li)
+        if matched:
+            cpd_lines[cid] = sorted(matched)
+
+    # For each line, identify which compound (if any) sits at its start / end
+    # point, in THIS conf-native coordinate space. The frontend renders compound
+    # dots using kegg_pos_svg.json (a different, SVG-art-based coordinate space
+    # that can differ from these conf coordinates by 100-1800+ world units for
+    # the same compound — the two source maps simply aren't pixel-aligned). By
+    # shipping the compound ID at each endpoint, the frontend can re-anchor a
+    # line's start/end to that compound's ACTUAL current node position instead
+    # of trusting the raw conf point — fixing lines that visibly don't touch
+    # their compound's dot.
+    compound_grid = {}  # (gx, gy) → [(cid, x, y), ...]
+    for cid, cx, cy in compounds:
+        gx, gy = cx // CELL, cy // CELL
+        compound_grid.setdefault((gx, gy), []).append((cid, cx, cy))
+
+    def _nearest_compound(px_pt, py_pt):
+        gx, gy = px_pt // CELL, py_pt // CELL
+        best_cid, best_d = None, THRESHOLD_SQ
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                for cid, cx, cy in compound_grid.get((gx + dx, gy + dy), []):
+                    d = (cx - px_pt) ** 2 + (cy - py_pt) ** 2
+                    if d <= best_d:
+                        best_d, best_cid = d, cid
+        return best_cid
+
+    for line in lines_out:
+        pts = line["points"]
+        line["startCid"] = _nearest_compound(pts[0][0], pts[0][1])
+        line["endCid"] = _nearest_compound(pts[-1][0], pts[-1][1])
+
+    _kegg_conf_lines_cache = {"lines": lines_out, "compound_lines": cpd_lines, "regions": regions}
+    logger.info(f"Parsed KEGG conf: {len(lines_out)} lines, {len(cpd_lines)} compounds, {len(regions)} regions")
+    return _kegg_conf_lines_cache
+
+@app.get("/api/kegg-conf-lines")
+async def get_kegg_conf_lines():
+    """Return KEGG conf reaction lines + compound→line mapping for active highlighting."""
     try:
-        edges = _parse_kegg_ortho_edges()
-        return {"edges": edges, "count": len(edges)}
+        data = _parse_kegg_conf_lines()
+        return data
     except Exception as e:
-        logger.error(f"Error parsing KEGG ortho edges: {e}")
-        raise HTTPException(status_code=500, detail="Failed to parse KEGG ortho edges")
+        logger.error(f"Error parsing KEGG conf lines: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse KEGG conf lines")
 
 @app.get("/api/backtrace")
 async def get_backtrace(target: str, source: str=''):
@@ -807,6 +901,30 @@ async def docs_page(slug: str):
     if not md_path.exists():
         raise HTTPException(status_code=404, detail=f"Documentation page '{slug}' not found")
     return JSONResponse(content={"slug": safe_slug, "content": md_path.read_text(encoding="utf-8")})
+
+@app.get("/api/kegg-map-bg")
+async def get_kegg_map_bg(variant: str):
+    """Return one of the two independent KEGG map01100 background SVG layers:
+    "KEGG layout" (skeleton lines + compound ellipses) and "Pathway regions"
+    (native region-name text). These are separate <g> groups in the source
+    art and are toggled fully independently on the frontend — when both are
+    on, the caller fetches both variants separately and composites them
+    itself (draws lines first, then text on top); there is no combined file.
+
+    variant=lines -> map01100_bg_notext.svg    (skeleton only)
+    variant=text  -> map01100_bg_textonly.svg  (region text only)
+    """
+    from fastapi.responses import Response
+    if variant == "lines":
+        filename = "map01100_bg_notext.svg"
+    elif variant == "text":
+        filename = "map01100_bg_textonly.svg"
+    else:
+        raise HTTPException(status_code=400, detail="variant must be 'lines' or 'text'")
+    bg_path = DATA_DIR / filename
+    if not bg_path.exists():
+        raise HTTPException(status_code=404, detail="KEGG map background SVG not found")
+    return Response(content=bg_path.read_bytes(), media_type="image/svg+xml")
 
 # Serve documentation images (GIFs, screenshots, etc.)
 _docs_images_dir = DOCS_DIR / "images"
