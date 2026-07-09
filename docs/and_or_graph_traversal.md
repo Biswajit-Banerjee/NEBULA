@@ -2,7 +2,7 @@
 
 ## Overview
 
-NEBULA models metabolic networks as **directed B-hypergraphs** and performs backward reachability analysis using an **AND-OR graph traversal**. Given a target metabolite, the algorithm traces every possible biosynthetic route back to primordial (generation-0) seed compounds, building a tree that encodes all minimal pathways.
+NEBULA models metabolic networks as **directed B-hypergraphs** and performs backward reachability analysis using an **AND-OR graph traversal**. Given a target metabolite, the algorithm traces every possible biosynthetic route back to primordial (generation-0) seed compounds, building a tree that encodes all minimal paths.
 
 The core implementation lives in [`backend/app/core/hypergraph.py`](../backend/app/core/hypergraph.py).
 
@@ -130,7 +130,7 @@ function expand_compound(compound, ancestor_path, depth):
        b. CYCLE DETECTION
           - For each non-cofactor reactant:
             - If reactant is in ancestor_path → skip entire reaction
-            (prevents infinite loops in cyclic pathways)
+            (prevents infinite loops in cyclic paths)
 
        c. RECURSIVE EXPANSION
           - For each non-cofactor reactant:
@@ -258,7 +258,7 @@ for rxn in node.producers:
 
 **Function:** `enumerate_solutions()` at `hypergraph.py:413-529`
 
-Once the AND-OR tree is built, we enumerate all **minimal pathways** — distinct subsets of reactions that fully resolve the target compound down to valid leaves.
+Once the AND-OR tree is built, we enumerate all **minimal paths** — distinct subsets of reactions that fully resolve the target compound down to valid leaves.
 
 ### Definition of a Solution
 
@@ -355,7 +355,7 @@ while queue not empty:
 |--------|---------------------------------------|-------------------------------------|
 | **Purpose** | Solution enumeration + tree view | Complete reaction list for table/graph views |
 | **Cycle handling** | Skips entire reaction if any reactant is an ancestor (breaks logical cycles) | Skips already-visited compounds (standard BFS) |
-| **Scope** | Only acyclic pathways — excludes reactions that would create circular dependencies (correct for solution enumeration) | All transitively reachable reactions regardless of cycles (correct for neighborhood exploration) |
+| **Scope** | Only acyclic paths — excludes reactions that would create circular dependencies (correct for solution enumeration) | All transitively reachable reactions regardless of cycles (correct for neighborhood exploration) |
 | **Output** | Nested `CompoundNode`/`ReactionNode` tree | Flat list of reaction dicts |
 | **Complexity** | Can be exponential in tree size (memoization helps) | O(V + E) BFS |
 
@@ -364,7 +364,7 @@ while queue not empty:
 > if producing compound A requires reaction R1 which needs compound B, and the only way to
 > produce B is reaction R2 which itself requires A, then R2 is correctly excluded — using it
 > would be circular reasoning. The flat BFS still records R2 because the table and graph
-> views show the full connected reaction neighborhood, not just valid pathways.
+> views show the full connected reaction neighborhood, not just valid paths.
 
 ---
 
@@ -398,7 +398,7 @@ A single API call returns everything the frontend needs:
     "max_depth": 12,
     "total_solutions": 91
   },
-  "solutions": [ ... ],      // minimal pathways (for solutions panel)
+  "solutions": [ ... ],      // minimal paths (for solutions panel)
   "data": [ ... ]            // flat reaction list (for table/2D/3D views)
 }
 ```
@@ -408,7 +408,7 @@ A single API call returns everything the frontend needs:
 ## 8. Frontend Rendering
 
 The AND-OR tree is rendered as an interactive collapsible tree in:
-- **`HypergraphTreeView/index.jsx`** — container with header, stats, legend, expand/collapse controls, and the Minimal Pathways side panel
+- **`HypergraphTreeView/index.jsx`** — container with header, stats, legend, expand/collapse controls, and the Minimal Paths side panel
 - **`HypergraphTreeView/TreeNode.jsx`** — recursive rendering of `CompoundNode` (OR) and `ReactionNode` (AND)
 
 ### Visual Mapping
