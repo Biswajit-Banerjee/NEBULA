@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle, useContext } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
+import WebGLErrorBoundary, { isWebGLAvailable, WebGLUnavailableMessage } from './WebGLErrorBoundary';
 import { getApiUrl } from '../../config/api';
 import * as THREE from 'three';
 import styled from 'styled-components';
@@ -591,6 +592,9 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const [playSpeed, setPlaySpeed] = useState(1500);
   const fgRef = useRef();
   const containerRef = useRef();
+  // Checked once on mount — avoids ever attempting to construct a THREE.WebGLRenderer
+  // (and the noisy uncaught errors that come with it) in sandboxed/GPU-disabled browsers.
+  const [webglSupported] = useState(() => isWebGLAvailable());
   const rotateIntervalRef = useRef(null);
   const { dark } = useContext(ThemeContext);
   const [showOptions, setShowOptions] = useState(false);
@@ -2188,7 +2192,10 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   return (
     <Container ref={containerRef} style={{ width: '100%', height: '100%' }}>
       
-      {filteredData.nodes.length > 0 ? (
+      {!webglSupported ? (
+        <WebGLUnavailableMessage />
+      ) : filteredData.nodes.length > 0 ? (
+        <WebGLErrorBoundary resetKey={filteredData}>
         <ForceGraph3D
           ref={fgRef}
           graphData={filteredData}
@@ -2223,6 +2230,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           onLinkHover={(l) => setHoverLink(l || null)}
           onEngineStop={() => {}}
         />
+        </WebGLErrorBoundary>
       ) : (
         <div style={{
           display: 'flex', justifyContent: 'center', alignItems: 'center',
