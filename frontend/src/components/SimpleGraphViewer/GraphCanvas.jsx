@@ -2789,6 +2789,81 @@ const GraphCanvas = forwardRef(
         // selection/coloring/moving in Illustrator.
         const labelOff = useStruct ? halfH + 1 : R + 1;
         const fontSizeScale = 1 + (nodeSizeScale - 1) * 0.5;
+        const svgFontSize = 7 * fontSizeScale;
+        const getSvgLabel = (n) => nodeDisplayRef.current === 'structure'
+          ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+          : showNamesRef.current
+            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+            : (n.label ?? n.id);
+
+        // ── Label collision-avoidance (mirrors the on-screen cascade in
+        // draw()'s drawLabel): if a label would overlap one already placed,
+        // push it further down in fixed steps instead of letting them
+        // overlap, so exported labels match exactly what the viewport shows
+        // instead of all sitting at the same fixed offset. ──
+        const measureCtx = canvasRef.current
+          ? canvasRef.current.getContext('2d')
+          : document.createElement('canvas').getContext('2d');
+        measureCtx.font = `500 ${svgFontSize}px "Inter", sans-serif`;
+        const placedLabelGrid = new Map();
+        const LABEL_GRID = Math.max(8, svgFontSize * 2);
+        const labelOverlaps = (x0, y0, x1, y1) => {
+          const gx0 = Math.floor(x0 / LABEL_GRID), gx1 = Math.floor(x1 / LABEL_GRID);
+          const gy0 = Math.floor(y0 / LABEL_GRID), gy1 = Math.floor(y1 / LABEL_GRID);
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const cell = placedLabelGrid.get(gx + ',' + gy);
+              if (!cell) continue;
+              for (const r of cell) {
+                if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) return true;
+              }
+            }
+          }
+          return false;
+        };
+        const placeLabelRect = (x0, y0, x1, y1) => {
+          const gx0 = Math.floor(x0 / LABEL_GRID), gx1 = Math.floor(x1 / LABEL_GRID);
+          const gy0 = Math.floor(y0 / LABEL_GRID), gy1 = Math.floor(y1 / LABEL_GRID);
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const key = gx + ',' + gy;
+              let cell = placedLabelGrid.get(key);
+              if (!cell) { cell = []; placedLabelGrid.set(key, cell); }
+              cell.push({ x0, y0, x1, y1 });
+            }
+          }
+        };
+        const candidateDys = [
+          labelOff,
+          labelOff + 1 * (svgFontSize + 3),
+          labelOff + 2 * (svgFontSize + 3),
+          labelOff + 3 * (svgFontSize + 3),
+          labelOff + 4 * (svgFontSize + 3),
+          labelOff + 5 * (svgFontSize + 3),
+        ];
+        const labelDyById = new Map();
+        const priorityNodes = [];
+        const normalNodes = [];
+        nodes.forEach(n => (highlightIds && highlightIds.has(n.id) ? priorityNodes : normalNodes).push(n));
+        const chooseDy = (n, forceShow) => {
+          const w = measureCtx.measureText(getSvgLabel(n)).width;
+          const x0 = n.x - w / 2 - 1, x1 = n.x + w / 2 + 1;
+          let chosenDy = candidateDys[0];
+          if (!forceShow) {
+            let found = false;
+            for (const dy of candidateDys) {
+              const y0 = n.y + dy - 1, y1 = n.y + dy + svgFontSize + 1;
+              if (!labelOverlaps(x0, y0, x1, y1)) { chosenDy = dy; found = true; break; }
+            }
+            if (!found) chosenDy = candidateDys[0];
+          }
+          const y0 = n.y + chosenDy - 1, y1 = n.y + chosenDy + svgFontSize + 1;
+          placeLabelRect(x0, y0, x1, y1);
+          labelDyById.set(n.id, chosenDy);
+        };
+        priorityNodes.forEach(n => chooseDy(n, true));
+        normalNodes.forEach(n => chooseDy(n, false));
+
         const nodesByGen = new Map();
         nodes.forEach(n => {
           const gen = n.generation || 0;
@@ -2808,11 +2883,8 @@ const GraphCanvas = forwardRef(
             const col = (highlightIds && highlightIds.has(n.id))
               ? `rgb(${svgInfo})`
               : `rgb(${svgTextMuted})`;
-            const svgLabel = nodeDisplayRef.current === 'structure'
-              ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
-              : showNamesRef.current
-                ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
-                : (n.label ?? n.id);
+            const svgLabel = getSvgLabel(n);
+            const labelDy = labelDyById.get(n.id) ?? labelOff;
 
             svg.push(`<g id="${safeId(n.id)}">`);
             if (tex) {
@@ -2825,7 +2897,7 @@ const GraphCanvas = forwardRef(
             } else {
               svg.push(`<circle cx="${n.x}" cy="${n.y}" r="${R}" fill="${fill}" stroke="${stroke}" stroke-width="0.5" opacity="${opacity}"/>`);
             }
-            svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" font-family="Inter, sans-serif" font-weight="500" font-size="${(7 * fontSizeScale).toFixed(2)}" text-anchor="middle" fill="${col}" opacity="${opacity}">${esc(svgLabel)}</text>`);
+            svg.push(`<text x="${n.x}" y="${n.y + labelDy + 6}" font-family="Inter, sans-serif" font-weight="500" font-size="${svgFontSize.toFixed(2)}" text-anchor="middle" fill="${col}" opacity="${opacity}">${esc(svgLabel)}</text>`);
             svg.push('</g>');
           }
           svg.push('</g>');
