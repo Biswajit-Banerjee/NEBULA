@@ -44,6 +44,7 @@ async def health_check():
 
 # ── KEGG global map layout (parsed once, cached) ──
 _kegg_layout_cache = None
+_kegg_fallback_cache = None
 
 def _parse_kegg_layout():
     """Load compound positions from kegg_pos_svg.json — positions taken directly
@@ -57,10 +58,9 @@ def _parse_kegg_layout():
     map01100.svg at all — verified case-by-case, the same compound's conf vs.
     SVG position can differ by 100-1800+ world units with no consistent offset.
     Using it as a "fallback" used to silently place ~1800 compounds at visibly
-    wrong, shifted locations. Compounds not covered here are instead placed by
-    the frontend's weighted-centroid/local-BFS fallback (applyKegg() in
-    GraphCanvas.jsx), which is far more accurate than a wrong absolute
-    coordinate.
+    wrong, shifted locations. Compounds not covered here are instead placed
+    using the precomputed fallback positions (see _load_kegg_fallback_positions
+    below), generated offline by scripts/precompute_kegg_fallback_positions.py.
     """
     global _kegg_layout_cache
     if _kegg_layout_cache is not None:
@@ -79,14 +79,43 @@ def _parse_kegg_layout():
     logger.info(f"KEGG layout: {len(positions)} positions (from kegg_pos_svg.json only)")
     return _kegg_layout_cache
 
+def _load_kegg_fallback_positions():
+    """Load precomputed fallback positions for compounds with no real KEGG map
+    position — generated offline by scripts/precompute_kegg_fallback_positions.py
+    using a most-connected -> similar-generation -> similar-id priority cascade.
+    Loaded once and cached in memory; regenerate the JSON file (re-run the
+    script) if map01100.conf / generations.csv / kegg_pos_svg.json change.
+    """
+    global _kegg_fallback_cache
+    if _kegg_fallback_cache is not None:
+        return _kegg_fallback_cache
+
+    fallback_path = DATA_DIR / "kegg_fallback_positions.json"
+    if fallback_path.exists():
+        with open(fallback_path, "r") as f:
+            _kegg_fallback_cache = json.load(f)
+        logger.info(f"KEGG fallback positions: {len(_kegg_fallback_cache)} precomputed")
+    else:
+        logger.warning("kegg_fallback_positions.json not found — run scripts/precompute_kegg_fallback_positions.py")
+        _kegg_fallback_cache = {}
+    return _kegg_fallback_cache
+
 @app.get("/api/kegg-layout")
 async def get_kegg_layout():
-    """Return KEGG global metabolic map (ko01100) compound positions (SVG coordinate space)."""
+    """Return KEGG global metabolic map (ko01100) compound positions (SVG coordinate
+    space), plus precomputed fallback anchor positions for compounds not on the
+    real map (see _load_kegg_fallback_positions)."""
     from fastapi.responses import JSONResponse
     try:
         positions = _parse_kegg_layout()
+        fallback_positions = _load_kegg_fallback_positions()
         return JSONResponse(
-            content={"positions": positions, "count": len(positions)},
+            content={
+                "positions": positions,
+                "count": len(positions),
+                "fallback_positions": fallback_positions,
+                "fallback_count": len(fallback_positions),
+            },
             headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
         )
     except Exception as e:
@@ -969,7 +998,15 @@ async def get_kegg_map_bg(variant: str):
     bg_path = DATA_DIR / filename
     if not bg_path.exists():
         raise HTTPException(status_code=404, detail="KEGG map background SVG not found")
-    return Response(content=bg_path.read_bytes(), media_type="image/svg+xml")
+    # These are static assets (only change when the source SVG file itself is
+    # regenerated) and the frontend no longer appends a cache-busting query
+    # param, so let the browser actually cache them instead of re-downloading
+    # ~650KB-1.2MB on every single toggle/reload.
+    return Response(
+        content=bg_path.read_bytes(),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 # Serve documentation images (GIFs, screenshots, etc.)
 _docs_images_dir = DOCS_DIR / "images"

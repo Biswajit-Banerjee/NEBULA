@@ -15,9 +15,7 @@ import { getSchemeColor, getTypeColor } from "../NetworkViewer2D/utils/colorSche
 import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 import NodeInfoPanel from "../NetworkViewer2D/NodeInfoPanel";
 import SmilesDrawer from "smiles-drawer";
-
-const R_COMPOUND = 7.2;
-const KEGG_SCALE = 1;
+import { KEGG_SCALE, R_COMPOUND, applyKeggLayout } from "./keggLayoutEngine";
 
 const _edgeKey = (l) => {
   const s = l.source?.id || l.source;
@@ -81,7 +79,6 @@ const GraphCanvas = forwardRef(
     const prevDataRef = useRef(null);
     const prevShowAllKeggRef = useRef(showAllKegg);
     const prevShowKeggLinesRef = useRef(showKeggLines);
-    const prevKeggAdjVersionRef = useRef(null);
     const smilesDataRef = useRef({});       // { compoundId: smilesString }
     const structTexRef = useRef(new Map());  // Map<compoundId, OffscreenCanvas>
     const nodeDisplayRef = useRef(nodeDisplay);
@@ -96,15 +93,13 @@ const GraphCanvas = forwardRef(
     const showKeggLinesRef = useRef(showKeggLines);
     const keggBgOpacityRef = useRef(keggBgOpacity);
     const keggPositionsRef = useRef(null);   // { compoundId: {x, y} } from KEGG map
+    const keggFallbackPositionsRef = useRef(null); // { compoundId: {x, y, tier} } precomputed offline (scripts/precompute_kegg_fallback_positions.py)
     const keggPosArrayRef = useRef([]);       // pre-cached [[id, {x,y}], ...] — avoids Object.entries() every frame
     const prevKeggLayoutRef = useRef(false);
     const keggLayoutRef = useRef(keggLayout);
     keggLayoutRef.current = keggLayout;
     const keggBgLinesImageRef = useRef(null);   // pre-loaded Image of map01100_bg_notext.svg (skeleton lines/ellipses)
     const keggBgTextImageRef = useRef(null);    // pre-loaded Image of map01100_bg_textonly.svg (native region-name text)
-    const keggConfLinesRef = useRef(null);      // [{points, width}, ...] from map01100.conf
-    const keggCpdLinesRef = useRef(null);       // { compoundId: [lineIdx, ...] } — which lines connect to which compound
-    const keggAdjGraphRef = useRef(null);        // Map<compoundId, Set<neighborCompoundId>> — full KEGG map adjacency
     const zoomRafRef = useRef(null);            // rAF handle to throttle zoom redraws
     const orthoRouteCacheRef = useRef({ posHash: null, routes: new Map() }); // cached orthogonal edge routes
     const localEditsRef = useRef({ deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] });
@@ -120,9 +115,6 @@ const GraphCanvas = forwardRef(
     const [graph, setGraph] = useState({ nodes: [], links: [] });
     const graphRef = useRef({ nodes: [], links: [] });
     graphRef.current = graph;
-    // Bumped once the KEGG adjacency graph finishes loading (async), so the layout effect
-    // re-runs and re-places any nodes that had fallen back to naive placement beforehand.
-    const [keggAdjVersion, setKeggAdjVersion] = useState(0);
 
     // Sync pinned → selectedNodes state
     const syncSelection = useCallback(() => {
@@ -1506,50 +1498,6 @@ const GraphCanvas = forwardRef(
       draw(graph.nodes);
     }, [showOverlay, graph, draw, keggBgOpacity]);
 
-    // Fetch conf line / adjacency data whenever KEGG layout mode is on — this powers the
-    // weighted-centroid placement of unmatched compounds, independent of the (heavier)
-    // background SVG + ghost-node rendering which only kick in for showAllKegg/showKeggLines.
-    useEffect(() => {
-      if (!keggLayout) return;
-      if (keggConfLinesRef.current) return; // already fetched
-      fetch(getApiUrl('kegg-conf-lines'))
-        .then(r => r.json())
-        .then(data => {
-          // Attach colors from SVG to each line (sample from SVG bg image)
-          // For now, use a default color per line — we drew colors into the SVG already
-          keggConfLinesRef.current = data.lines || [];
-          keggCpdLinesRef.current = data.compound_lines || {};
-          console.log(`[NEBULA] KEGG conf: ${(data.lines||[]).length} lines, ${Object.keys(data.compound_lines||{}).length} cpd mappings`);
-
-          // Build full KEGG adjacency graph via line→compounds index (O(n+m) instead of O(n²))
-          const lineToCompounds = new Map();  // lineIdx → Set<compoundId>
-          for (const [cid, lineIndices] of Object.entries(data.compound_lines || {})) {
-            for (const li of lineIndices) {
-              if (!lineToCompounds.has(li)) lineToCompounds.set(li, new Set());
-              lineToCompounds.get(li).add(cid);
-            }
-          }
-          const adjGraph = new Map();  // compoundId → Set<neighborCompoundIds>
-          for (const [cid, lineIndices] of Object.entries(data.compound_lines || {})) {
-            if (!adjGraph.has(cid)) adjGraph.set(cid, new Set());
-            const neighbors = adjGraph.get(cid);
-            for (const li of lineIndices) {
-              for (const otherCid of lineToCompounds.get(li) || []) {
-                if (otherCid !== cid) neighbors.add(otherCid);
-              }
-            }
-          }
-          keggAdjGraphRef.current = adjGraph;
-          console.log(`[NEBULA] KEGG adjacency graph: ${adjGraph.size} compounds`);
-
-          // Re-run the layout effect now that adjacency data is available — nodes placed
-          // before this resolved would have used the naive fallback instead of the
-          // weighted-centroid BFS placement.
-          setKeggAdjVersion(v => v + 1);
-        })
-        .catch(err => console.warn('[NEBULA] Failed to fetch KEGG conf lines:', err));
-    }, [keggLayout]);
-
     // Load SVG background images when KEGG map background display is toggled on.
     // "KEGG layout" (showAllKegg/showKeggLines) and "Pathway regions"
     // (showPathways) are fully INDEPENDENT layers in the source art (separate
@@ -1572,7 +1520,10 @@ const GraphCanvas = forwardRef(
         drawRef.current?.(nodesRef.current);
       };
       img.onerror = () => console.warn('[NEBULA] Failed to load KEGG map lines background SVG');
-      img.src = getApiUrl('kegg-map-bg') + '?variant=lines&t=' + Date.now();
+      // No cache-busting timestamp — this is a static asset (only changes when the
+      // backend's source SVG changes), so let the browser cache it across toggles/
+      // reloads instead of re-downloading ~650KB-1.2MB every single time.
+      img.src = getApiUrl('kegg-map-bg') + '?variant=lines';
     }, [showAllKegg, showKeggLines]);
 
     useEffect(() => {
@@ -1589,7 +1540,8 @@ const GraphCanvas = forwardRef(
         drawRef.current?.(nodesRef.current);
       };
       img.onerror = () => console.warn('[NEBULA] Failed to load KEGG map text background SVG');
-      img.src = getApiUrl('kegg-map-bg') + '?variant=text&t=' + Date.now();
+      // No cache-busting timestamp — see comment on the lines-variant fetch above.
+      img.src = getApiUrl('kegg-map-bg') + '?variant=text';
     }, [showPathways]);
 
     /* ── Helper: fit view to nodes ── */
@@ -1653,12 +1605,10 @@ const GraphCanvas = forwardRef(
       // never yank the user's current pan/zoom around.
       const isNewData = data !== prevDataRef.current;
       prevDataRef.current = data;
-      const keggAdjChanged = keggAdjVersion !== prevKeggAdjVersionRef.current;
-      prevKeggAdjVersionRef.current = keggAdjVersion;
       const keggViewModeChanged = showAllKegg !== prevShowAllKeggRef.current || showKeggLines !== prevShowKeggLinesRef.current;
       prevShowAllKeggRef.current = showAllKegg;
       prevShowKeggLinesRef.current = showKeggLines;
-      if (isNewData || keggJustToggled || keggViewModeChanged || (keggLayout && keggAdjChanged)) {
+      if (isNewData || keggJustToggled || keggViewModeChanged) {
         needsFitRef.current = true;
       }
 
@@ -1668,243 +1618,14 @@ const GraphCanvas = forwardRef(
         // Shared helper: place nodes at KEGG coords, spread unplaced, resolve collisions
         // `cx`/`cy` here MUST be in KEGG map coordinate space (not canvas pixel space) —
         // they're only used as a last-resort fallback for nodes with zero KEGG neighbors.
-        const applyKegg = (nds, lks, positions, cx, cy) => {
-          let matched = 0;
-          nds.forEach(n => {
-            const pos = positions[n.id];
-            if (pos) { n.x = pos.x * KEGG_SCALE; n.y = pos.y * KEGG_SCALE; matched++; }
-          });
-
-          // Place unplaced nodes using BFS through the full KEGG adjacency graph
-          // This finds positioned KEGG neighbors even if they're not in the current query results
-          const nodeMap = new Map(nds.map(n => [n.id, n]));
-          const unplaced = nds.filter(n => !positions[n.id]);
-          // Size separation for whichever display mode is ACTUALLY active right now
-          // (read via ref so this effect doesn't need nodeDisplay in its dependency
-          // array — toggling "Show structures" still doesn't trigger a full re-layout).
-          // Using the always-large structure-sized separation regardless of mode was
-          // over-pushing real KEGG-map compounds (which sit only a few px apart) far
-          // from their correct fixed positions even in plain circle mode.
-          const MIN_SEP = nodeDisplayRef.current === 'structure'
-            ? STRUCT_WORLD_H * nodeSizeScale * 1.3
-            : R_COMPOUND * nodeSizeScale * 2.3;
-
-          // Helper: BFS through full KEGG graph to find positioned neighbors with inverse-distance weighting
-          const findWeightedKeggCentroid = (compoundId) => {
-            const adjGraph = keggAdjGraphRef.current;
-            if (!adjGraph || !adjGraph.has(compoundId)) return null;
-
-            const visited = new Set([compoundId]);
-            const depthMap = new Map(); // nodeId → discovery depth (for weighting)
-            let queue = [...(adjGraph.get(compoundId) || [])];
-            let depth = 1;
-            const MAX_DEPTH = 4; // Limit BFS to 4 hops — further neighbors have negligible weight
-
-            while (queue.length > 0 && depth <= MAX_DEPTH) {
-              const nextQueue = [];
-
-              for (const neighborId of queue) {
-                if (visited.has(neighborId)) continue;
-                visited.add(neighborId);
-                depthMap.set(neighborId, depth); // Record discovery depth
-
-                // Enqueue unvisited neighbors for next depth level
-                const furtherNeighbors = adjGraph.get(neighborId);
-                if (furtherNeighbors) {
-                  for (const fn of furtherNeighbors) {
-                    if (!visited.has(fn)) nextQueue.push(fn);
-                  }
-                }
-              }
-
-              // Compute weighted centroid from all positioned nodes discovered so far
-              let totalWeight = 0;
-              let weightedX = 0;
-              let weightedY = 0;
-
-              for (const [nodeId, nodeDepth] of depthMap) {
-                const nbPos = positions[nodeId];
-                if (nbPos) {
-                  const w = 1.0 / nodeDepth; // Inverse-distance: closer neighbors pull harder
-                  weightedX += nbPos.x * KEGG_SCALE * w;
-                  weightedY += nbPos.y * KEGG_SCALE * w;
-                  totalWeight += w;
-                }
-              }
-
-              if (totalWeight > 0) {
-                return { x: weightedX / totalWeight, y: weightedY / totalWeight };
-              }
-
-              queue = nextQueue;
-              depth++;
-            }
-
-            return null; // No positioned KEGG neighbors found within MAX_DEPTH hops
-          };
-
-          // Group nodes sharing (nearly) the same anchor point so their ring placement
-          // is computed relative to THEIR OWN group's size/order, not a global index —
-          // otherwise two nodes anchored to completely different centroids could still
-          // land at the same angle/radius (relative to their respective centroids) and
-          // collide by coincidence, since the old code sized rings off the position in
-          // the overall `unplaced` array rather than the position within its own group.
-          const ringPlace = (items, keyFn) => {
-            const groups = new Map();
-            items.forEach(entry => {
-              const key = keyFn(entry);
-              if (!groups.has(key)) groups.set(key, []);
-              groups.get(key).push(entry);
-            });
-            for (const group of groups.values()) {
-              const groupSize = group.length;
-              group.forEach((entry, localIdx) => {
-                const angle = (localIdx / groupSize) * Math.PI * 2;
-                const ring = Math.floor(localIdx / 6); // start a new, larger ring every 6 nodes
-                const radius = MIN_SEP * (1.15 + ring * 0.85);
-                entry.node.x = entry.anchor.x + Math.cos(angle) * radius;
-                entry.node.y = entry.anchor.y + Math.sin(angle) * radius;
-              });
-            }
-          };
-
-          let stillUnplaced = [];
-          const keggAnchored = [];
-          unplaced.forEach(n => {
-            const centroid = findWeightedKeggCentroid(n.id);
-            if (centroid) {
-              keggAnchored.push({ node: n, anchor: centroid });
-            } else {
-              stillUnplaced.push(n);
-            }
-          });
-          ringPlace(keggAnchored, e => `${Math.round(e.anchor.x / 4)},${Math.round(e.anchor.y / 4)}`);
-
-          // Many nodes in a search result (e.g. novel/generated compounds) won't exist in
-          // the real KEGG map at all, so the global-adjacency BFS above finds nothing for
-          // them. Instead of dumping them all onto one point (severe overcrowding), use the
-          // *local* search-result graph (lks) to propagate positions outward from already-
-          // placed neighbors — same idea as the KEGG BFS, but over the current result set.
-          if (stillUnplaced.length > 0) {
-            const localAdj = new Map();
-            lks.forEach(l => {
-              const s = l.source?.id || l.source;
-              const t = l.target?.id || l.target;
-              if (!localAdj.has(s)) localAdj.set(s, new Set());
-              if (!localAdj.has(t)) localAdj.set(t, new Set());
-              localAdj.get(s).add(t);
-              localAdj.get(t).add(s);
-            });
-
-            let remaining = stillUnplaced;
-            for (let round = 0; round < 8 && remaining.length > 0; round++) {
-              const nextRemaining = [];
-              const localAnchored = [];
-              remaining.forEach(n => {
-                const neighbors = localAdj.get(n.id);
-                let sumX = 0, sumY = 0, count = 0;
-                if (neighbors) {
-                  neighbors.forEach(nbId => {
-                    const nb = nodeMap.get(nbId);
-                    if (nb && nb.x !== undefined && nb.y !== undefined) {
-                      sumX += nb.x; sumY += nb.y; count++;
-                    }
-                  });
-                }
-                if (count > 0) {
-                  localAnchored.push({ node: n, anchor: { x: sumX / count, y: sumY / count } });
-                } else {
-                  nextRemaining.push(n);
-                }
-              });
-              ringPlace(localAnchored, e => `${Math.round(e.anchor.x / 4)},${Math.round(e.anchor.y / 4)}`);
-              remaining = nextRemaining;
-            }
-
-            // True last resort: nodes with no positioned neighbors anywhere (local or KEGG).
-            // Spread them on a spiral around the fallback center instead of a tight jittered
-            // blob, so even a large batch of isolated nodes stays visually separated.
-            remaining.forEach((n, idx) => {
-              const angle = idx * 2.4; // golden-angle-ish spiral for even spacing
-              const radius = MIN_SEP * 1.5 * Math.sqrt(idx + 1);
-              n.x = cx + Math.cos(angle) * radius;
-              n.y = cy + Math.sin(angle) * radius;
-            });
-          }
-
-          // Collision resolution: push overlapping nodes apart.
-          // KEGG-anchored ("fixed") nodes must stay close to their TRUE map position —
-          // real KEGG map compounds are often only a few px apart (esp. dense regions
-          // like glycan structures), well under any reasonable MIN_SEP. Pushing both
-          // sides of a fixed-fixed pair with no bound caused runaway drift across dense
-          // clusters (each node conflicts with many neighbors, compounding every
-          // iteration), scattering nodes far from their correct location over 40
-          // iterations. So fixed nodes get a hard cap on total distance moved from
-          // their real anchor — once at the cap, they stop yielding further and only
-          // the (still free) unplaced/unfixed side of a conflict keeps moving.
-          const anchorOf = new Map();
-          nds.forEach(n => {
-            const pos = positions[n.id];
-            if (pos) anchorOf.set(n.id, { x: pos.x * KEGG_SCALE, y: pos.y * KEGG_SCALE });
-          });
-          const MAX_DRIFT = MIN_SEP * 0.6;
-          const clampToAnchor = (n) => {
-            const a = anchorOf.get(n.id);
-            if (!a) return;
-            const ddx = n.x - a.x, ddy = n.y - a.y;
-            const d = Math.sqrt(ddx * ddx + ddy * ddy);
-            if (d > MAX_DRIFT) {
-              const s = MAX_DRIFT / d;
-              n.x = a.x + ddx * s;
-              n.y = a.y + ddy * s;
-            }
-          };
-
-          for (let iter = 0; iter < 40; iter++) {
-            let moved = false;
-            for (let i = 0; i < nds.length; i++) {
-              for (let j = i + 1; j < nds.length; j++) {
-                const dx = nds[j].x - nds[i].x;
-                const dy = nds[j].y - nds[i].y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < MIN_SEP && dist > 0) {
-                  const push = (MIN_SEP - dist) / 2 + 1;
-                  const ux = dx / dist, uy = dy / dist;
-                  const iFixed = !!positions[nds[i].id];
-                  const jFixed = !!positions[nds[j].id];
-                  if (!iFixed && !jFixed) {
-                    nds[i].x -= ux * push; nds[i].y -= uy * push;
-                    nds[j].x += ux * push; nds[j].y += uy * push;
-                    moved = true;
-                  } else if (!iFixed) {
-                    nds[i].x -= ux * push * 2; nds[i].y -= uy * push * 2;
-                    moved = true;
-                  } else if (!jFixed) {
-                    nds[j].x += ux * push * 2; nds[j].y += uy * push * 2;
-                    moved = true;
-                  } else {
-                    // Both KEGG-placed: small mutual nudge only, then clamp back to
-                    // within MAX_DRIFT of each one's true anchor — real map density
-                    // wins over full artificial separation.
-                    nds[i].x -= ux * push * 0.5; nds[i].y -= uy * push * 0.5;
-                    nds[j].x += ux * push * 0.5; nds[j].y += uy * push * 0.5;
-                    clampToAnchor(nds[i]);
-                    clampToAnchor(nds[j]);
-                    moved = true;
-                  }
-                } else if (dist === 0) {
-                  const jFixed = !!positions[nds[j].id];
-                  nds[j].x += MIN_SEP * (0.5 + Math.random());
-                  nds[j].y += MIN_SEP * (0.5 + Math.random());
-                  if (jFixed) clampToAnchor(nds[j]);
-                  moved = true;
-                }
-              }
-            }
-            if (!moved) break;
-          }
-          return matched;
-        };
+        // `fallbackPositions` is precomputed OFFLINE (scripts/precompute_kegg_fallback_positions.py)
+        // using a most-connected -> similar-generation -> similar-id priority cascade over the
+        // FULL KEGG map + static generation/id data — no graph BFS or adjacency building happens
+        // in the browser anymore, it's a straight lookup.
+        const applyKegg = (nds, lks, positions, fallbackPositions, cx, cy) => applyKeggLayout(
+          nds, lks, positions, fallbackPositions, cx, cy,
+          { isStructureMode: nodeDisplayRef.current === 'structure', nodeSizeScale }
+        );
 
         const finalize = (nds, matched) => {
           nds.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
@@ -1940,6 +1661,7 @@ const GraphCanvas = forwardRef(
             .then(r => r.json())
             .then(data => {
               keggPositionsRef.current = data.positions || {};
+              keggFallbackPositionsRef.current = data.fallback_positions || {};
               keggPosArrayRef.current = Object.entries(keggPositionsRef.current);
               const freshCopy = graph.nodes.map(n => ({ ...n }));
               const freshLinks = graph.links.map(l => ({ ...l }));
@@ -1953,7 +1675,7 @@ const GraphCanvas = forwardRef(
               const mapCy = allPos.length
                 ? allPos.reduce((s, p) => s + p.y, 0) / allPos.length * KEGG_SCALE
                 : centerY;
-              const matched = applyKegg(freshCopy, freshLinks, keggPositionsRef.current, mapCx, mapCy);
+              const matched = applyKegg(freshCopy, freshLinks, keggPositionsRef.current, keggFallbackPositionsRef.current, mapCx, mapCy);
               finalize(freshCopy, matched);
             })
             .catch(e => console.warn('[NEBULA] Failed to fetch KEGG layout:', e));
@@ -2026,7 +1748,7 @@ const GraphCanvas = forwardRef(
       }
 
       drawRef.current?.(nodesCopy);
-    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, showAllKegg, fitViewToNodes, fitViewToBounds, keggAdjVersion]);
+    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, showAllKegg, fitViewToNodes, fitViewToBounds]);
 
     /* ── Canvas & Zoom setup ── */
     useEffect(() => {
