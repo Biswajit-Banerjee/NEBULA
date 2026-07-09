@@ -108,6 +108,13 @@ const GraphCanvas = forwardRef(
     const zoomRafRef = useRef(null);            // rAF handle to throttle zoom redraws
     const orthoRouteCacheRef = useRef({ posHash: null, routes: new Map() }); // cached orthogonal edge routes
     const localEditsRef = useRef({ deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] });
+    const localEditsVersionRef = useRef(0); // bumped whenever localEditsRef mutates — used to invalidate the per-frame draw cache below
+    // Per-frame draw cache: nodeMap/drawNodes/drawLinks/pairCount/pairIdx only depend on
+    // (nodes array identity, graph identity, local edits version) — NOT on pan/zoom/hover —
+    // so at large scale (thousands of nodes/edges) we avoid rebuilding these Maps/arrays
+    // on every single animation frame during drag/pan/zoom, which was the main jank source.
+    const drawCacheRef = useRef({ nodesArr: null, graphObj: null, editsVersion: -1, nodeMap: null, drawNodes: null, drawLinks: null, pairCount: null, pairIdx: null });
+    const themeColorsRef = useRef(null); // cached CSS custom-property reads — recomputed only when `dark` changes, not every draw() call
     const [ctxMenu, setCtxMenu] = useState(null); // { x, y, type:'node'|'edge', nodeId?, link? }
 
     const [graph, setGraph] = useState({ nodes: [], links: [] });
@@ -583,23 +590,72 @@ const GraphCanvas = forwardRef(
       ctx.translate(t.x, t.y);
       ctx.scale(t.k, t.k);
 
-      const { deletedNodes, deletedEdges, addedEdges } = localEditsRef.current;
-      const drawNodes = nodes.filter(n => !deletedNodes.has(n.id));
-      const drawLinks = [
-        ...graph.links.filter(l => !deletedEdges.has(_edgeKey(l))),
-        ...addedEdges,
-      ];
-      const nodeMap = new Map(drawNodes.map(n => [n.id, n]));
+      // ── Cached per-frame data ──
+      // nodeMap/drawNodes/drawLinks/pairCount/pairIdx only change when the node/edge
+      // *set* changes (new data or a local edit), never on pan/zoom/hover alone — so we
+      // rebuild them only when (nodes array identity, graph identity, edits version)
+      // differs from last time, instead of on every single animation frame.
+      const cache = drawCacheRef.current;
+      const cacheHit = cache.nodesArr === nodes && cache.graphObj === graph && cache.editsVersion === localEditsVersionRef.current;
+      let drawNodes, drawLinks, nodeMap, pairCount, pairIdx;
+      if (cacheHit) {
+        drawNodes = cache.drawNodes;
+        drawLinks = cache.drawLinks;
+        nodeMap = cache.nodeMap;
+        pairCount = cache.pairCount;
+        pairIdx = cache.pairIdx;
+      } else {
+        const { deletedNodes, deletedEdges, addedEdges } = localEditsRef.current;
+        drawNodes = nodes.filter(n => !deletedNodes.has(n.id));
+        drawLinks = [
+          ...graph.links.filter(l => !deletedEdges.has(_edgeKey(l))),
+          ...addedEdges,
+        ];
+        nodeMap = new Map(drawNodes.map(n => [n.id, n]));
 
-      // Read theme colors from CSS custom properties for canvas rendering
-      const _cs = getComputedStyle(document.documentElement);
-      const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
-      const themeTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
-      const themeTextSecondary = _rv('--text-secondary') || (dark ? '148,163,184' : '71,85,105');
-      const themeBorderPrimary = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
-      const themeSurfacePrimary = _rv('--surface-primary') || (dark ? '30,41,59' : '255,255,255');
-      const themeBrandPrimary = _rv('--brand-primary') || (dark ? '167,139,250' : '124,58,237');
-      const themeInfo = _rv('--info') || (dark ? '147,197,253' : '37,99,235');
+        // Parallel-edge counts computed once over ALL edges (not just the
+        // currently-visible ones) so offsets stay stable while panning.
+        pairCount = new Map();
+        pairIdx = new Map();
+        drawLinks.forEach((l, idx) => {
+          const sId = l.source?.id || l.source;
+          const tId = l.target?.id || l.target;
+          const key = [sId, tId].sort().join('||');
+          const c = pairCount.get(key) || 0;
+          pairIdx.set(idx, c);
+          pairCount.set(key, c + 1);
+        });
+
+        cache.nodesArr = nodes;
+        cache.graphObj = graph;
+        cache.editsVersion = localEditsVersionRef.current;
+        cache.drawNodes = drawNodes;
+        cache.drawLinks = drawLinks;
+        cache.nodeMap = nodeMap;
+        cache.pairCount = pairCount;
+        cache.pairIdx = pairIdx;
+      }
+
+      // Read theme colors from CSS custom properties for canvas rendering —
+      // cached and only recomputed when `dark` changes (getComputedStyle forces a
+      // style recalc, which is expensive to pay on every single animation frame).
+      if (!themeColorsRef.current || themeColorsRef.current.dark !== dark) {
+        const _cs = getComputedStyle(document.documentElement);
+        const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
+        themeColorsRef.current = {
+          dark,
+          themeTextMuted: _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139'),
+          themeTextSecondary: _rv('--text-secondary') || (dark ? '148,163,184' : '71,85,105'),
+          themeBorderPrimary: _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185'),
+          themeSurfacePrimary: _rv('--surface-primary') || (dark ? '30,41,59' : '255,255,255'),
+          themeBrandPrimary: _rv('--brand-primary') || (dark ? '167,139,250' : '124,58,237'),
+          themeInfo: _rv('--info') || (dark ? '147,197,253' : '37,99,235'),
+        };
+      }
+      const {
+        themeTextMuted, themeTextSecondary, themeBorderPrimary,
+        themeSurfacePrimary, themeBrandPrimary, themeInfo,
+      } = themeColorsRef.current;
 
       // Viewport culling
       const CULL_MARGIN = 60;
@@ -762,15 +818,9 @@ const GraphCanvas = forwardRef(
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
-      // Count parallel edges between same node pair for offset
-      const pairCount = new Map();
-      const pairIdx = new Map();
-      visibleEdges.forEach(({ src, trg }, idx) => {
-        const key = [src.id, trg.id].sort().join('||');
-        if (!pairCount.has(key)) pairCount.set(key, 0);
-        pairIdx.set(idx, pairCount.get(key));
-        pairCount.set(key, pairCount.get(key) + 1);
-      });
+      // pairCount/pairIdx are now computed once in the cache block above (over ALL
+      // edges, not just visible ones) — offsets stay stable while panning and we
+      // avoid rebuilding these Maps on every single animation frame.
 
       const isOrtho = edgeStyle === 'orthogonal';
       const G = gridSpacing; // 48px grid
@@ -1127,34 +1177,52 @@ const GraphCanvas = forwardRef(
       }
 
 
-      /* ── Nodes ── */
-      const degMap = new Map();
-      if (colorMode === "degree") {
-        drawLinks.forEach(l => {
-          const sId = l.source?.id || l.source;
-          const tId = l.target?.id || l.target;
-          degMap.set(sId, (degMap.get(sId) || 0) + 1);
-          degMap.set(tId, (degMap.get(tId) || 0) + 1);
-        });
-      }
-      const maxDeg = degMap.size > 0 ? Math.max(1, ...degMap.values()) : 1;
+      /* ── Nodes ──
+         Per-node fill/stroke colors (and the degree map they may depend on) only
+         change when the node/edge SET changes or a color-related setting changes —
+         never on pan/zoom/hover/drag alone. getTypeColor() in particular calls
+         getComputedStyle() internally, so recomputing per-node, per-frame was a
+         severe hidden cost at large scale. Cache per-node colors in a Map keyed by
+         node id, invalidated only when the relevant inputs actually change. */
       const MAX_BUCKET = 100;
-
-      const nodeColor = (n) => {
-        if (colorMode === "type") {
-          return getTypeColor(n.type, dark);
-        }
+      const colorKey = `${colorMode}|${colorScheme}|${dark}|${maxGeneration}`;
+      let nodeColorCache;
+      if (cacheHit && cache.colorKey === colorKey) {
+        nodeColorCache = cache.nodeColorCache;
+      } else {
+        const degMap = new Map();
         if (colorMode === "degree") {
-          const deg = degMap.get(n.id) || 0;
-          const bucket = Math.round((deg / maxDeg) * MAX_BUCKET);
-          return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
+          drawLinks.forEach(l => {
+            const sId = l.source?.id || l.source;
+            const tId = l.target?.id || l.target;
+            degMap.set(sId, (degMap.get(sId) || 0) + 1);
+            degMap.set(tId, (degMap.get(tId) || 0) + 1);
+          });
         }
-        const gen = n.generation || 0;
-        const bucket = maxGeneration > 0
-          ? Math.round((gen / maxGeneration) * MAX_BUCKET)
-          : 0;
-        return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
-      };
+        const maxDeg = degMap.size > 0 ? Math.max(1, ...degMap.values()) : 1;
+
+        const computeColor = (n) => {
+          if (colorMode === "type") {
+            return getTypeColor(n.type, dark);
+          }
+          if (colorMode === "degree") {
+            const deg = degMap.get(n.id) || 0;
+            const bucket = Math.round((deg / maxDeg) * MAX_BUCKET);
+            return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
+          }
+          const gen = n.generation || 0;
+          const bucket = maxGeneration > 0
+            ? Math.round((gen / maxGeneration) * MAX_BUCKET)
+            : 0;
+          return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
+        };
+
+        nodeColorCache = new Map();
+        drawNodes.forEach(n => nodeColorCache.set(n.id, computeColor(n)));
+        cache.colorKey = colorKey;
+        cache.nodeColorCache = nodeColorCache;
+      }
+      const nodeColor = (n) => nodeColorCache.get(n.id) || getSchemeColor(colorScheme, 0, dark);
 
       // In KEGG layout, ensure nodes are always visible at any zoom level
       const sizeScale = nodeSizeScale;
@@ -1168,7 +1236,9 @@ const GraphCanvas = forwardRef(
 
       /* ── KEGG global-orientation ghost nodes ── */
       if (showAllKegg && keggLayout && keggPosArrayRef.current.length) {
-        const searchNodeIds = new Set(drawNodes.map(n => n.id));
+        // nodeMap (cached above) already indexes every drawn node by id — reuse it
+        // instead of allocating a fresh Set from drawNodes on every single frame.
+        const searchNodeIds = nodeMap;
         const ghostR = Math.max(R_SCALED * 0.8, (2 * sizeScale) / t.k);
         const ghostFill = dark ? '#94a3b8' : '#64748b';
         const ghostStroke = dark ? '#cbd5e1' : '#475569';
@@ -3012,6 +3082,7 @@ const GraphCanvas = forwardRef(
     /* ── Reset local edits when graph source data changes ── */
     useEffect(() => {
       localEditsRef.current = { deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] };
+      localEditsVersionRef.current += 1;
     }, [graph]);
 
     /* ── Delete handlers ── */
@@ -3025,6 +3096,7 @@ const GraphCanvas = forwardRef(
 
     const handleDeleteEdge = (link) => {
       localEditsRef.current.deletedEdges.add(_edgeKey(link));
+      localEditsVersionRef.current += 1;
       setCtxMenu(null);
       drawRef.current?.(nodesRef.current);
     };
@@ -3034,6 +3106,7 @@ const GraphCanvas = forwardRef(
       _currentLinks().forEach(l => {
         if ((l.target?.id || l.target) === nodeId) edits.deletedEdges.add(_edgeKey(l));
       });
+      localEditsVersionRef.current += 1;
       setCtxMenu(null);
       drawRef.current?.(nodesRef.current);
     };
@@ -3043,6 +3116,7 @@ const GraphCanvas = forwardRef(
       _currentLinks().forEach(l => {
         if ((l.source?.id || l.source) === nodeId) edits.deletedEdges.add(_edgeKey(l));
       });
+      localEditsVersionRef.current += 1;
       setCtxMenu(null);
       drawRef.current?.(nodesRef.current);
     };
@@ -3069,6 +3143,7 @@ const GraphCanvas = forwardRef(
         });
       });
       edits.deletedNodes.add(nodeId);
+      localEditsVersionRef.current += 1;
       setCtxMenu(null);
       drawRef.current?.(nodesRef.current);
     };

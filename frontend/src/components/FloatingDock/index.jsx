@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Download, Upload, Layers, Loader2,
-  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical,
+  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical, Atom,
 } from 'lucide-react';
 import Logo from '../Logo';
 import ThemeSelector from '../ThemeProvider/ThemeSelector';
@@ -14,6 +14,7 @@ const SEARCH_MODES = [
   { value: 'compound', label: 'Cmpd' },
   { value: 'reaction', label: 'Rxn' },
   { value: 'ec', label: 'EC' },
+  { value: 'compounds', label: 'Cmpds' },
 ];
 
 const PAIR_COLORS = ['#8B5CF6','#06B6D4','#10B981','#F59E0B','#EF4444','#3B82F6','#D97706','#7C3AED'];
@@ -104,6 +105,7 @@ const FloatingDock = ({
             if (m === 'compound') return p.target && p.target.trim();
             if (m === 'reaction') return p.reaction && p.reaction.trim();
             if (m === 'ec') return p.ec && p.ec.trim();
+            if (m === 'compounds') return (p.compounds || []).length > 0;
             return false;
           });
           if (hasValid) onSearch(currentPairs);
@@ -128,11 +130,20 @@ const FloatingDock = ({
     if (id && id.trim()) triggerAutoSearch();
   }, [updatePair, triggerAutoSearch]);
 
+  const handleCompoundsAdd = useCallback((index, pair, compoundId) => {
+    const id = (compoundId || '').trim().toUpperCase();
+    if (!id) return;
+    const existing = pair.compounds || [];
+    if (existing.includes(id)) return;
+    updatePair(index, { compounds: [...existing, id] });
+    triggerAutoSearch();
+  }, [updatePair, triggerAutoSearch]);
+
   const addPair = useCallback(() => {
     setSearchPairs(prev => [...prev, {
       id: `new-${Date.now()}-${prev.length}`,
       mode: 'compound',
-      source: '', target: '', reaction: '', ec: '',
+      source: '', target: '', reaction: '', ec: '', compounds: [], matchMode: 'any',
       visible: true, sourceDisplay: '', targetDisplay: '',
       color: PAIR_COLORS[prev.length % PAIR_COLORS.length],
     }]);
@@ -154,6 +165,7 @@ const FloatingDock = ({
     if (m === 'compound') return p.target && p.target.trim();
     if (m === 'reaction') return p.reaction && p.reaction.trim();
     if (m === 'ec') return p.ec && p.ec.trim();
+    if (m === 'compounds') return (p.compounds || []).length > 0;
     return false;
   });
 
@@ -163,6 +175,7 @@ const FloatingDock = ({
     if (m === 'compound') return p.target && p.target.trim();
     if (m === 'reaction') return p.reaction && p.reaction.trim();
     if (m === 'ec') return p.ec && p.ec.trim();
+    if (m === 'compounds') return (p.compounds || []).length > 0;
     return false;
   });
   const summaryText = activePairs.length > 0
@@ -174,6 +187,7 @@ const FloatingDock = ({
         }
         if (m === 'reaction') return p.reaction || '';
         if (m === 'ec') return `EC ${p.ec}` || '';
+        if (m === 'compounds') return (p.compounds || []).join('+');
         return '';
       }).join(' · ')
     : 'Search paths…';
@@ -287,7 +301,7 @@ const FloatingDock = ({
                   value={pairMode}
                   onChange={(e) => {
                     const newMode = e.target.value;
-                    const cleared = { source: '', target: '', reaction: '', ec: '', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
+                    const cleared = { source: '', target: '', reaction: '', ec: '', compounds: [], matchMode: 'any', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
                     updatePair(index, { ...cleared, mode: newMode });
                   }}
                   disabled={isLoading}
@@ -360,6 +374,68 @@ const FloatingDock = ({
                       disabled={isLoading}
                       className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
                     />
+                  </div>
+                )}
+
+                {/* Compounds (set) mode */}
+                {pairMode === 'compounds' && (
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                    <div className="flex-1 min-w-0">
+                      <AutocompleteInput
+                        idPrefix={`dock-compounds-${index}`}
+                        placeholder="Add a compound…"
+                        value=""
+                        onValueSelect={(id) => handleCompoundsAdd(index, pair, id)}
+                        compoundData={compoundData}
+                        disabled={isLoading}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-input-bg/80 border border-brd/70 text-sm text-content placeholder-content-muted focus:border-brand-hover focus:ring-1 focus:ring-brand/20 transition-all outline-none"
+                      />
+                    </div>
+
+                    {(pair.compounds || []).length > 0 && (
+                      <div className="flex items-center gap-1 max-w-[45%] overflow-x-auto">
+                        {(pair.compounds || []).map((cid) => {
+                          const entry = compoundData.find(c => c && c.id === cid);
+                          return (
+                            <span
+                              key={cid}
+                              className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md bg-brand-subtle text-brand text-[11px] font-medium border border-brand/20 flex-shrink-0"
+                              title={entry?.name || cid}
+                            >
+                              {cid}
+                              <button
+                                type="button"
+                                onClick={() => updatePair(index, { compounds: (pair.compounds || []).filter(c => c !== cid) })}
+                                disabled={isLoading}
+                                className="hover:text-err transition-colors"
+                                aria-label={`Remove ${cid}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="inline-flex rounded-md border border-brd/70 overflow-hidden flex-shrink-0">
+                      {['any', 'all'].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          disabled={isLoading}
+                          onClick={() => updatePair(index, { matchMode: m })}
+                          className={`px-2 py-1 text-[11px] font-medium transition-all ${
+                            (pair.matchMode || 'any') === m
+                              ? 'bg-brand text-content-inverse'
+                              : 'bg-surface/80 text-content-secondary hover:bg-surface-inset'
+                          }`}
+                          title={m === 'any' ? 'Reaction has at least one of these compounds' : 'Reaction has every one of these compounds'}
+                        >
+                          {m === 'any' ? 'Any' : 'All'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 

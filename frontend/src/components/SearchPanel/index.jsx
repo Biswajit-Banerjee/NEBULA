@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
     Plus, X, Eye, EyeOff, Download, Upload, 
-    Loader2, Layers, FlaskConical, Target, Sparkles, ChevronLeft, Palette, X as CloseIcon
+    Loader2, Layers, FlaskConical, Target, Sparkles, ChevronLeft, Palette, X as CloseIcon,
+    Atom
 } from 'lucide-react';
 
 import AutocompleteInput from './AutocompleteInput';
@@ -13,6 +14,7 @@ const SEARCH_MODES = [
   { value: 'compound', label: 'Compound' },
   { value: 'reaction', label: 'Reaction' },
   { value: 'ec', label: 'EC' },
+  { value: 'compounds', label: 'Compounds' },
 ];
 
 
@@ -60,7 +62,7 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
               value={pair.mode || 'compound'}
               onChange={(e) => {
                 const newMode = e.target.value;
-                const cleared = { source: '', target: '', reaction: '', ec: '', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
+                const cleared = { source: '', target: '', reaction: '', ec: '', compounds: [], matchMode: 'any', sourceDisplay: '', targetDisplay: '', hasResults: undefined, resultCount: undefined };
                 onChange(index, { ...pair, ...cleared, mode: newMode });
               }}
               disabled={disabled}
@@ -249,6 +251,80 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
               />
             </div>
           )}
+
+          {pair.mode === 'compounds' && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-content flex items-center gap-2">
+                  <Atom className="w-3.5 h-3.5 text-brand" />
+                  Compounds <span className="text-err">*</span>
+                </label>
+                <AutocompleteInput
+                  idPrefix={`compounds-${index}`}
+                  placeholder="Add a compound: KEGG ID or Name"
+                  value=""
+                  onValueSelect={(compoundId) => {
+                    const id = (compoundId || '').trim().toUpperCase();
+                    if (!id) return;
+                    const existing = pair.compounds || [];
+                    if (existing.includes(id)) return;
+                    onChange(index, { ...pair, compounds: [...existing, id] });
+                  }}
+                  compoundData={compoundData}
+                  disabled={disabled}
+                />
+              </div>
+
+              {(pair.compounds || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {(pair.compounds || []).map((cid) => {
+                    const entry = compoundData.find(c => c && c.id === cid);
+                    return (
+                      <span
+                        key={cid}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-brand-subtle text-brand text-xs font-medium border border-brand/20"
+                      >
+                        {entry?.name || cid}
+                        <button
+                          type="button"
+                          onClick={() => onChange(index, { ...pair, compounds: (pair.compounds || []).filter(c => c !== cid) })}
+                          disabled={disabled}
+                          className="hover:text-err transition-colors"
+                          aria-label={`Remove ${cid}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-content-secondary">Match:</span>
+                <div className="inline-flex rounded-lg border border-brd/70 overflow-hidden">
+                  {['any', 'all'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onChange(index, { ...pair, matchMode: m })}
+                      className={`px-3 py-1 text-xs font-medium transition-all ${
+                        (pair.matchMode || 'any') === m
+                          ? 'bg-brand text-content-inverse'
+                          : 'bg-surface/80 text-content-secondary hover:bg-surface-inset'
+                      }`}
+                    >
+                      {m === 'any' ? 'Any' : 'All'}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-content-muted">
+                  {(pair.matchMode || 'any') === 'any' ? 'reaction has at least one' : 'reaction has every compound'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Results indicator */}
@@ -294,7 +370,7 @@ const SearchPanel = ({
     setSearchPairsInApp(prev => [...prev, { 
       id: `new-${Date.now()}-${prev.length}`, 
       mode: 'compound',
-      source: '', target: '', reaction: '', ec: '',
+      source: '', target: '', reaction: '', ec: '', compounds: [], matchMode: 'any',
       visible: true, sourceDisplay: '', targetDisplay: '',
       hasResults: undefined, resultCount: undefined
     }]);
@@ -382,6 +458,7 @@ const SearchPanel = ({
     if (mode === 'compound') return pair.target && pair.target.trim() !== '';
     if (mode === 'reaction') return pair.reaction && pair.reaction.trim() !== '';
     if (mode === 'ec') return pair.ec && pair.ec.trim() !== '';
+    if (mode === 'compounds') return (pair.compounds || []).length > 0;
     return false;
   });
   const canExport = (results && results.length > 0) || searchPairs.some(p => (p.source && p.source.trim()) || (p.target && p.target.trim()));

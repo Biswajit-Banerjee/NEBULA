@@ -301,6 +301,81 @@ class MetabolicViewer:
         except Exception as e:
             return {"data": [], "error": str(e)}
 
+    async def get_compound_set_reactions(self, compounds: List[str], match_mode: str = "any") -> Dict:
+        """
+        Given a set of compound IDs, find all reactions where those compounds
+        appear as a reactant or a product.
+
+        Args:
+            compounds: List of KEGG compound IDs to search for.
+            match_mode: 'any' (union — reaction contains at least one of the
+                        compounds) or 'all' (intersection — reaction contains
+                        every compound in the set, on either side).
+        """
+        try:
+            import re as _re
+
+            if not compounds:
+                return {"data": []}
+
+            combined = (self.df['reactants'].fillna('') + ' ' + self.df['products'].fillna(''))
+
+            patterns = [
+                _re.compile(r'(?:^|\+|\s)' + _re.escape(c) + r'(?:$|\+|\s)')
+                for c in compounds
+            ]
+            match_masks = [combined.str.contains(p, regex=True, na=False) for p in patterns]
+
+            if match_mode == "all":
+                mask = match_masks[0]
+                for m in match_masks[1:]:
+                    mask = mask & m
+            else:
+                mask = match_masks[0]
+                for m in match_masks[1:]:
+                    mask = mask | m
+
+            cpd_rows = self.df[mask].copy()
+            if cpd_rows.empty:
+                return {"data": []}
+
+            cpd_rows = cpd_rows.replace([np.inf, -np.inf], None)
+            cpd_rows = cpd_rows.fillna('N/A')
+
+            cpd_rows['ec_list'] = cpd_rows['ec_list'].apply(parse_ec_list)
+
+            display_df = pd.DataFrame({
+                'reaction': cpd_rows['reaction'],
+                'source': cpd_rows['source'],
+                'coenzyme': cpd_rows['coenzyme'],
+                'equation': cpd_rows['equation'],
+                'transition': cpd_rows.apply(
+                    lambda row: f"{int(row['reactant_gen']) if row['reactant_gen'] not in (None, 'N/A') else 0} -> {int(row['product_gen']) if row['product_gen'] not in (None, 'N/A') else 0}",
+                    axis=1
+                ),
+                'target': cpd_rows['products'],
+                'ec_list': cpd_rows['ec_list'],
+            })
+
+            display_df.drop_duplicates(["equation"], inplace=True)
+
+            agg_df = {col: 'first' for col in display_df.columns if col != "reaction"}
+            agg_df['target'] = lambda x: ', '.join(x)
+            display_df = display_df.groupby("reaction").agg(agg_df).reset_index()
+            display_df = display_df.sort_values(['transition'])
+
+            display_df.loc[:, "compound_generation"] = display_df.equation.apply(
+                lambda x: add_compound_generation(x, self.gen_mapper)
+            )
+            display_df.loc[:, "max_generation"] = display_df["compound_generation"].apply(
+                lambda x: max(x.values()) if x else 0
+            )
+            display_df = display_df.sort_values("max_generation")
+
+            return {"data": display_df.to_dict('records')}
+        except Exception as e:
+            return {"data": [], "error": str(e)}
+
     async def get_backtrace_tree(
         self,
         target: str,

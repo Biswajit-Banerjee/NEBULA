@@ -171,6 +171,7 @@ function App() {
       if (m === 'compound') return p.target && p.target.trim();
       if (m === 'reaction') return p.reaction && p.reaction.trim();
       if (m === 'ec') return p.ec && p.ec.trim();
+      if (m === 'compounds') return (p.compounds || []).length > 0;
       return false;
     });
 
@@ -220,6 +221,15 @@ function App() {
             qp.append('ec', pair.ec.trim());
             fetchUrl = getApiUrl(`ec/reactions?${qp.toString()}`);
             pairLabel = pair.ec.trim();
+          }
+        } else if (mode === 'compounds') {
+          isValid = (pair.compounds || []).length > 0;
+          if (isValid) {
+            const qp = new URLSearchParams();
+            qp.append('compounds', pair.compounds.join(','));
+            qp.append('match', pair.matchMode || 'any');
+            fetchUrl = getApiUrl(`compounds/reactions?${qp.toString()}`);
+            pairLabel = pair.compounds.join('+');
           }
         }
 

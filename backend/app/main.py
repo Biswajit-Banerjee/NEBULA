@@ -417,6 +417,51 @@ async def get_ec_reactions(ec: str):
             detail="Failed to process EC reactions request"
         )
 
+@app.get("/api/compounds/reactions")
+async def get_compounds_reactions(compounds: str, match: str = "any"):
+    """
+    Find all reactions where any/all of a given set of compounds appear as
+    a reactant or a product.
+
+    Args:
+        compounds (str): Comma-separated list of KEGG compound IDs
+        match (str): 'any' (union) or 'all' (intersection)
+
+    Returns:
+        dict: Reactions in the same format as compound backtrace results
+    """
+    try:
+        compound_ids = [c.strip().upper() for c in compounds.split(',') if c.strip()]
+
+        if not compound_ids:
+            raise HTTPException(status_code=400, detail="No compounds provided.")
+
+        for cid in compound_ids:
+            if not re.match(r'^[CZ]\d{5}$', cid):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid compound ID format: '{cid}'. Must start with 'C' or 'Z' followed by 5 digits."
+                )
+
+        if match not in ("any", "all"):
+            raise HTTPException(status_code=400, detail="Invalid match mode. Must be 'any' or 'all'.")
+
+        result = await viewer.get_compound_set_reactions(compound_ids, match_mode=match)
+
+        if result.get('error'):
+            raise HTTPException(status_code=404, detail=result['error'])
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in compound set reactions API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process compound set reactions request"
+        )
+
 @app.get("/api/compound/{compound_id}")
 async def get_compound_data(compound_id: str):
     """
