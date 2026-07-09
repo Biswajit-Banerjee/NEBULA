@@ -122,12 +122,12 @@ function Start-BackendServer {
     $env:PYTHONPATH = "$backendDir;$env:PYTHONPATH"
 
     $proc = Start-Process -FilePath "python" `
-        -ArgumentList "-m uvicorn app.main:app --reload --port 8000 --host 0.0.0.0" `
+        -ArgumentList "-m uvicorn app.main:app --reload --port 8020 --host 0.0.0.0" `
         -WorkingDirectory $backendDir `
         -PassThru -NoNewWindow
 
     $proc.Id | Out-File -FilePath $BACKEND_PID_FILE -NoNewline
-    Write-Host "Backend server started on http://0.0.0.0:8000 (PID: $($proc.Id))"
+    Write-Host "Backend server started on http://0.0.0.0:8020 (PID: $($proc.Id))"
 }
 
 # Function to start the frontend
@@ -258,7 +258,7 @@ function Show-Usage {
     Write-Host "  install [service]  - Install dependencies (backend pip/npm install frontend)"
     Write-Host ""
     Write-Host "Services:"
-    Write-Host "  backend   - FastAPI backend server (port 8000)"
+    Write-Host "  backend   - FastAPI backend server (port 8020)"
     Write-Host "  frontend  - Vite/React frontend dev server"
     Write-Host ""
     Write-Host "Flags:"

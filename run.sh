@@ -105,10 +105,10 @@ start_backend() {
     fi
     
     export PYTHONPATH=$PYTHONPATH:$(pwd)
-    python3 -m uvicorn app.main:app --reload --port 8000 --host 0.0.0.0 &
+    python3 -m uvicorn app.main:app --reload --port 8020 --host 0.0.0.0 &
     local pid=$!
     echo $pid > "$BACKEND_PID_FILE"
-    echo "Backend server started on http://0.0.0.0:8000 (PID: ${pid})"
+    echo "Backend server started on http://0.0.0.0:8020 (PID: ${pid})"
     
     cd ..
 }
@@ -230,7 +230,7 @@ show_usage() {
     echo "  install [service]  - Install dependencies (backend pip/npm install frontend)"
     echo ""
     echo "Services:"
-    echo "  backend   - FastAPI backend server (port 8000)"
+    echo "  backend   - FastAPI backend server (port 8020)"
     echo "  frontend  - Vite/React frontend dev server"
     echo ""
     echo "Examples:"
