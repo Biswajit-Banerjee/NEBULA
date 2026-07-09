@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import {
   ChevronRight, Settings2, Download, Image, Maximize, Minimize,
   HelpCircle, Layers, RotateCcw, Palette, Circle, Activity, Scaling,
-  Spline, GitCommitHorizontal, Hexagon, Map, Route, Tag, Globe2, Network, EyeOff,
+  Spline, GitCommitHorizontal, Hexagon, Map, Tag, Globe2, Network, Signpost,
+  Search, SearchX,
 } from 'lucide-react';
 import { SCHEME_NAMES, schemeGradientCSS } from '../NetworkViewer2D/utils/colorSchemes';
+import AutocompleteInput from '../SearchPanel/AutocompleteInput';
+import compoundDataJson from '../SearchPanel/compound_map.json';
 
 /* ── Reusable primitives (same as NetworkViewer2D) ── */
 
@@ -166,9 +169,68 @@ const LayoutSelector = ({ value, onChange }) => (
   </div>
 );
 
+const EDGE_MODES = [
+  { id: 'all', label: 'All' },
+  { id: 'pruned', label: 'Pruned' },
+  { id: 'none', label: 'None' },
+];
+
+/* ── Edges: All / Pruned / None — a single tri-state control replacing the
+   old separate "Prune edges" + "Hide edges" toggles. Derived from the two
+   underlying booleans (pruneEdges affects the graph DATA, hideEdges just
+   skips drawing) so nothing about the actual rendering pipeline changes. */
+const EdgeModeSelector = ({ value, onChange }) => (
+  <div>
+    <span className="text-[11px] font-medium text-content-secondary mb-1.5 block">Edges</span>
+    <div className="flex rounded-lg overflow-hidden border border-brd/60">
+      {EDGE_MODES.map(({ id, label }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className={`flex-1 flex items-center justify-center px-2 py-1.5 text-[10px] font-semibold transition-all ${
+            value === id
+              ? 'bg-brand/15 text-brand'
+              : 'text-content-muted hover:text-content-secondary'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+/* ── Mode tabs: "KEGG Layout" vs "Custom" — this directly drives the
+   `keggLayout` boolean, since that's the actual render-mode switch in
+   GraphCanvas. Selecting a tab IS switching the mode, not just a view filter. */
+const MODE_TABS = [
+  { id: 'kegg', label: 'KEGG Layout', icon: Map },
+  { id: 'custom', label: 'Custom', icon: Hexagon },
+];
+
+const ModeTabs = ({ value, onChange }) => (
+  <div className="flex rounded-lg overflow-hidden border border-brd/60 bg-surface-inset/40 p-0.5">
+    {MODE_TABS.map(({ id, label, icon: Icon }) => (
+      <button
+        key={id}
+        onClick={() => onChange(id)}
+        className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all ${
+          value === id
+            ? 'bg-brand text-content-inverse shadow-sm'
+            : 'text-content-secondary hover:bg-surface-inset/60'
+        }`}
+      >
+        <Icon className="w-3.5 h-3.5" />
+        {label}
+      </button>
+    ))}
+  </div>
+);
+
 const SettingsPanel = ({
   edgeOpacity, setEdgeOpacity,
   spacingScale, setSpacingScale,
+  nodeSizeScale, setNodeSizeScale,
   showOverlay, toggleOverlay,
   isFullscreen, toggleFullscreen,
   handleDownloadSVG,
@@ -185,12 +247,23 @@ const SettingsPanel = ({
   nodeDisplay, setNodeDisplay,
   showNames, setShowNames,
   keggLayout, setKeggLayout,
-  keggOrthoEdges, setKeggOrthoEdges,
   showAllKegg, setShowAllKegg,
   showKeggLines, setShowKeggLines,
   hideEdges, setHideEdges,
+  showPathways, setShowPathways,
+  keggBgOpacity, setKeggBgOpacity,
+  onSelectCompound,
 }) => {
   const [open, setOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [searchStatus, setSearchStatus] = useState(null); // null | 'found' | 'not-found'
+
+  const handleSearchSelect = (id) => {
+    setSearchValue(id);
+    if (!id) { setSearchStatus(null); return; }
+    const found = onSelectCompound ? onSelectCompound(id) : false;
+    setSearchStatus(found ? 'found' : 'not-found');
+  };
 
   return (
     <>
@@ -231,7 +304,30 @@ const SettingsPanel = ({
             </h3>
           </div>
 
-          {/* Display */}
+          {/* Locate compound */}
+          <div className="space-y-2">
+            <SectionTitle>
+              <span className="flex items-center gap-1.5"><Search className="w-3 h-3" /> Find Compound</span>
+            </SectionTitle>
+            <AutocompleteInput
+              value={searchValue}
+              onValueSelect={handleSearchSelect}
+              placeholder="Search compound name or ID..."
+              compoundData={compoundDataJson}
+              idPrefix="settings-compound-search"
+              className="w-full px-2.5 py-1.5 bg-input-bg/70 border border-brd/70 rounded-lg text-content placeholder-content-muted focus:ring-2 focus:ring-brand/20 focus:border-brand-hover transition-shadow text-[11px]"
+            />
+            {searchStatus === 'not-found' && (
+              <div className="flex items-center gap-1.5 text-[10px] text-err">
+                <SearchX className="w-3 h-3 flex-shrink-0" />
+                Not present in current map
+              </div>
+            )}
+          </div>
+
+          <div className="h-px bg-brd/60" />
+
+          {/* Common display controls — apply no matter which layout mode is active */}
           <div className="space-y-3">
             <SectionTitle>Display</SectionTitle>
             <Slider
@@ -246,20 +342,51 @@ const SettingsPanel = ({
               onChange={setSpacingScale}
               displayValue={Math.round(spacingScale * 100)} unit="%"
             />
+            <Slider
+              label="Node & font size"
+              value={nodeSizeScale} min={0.5} max={4} step={0.1}
+              onChange={setNodeSizeScale}
+              displayValue={Math.round(nodeSizeScale * 100)} unit="%"
+            />
             <Toggle label="Path overlay" value={showOverlay} onChange={toggleOverlay} icon={Layers} />
-            <Toggle label="Prune edges" value={pruneEdges} onChange={setPruneEdges} icon={Scaling} />
-            <Toggle label="Hide edges" value={hideEdges} onChange={setHideEdges} icon={EyeOff} />
+            <EdgeModeSelector
+              value={hideEdges ? 'none' : (pruneEdges ? 'pruned' : 'all')}
+              onChange={(id) => {
+                if (id === 'none') { setHideEdges(true); return; }
+                setHideEdges(false);
+                setPruneEdges(id === 'pruned');
+              }}
+            />
+            <LayoutSelector value={edgeStyle} onChange={setEdgeStyle} />
             <Toggle label="Structures" value={nodeDisplay === 'structure'} onChange={(v) => setNodeDisplay(v ? 'structure' : 'circle')} icon={Hexagon} />
             <Toggle label="Compound names" value={showNames} onChange={setShowNames} icon={Tag} />
-            <Toggle label="KEGG layout" value={keggLayout} onChange={setKeggLayout} icon={Map} />
-            <Toggle label="KEGG ortho edges" value={keggOrthoEdges} onChange={setKeggOrthoEdges} icon={Route} />
+          </div>
+
+          <div className="h-px bg-brd/60" />
+
+          {/* Layout mode — tabs directly switch `keggLayout` */}
+          <div className="space-y-3">
+            <SectionTitle>Layout Mode</SectionTitle>
+            <ModeTabs
+              value={keggLayout ? 'kegg' : 'custom'}
+              onChange={(id) => setKeggLayout(id === 'kegg')}
+            />
+
             {keggLayout && (
-              <Toggle label="Show all map compounds" value={showAllKegg} onChange={setShowAllKegg} icon={Globe2} />
+              <div className="space-y-3 pt-1">
+                <Toggle label="Show all map compounds" value={showAllKegg} onChange={setShowAllKegg} icon={Globe2} />
+                <Toggle label="Show map lines" value={showKeggLines} onChange={setShowKeggLines} icon={Network} />
+                <Toggle label="Pathway regions" value={showPathways} onChange={setShowPathways} icon={Signpost} />
+                {(showAllKegg || showKeggLines) && (
+                  <Slider
+                    label="Map lines opacity"
+                    value={keggBgOpacity} min={0.05} max={1} step={0.05}
+                    onChange={setKeggBgOpacity}
+                    displayValue={Math.round(keggBgOpacity * 100)} unit="%"
+                  />
+                )}
+              </div>
             )}
-            {keggLayout && (
-              <Toggle label="Show map lines" value={showKeggLines} onChange={setShowKeggLines} icon={Network} />
-            )}
-            <LayoutSelector value={edgeStyle} onChange={setEdgeStyle} />
           </div>
 
           <div className="h-px bg-brd/60" />

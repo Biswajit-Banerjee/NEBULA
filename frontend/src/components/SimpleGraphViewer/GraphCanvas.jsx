@@ -16,8 +16,8 @@ import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 import NodeInfoPanel from "../NetworkViewer2D/NodeInfoPanel";
 import SmilesDrawer from "smiles-drawer";
 
-const R_COMPOUND = 14;
-const KEGG_SCALE = 5;
+const R_COMPOUND = 7.2;
+const KEGG_SCALE = 1;
 
 const _edgeKey = (l) => {
   const s = l.source?.id || l.source;
@@ -44,6 +44,7 @@ const GraphCanvas = forwardRef(
       showOverlay = false,
       edgeOpacity = 0.5,
       spacingScale = 1.0,
+      nodeSizeScale = 1.0,
       colorMode = "generation",
       colorScheme = "viridis",
       bgColor = "",
@@ -53,10 +54,11 @@ const GraphCanvas = forwardRef(
       nodeDisplay = "circle",
       showNames = false,
       keggLayout = false,
-      keggOrthoEdges = false,
       showAllKegg = false,
       showKeggLines = false,
       hideEdges = false,
+      showPathways = false,
+      keggBgOpacity = 0.25,
       backboneMatchIds = null,
     },
     ref
@@ -77,6 +79,9 @@ const GraphCanvas = forwardRef(
     const syncSelectionRef = useRef(null);
     const needsFitRef = useRef(true);
     const prevDataRef = useRef(null);
+    const prevShowAllKeggRef = useRef(showAllKegg);
+    const prevShowKeggLinesRef = useRef(showKeggLines);
+    const prevKeggAdjVersionRef = useRef(null);
     const smilesDataRef = useRef({});       // { compoundId: smilesString }
     const structTexRef = useRef(new Map());  // Map<compoundId, OffscreenCanvas>
     const nodeDisplayRef = useRef(nodeDisplay);
@@ -84,13 +89,22 @@ const GraphCanvas = forwardRef(
     const compoundNamesRef = useRef(new Map()); // Map<compoundId, name string>
     const showNamesRef = useRef(showNames);
     showNamesRef.current = showNames;
+    const nodeSizeScaleRef = useRef(nodeSizeScale);
+    nodeSizeScaleRef.current = nodeSizeScale;
+    const hideEdgesRef = useRef(hideEdges);
+    const showAllKeggRef = useRef(showAllKegg);
+    const showKeggLinesRef = useRef(showKeggLines);
+    const keggBgOpacityRef = useRef(keggBgOpacity);
     const keggPositionsRef = useRef(null);   // { compoundId: {x, y} } from KEGG map
     const keggPosArrayRef = useRef([]);       // pre-cached [[id, {x,y}], ...] — avoids Object.entries() every frame
     const prevKeggLayoutRef = useRef(false);
     const keggLayoutRef = useRef(keggLayout);
     keggLayoutRef.current = keggLayout;
-    const keggOrthoEdgesRef = useRef(null);  // [{points, color, name, reaction}, ...] from KEGG map
-    const keggBgPathRef = useRef(null);        // pre-built Path2D for background lines (static, built once)
+    const keggBgLinesImageRef = useRef(null);   // pre-loaded Image of map01100_bg_notext.svg (skeleton lines/ellipses)
+    const keggBgTextImageRef = useRef(null);    // pre-loaded Image of map01100_bg_textonly.svg (native region-name text)
+    const keggConfLinesRef = useRef(null);      // [{points, width}, ...] from map01100.conf
+    const keggCpdLinesRef = useRef(null);       // { compoundId: [lineIdx, ...] } — which lines connect to which compound
+    const keggAdjGraphRef = useRef(null);        // Map<compoundId, Set<neighborCompoundId>> — full KEGG map adjacency
     const zoomRafRef = useRef(null);            // rAF handle to throttle zoom redraws
     const orthoRouteCacheRef = useRef({ posHash: null, routes: new Map() }); // cached orthogonal edge routes
     const localEditsRef = useRef({ deletedNodes: new Set(), deletedEdges: new Set(), addedEdges: [] });
@@ -99,6 +113,9 @@ const GraphCanvas = forwardRef(
     const [graph, setGraph] = useState({ nodes: [], links: [] });
     const graphRef = useRef({ nodes: [], links: [] });
     graphRef.current = graph;
+    // Bumped once the KEGG adjacency graph finishes loading (async), so the layout effect
+    // re-runs and re-places any nodes that had fallen back to naive placement beforehand.
+    const [keggAdjVersion, setKeggAdjVersion] = useState(0);
 
     // Sync pinned → selectedNodes state
     const syncSelection = useCallback(() => {
@@ -183,13 +200,73 @@ const GraphCanvas = forwardRef(
       setGraph(processed);
     }, [data, pruneEdges]);
 
+    /* ── Update hideEdges ref when prop changes ── */
+    useEffect(() => {
+      hideEdgesRef.current = hideEdges;
+    }, [hideEdges]);
+
+    /* ── Update KEGG refs when props change ── */
+    useEffect(() => {
+      showAllKeggRef.current = showAllKegg;
+      showKeggLinesRef.current = showKeggLines;
+      keggBgOpacityRef.current = keggBgOpacity;
+    }, [showAllKegg, showKeggLines, keggBgOpacity]);
+
     /* ── Fetch structures & pre-render textures ── */
     const STRUCT_TEX = 1024;      // high-res offscreen canvas
-    const STRUCT_WORLD_H = 70;    // fixed size in world units (square)
+    const STRUCT_WORLD_H = 56;    // fixed size in world units (square)
 
     // Element colors for MOL renderer
     const ELEM_COLORS_DARK = { C: '#cbd5e1', O: '#ef4444', N: '#3b82f6', S: '#eab308', P: '#f97316', F: '#22c55e', Cl: '#14b8a6', Br: '#d97706', I: '#8b5cf6', H: '#cbd5e1' };
     const ELEM_COLORS_LIGHT = { C: '#334155', O: '#dc2626', N: '#2563eb', S: '#ca8a04', P: '#ea580c', F: '#16a34a', Cl: '#0d9488', Br: '#b45309', I: '#7c3aed', H: '#334155' };
+
+    // Renderers (renderMol, SmilesDrawer, renderNameTex) all draw into a fixed
+    // SQUARE offscreen canvas, but the actual drawn content (molecule/text)
+    // rarely fills the whole square — it's scaled-to-fit and centered, leaving
+    // empty transparent padding on the shorter axis. Since node labels are
+    // positioned at a fixed offset below the texture's own bottom EDGE (not
+    // below the visible content), that empty padding used to show up as a
+    // large, inconsistent gap between the structure and its label. This crops
+    // the texture to the tight bounding box of its non-transparent pixels and
+    // records the real content aspect ratio, so labels sit right below the
+    // actual visible structure regardless of its shape.
+    const cropToContent = (canvas, paddingFrac = 0.06) => {
+      const w = canvas.width, h = canvas.height;
+      const ctx = canvas.getContext('2d');
+      let data;
+      try {
+        data = ctx.getImageData(0, 0, w, h).data;
+      } catch {
+        canvas._aspect = 1;
+        return canvas;
+      }
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        const rowOff = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          if (data[rowOff + x * 4 + 3] > 8) { // alpha threshold
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < minX || maxY < minY) {
+        canvas._aspect = 1;
+        return canvas;
+      }
+      const padX = Math.max(4, (maxX - minX) * paddingFrac);
+      const padY = Math.max(4, (maxY - minY) * paddingFrac);
+      const sx = Math.max(0, minX - padX), sy = Math.max(0, minY - padY);
+      const sw = Math.min(w, maxX + padX) - sx;
+      const sh = Math.min(h, maxY + padY) - sy;
+      const out = document.createElement('canvas');
+      out.width = sw; out.height = sh;
+      out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      out._aspect = sw / sh;
+      return out;
+    };
 
     // Parse MOL V2000 text → { atoms: [{x,y,symbol}], bonds: [{a1,a2,type}] }
     const parseMol = (molText) => {
@@ -291,8 +368,7 @@ const GraphCanvas = forwardRef(
         ctx.fillText(a.symbol, ax, ay);
       });
 
-      canvas._aspect = 1;
-      return canvas;
+      return cropToContent(canvas);
     };
 
     // Render a cofactor name as a styled text canvas
@@ -328,8 +404,7 @@ const GraphCanvas = forwardRef(
         ctx.fillText(l, size / 2, startY + i * lineH);
       });
 
-      canvas._aspect = 1;
-      return canvas;
+      return cropToContent(canvas);
     };
 
     useEffect(() => {
@@ -398,8 +473,7 @@ const GraphCanvas = forwardRef(
                   offscreen.width = STRUCT_TEX;
                   offscreen.height = STRUCT_TEX;
                   drawer.draw(tree, offscreen, theme, false);
-                  offscreen._aspect = 1;
-                  structTexRef.current.set(cid, offscreen);
+                  structTexRef.current.set(cid, cropToContent(offscreen));
                   resolve();
                 }, (err) => { reject(err); });
               });
@@ -537,7 +611,7 @@ const GraphCanvas = forwardRef(
         x >= viewMinX && x <= viewMaxX && y >= viewMinY && y <= viewMaxY;
 
       /* ── Grid (skip when zoomed out too far — lines would be sub-pixel) ── */
-      const gridSpacing = 48;
+      const gridSpacing = 10;
       const gridScreenPx = gridSpacing * t.k;
       if (gridScreenPx >= 3) {
         const effectiveGridColor = gridColor
@@ -561,26 +635,65 @@ const GraphCanvas = forwardRef(
         ctx.restore();
       }
 
-      /* ── KEGG background pathway lines (show all / show lines mode) ── */
-      if ((showAllKegg || showKeggLines) && keggLayout && keggBgPathRef.current) {
-        const bgLineColor = dark ? '#94a3b8' : '#475569';
+      /* ── KEGG background SVG image (show all / show lines / pathway regions mode) ──
+         Two INDEPENDENT images — lines (map01100_bg_notext.svg) and text
+         (map01100_bg_textonly.svg) — each loaded only when its own toggle is
+         on, and drawn stacked (lines first, then text on top) rather than a
+         single combined image. There is no third "both" file (see
+         scripts/build_kegg_bg_native.py) — when both toggles are on, both
+         images are simply drawn one after the other at the same rect. */
+      const wantLinesBg = showAllKegg || showKeggLines;
+      const wantTextBg = showPathways;
+      if (keggLayout && ((wantLinesBg && keggBgLinesImageRef.current) || (wantTextBg && keggBgTextImageRef.current))) {
         ctx.save();
-        ctx.globalAlpha = 0.1;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.lineWidth = Math.max(0.6 / t.k, 0.4);
-        ctx.strokeStyle = bgLineColor;
-        ctx.stroke(keggBgPathRef.current);
+        ctx.globalAlpha = keggBgOpacity;
+        if (dark) {
+          ctx.filter = 'invert(1) hue-rotate(180deg) brightness(0.7)';
+        }
+        // map01100_bg_notext.svg / map01100_bg_textonly.svg are the ORIGINAL,
+        // untouched map01100.svg artwork (native 3774x2250 coordinate space) —
+        // only its pan/zoom-widget transform, white bg rect, and control icons
+        // were stripped. Alignment with the app's KEGG world space
+        // (kegg_pos_conf.json, 0..4961 x 0..3199) is applied here via
+        // scale+translate, computed once via ICP against ko01100.kgml positions
+        // (see scripts/build_kegg_bg_native.py), so the source SVG's colors/paths/
+        // labels remain 100% untouched.
+        if (wantLinesBg && keggBgLinesImageRef.current) {
+          ctx.drawImage(keggBgLinesImageRef.current, -4.41, 12.79, 4891.49, 3195.12);
+        }
+        if (wantTextBg && keggBgTextImageRef.current) {
+          ctx.drawImage(keggBgTextImageRef.current, -4.41, 12.79, 4891.49, 3195.12);
+        }
+        ctx.filter = 'none';
         ctx.restore();
       }
+
+      /* ── Highlight active compound lines: REMOVED ──
+         This used to erase+redraw conf-space lines (remapped via a per-line
+         similarity transform) on top of the raster background to emphasize
+         lines touching the current search's seed/neighbor nodes. Now that the
+         background IS the real KEGG artwork (accurate positions/curves), this
+         vector redraw only ever produced a second, slightly-differently-shaped
+         copy of each "active" line on top of the correct one underneath
+         (conf-space bent/multi-segment lines don't reconstruct their true
+         bend position under a 2-point similarity transform) — visible as
+         duplicate "weird" lines. The raster background alone is now the only
+         line-skeleton renderer; conf line/compound-line data is still fetched
+         for KEGG layout placement, just no longer drawn as its own layer here. */
 
       /* ── Surface point on compound circle ── */
       const surfacePoint = (node, dx, dy) => {
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d === 0) return { x: node.x, y: node.y };
         const ux = dx / d, uy = dy / d;
-        return { x: node.x + ux * R_COMPOUND, y: node.y + uy * R_COMPOUND };
+        return { x: node.x + ux * R_COMPOUND * nodeSizeScale, y: node.y + uy * R_COMPOUND * nodeSizeScale };
       };
+
+      /* ── Pathway region labels: intentionally NOT drawn by our own overlay.
+         The "Pathway regions" toggle instead loads/clears the independent
+         text background image (fully separate from "KEGG layout"'s lines
+         image) — see the keggBgTextImageRef/keggBgLinesImageRef loading
+         effects. This avoids ugly duplicate text. */
 
       /* ── Edges ── */
       const visibleEdges = [];
@@ -636,11 +749,15 @@ const GraphCanvas = forwardRef(
           : Math.max(0.05, 0.15 - (edgeCount - 400) / 2000 * 0.10);
       const baseAlpha = autoAlpha * (edgeOpacity * 2);
       const inKeggMode = keggLayout;
-      const keggEdgeRGB = dark ? '140,140,145' : '90,90,95';
+      // Edge color/visibility must respond to the edgeOpacity slider the same way
+      // in KEGG mode as in normal mode — previously this force-capped alpha at
+      // ~0.08 whenever KEGG layout was active, so edges stayed nearly invisible
+      // no matter how high the user turned the opacity slider.
+      const keggEdgeRGB = dark ? '170,170,178' : '55,60,70';
       const dimAlpha = hasHighlight
         ? Math.min(baseAlpha * 0.18, 0.035)
-        : inKeggMode ? Math.min(baseAlpha, 0.08) : baseAlpha;
-      const brightAlpha = inKeggMode ? dimAlpha : 0.9;
+        : baseAlpha;
+      const brightAlpha = 0.9;
 
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -716,7 +833,7 @@ const GraphCanvas = forwardRef(
             const tId = l.target?.id || l.target;
             const src = nodeMap.get(sId), trg = nodeMap.get(tId);
             if (!src || !trg) return;
-            const R = R_COMPOUND;
+            const R = R_COMPOUND * nodeSizeScale;
             const dx_raw = trg.x - src.x, dy_raw = trg.y - src.y;
             const pK = [sId, tId].sort().join('||');
             const total = pc.get(pK) || 1;
@@ -833,7 +950,11 @@ const GraphCanvas = forwardRef(
         };
       };
 
-      // Draw edges in 2 passes: dim first, bright on top
+      // Draw edges in 2 passes: dim first, bright on top.
+      // Edge visibility is controlled ONLY by the explicit "Hide edges" toggle —
+      // it must never be force-overridden by KEGG map display settings (show-all /
+      // show-lines / pathway regions), since those are independent, co-existing
+      // layers, not mutually exclusive with the reaction-graph edges.
       for (let pass = 0; pass < 2; pass++) { if (hideEdges) break;
         visibleEdges.forEach(({ src, trg, link }, idx) => {
           const isBright = hasHighlight && highlightedEdgeSet.has(idx);
@@ -909,8 +1030,8 @@ const GraphCanvas = forwardRef(
             const nx = dist > 0 ? -dy / dist : 0;
             const ny = dist > 0 ? dx / dist : 0;
 
-            const curveOff = total === 1 ? 0 : (myIdx - (total - 1) / 2) * 18;
-            const curveBase = Math.min(dist * 0.15, 30);
+            const curveOff = total === 1 ? 0 : (myIdx - (total - 1) / 2) * (inKeggMode ? Math.min(dist * 0.04, 18) : 4);
+            const curveBase = Math.min(dist * 0.15, inKeggMode ? 30 : 6);
             const curvature = curveBase + curveOff;
 
             const mx = (s0.x + s1.x) / 2;
@@ -998,50 +1119,13 @@ const GraphCanvas = forwardRef(
             ctx.strokeStyle = col;
             ctx.lineWidth = Math.max(3 / t.k, 1.5);
             ctx.beginPath();
-            ctx.arc(n.x, n.y, R_COMPOUND + 3, 0, Math.PI * 2);
+            ctx.arc(n.x, n.y, R_COMPOUND * nodeSizeScale + 1, 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
           });
         });
       }
 
-      /* ── KEGG ortho edges (polylines from KGML, filtered to graph reactions) ── */
-      if (keggOrthoEdges && keggLayout && keggOrthoEdgesRef.current && !showAllKegg && !showKeggLines) {
-        // Collect reaction IDs present in the current graph
-        const graphRxnIds = new Set();
-        drawLinks.forEach(l => {
-          if (l.reactionId) graphRxnIds.add(l.reactionId);
-          if (l.reactions) l.reactions.forEach(r => { if (r.id) graphRxnIds.add(r.id); });
-        });
-
-        const orthoColor = dark ? '#94a3b8' : '#475569';
-        ctx.save();
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = Math.max(0.6 / t.k, 0.4);
-        ctx.globalAlpha = 0.25;
-        ctx.strokeStyle = orthoColor;
-        ctx.fillStyle = orthoColor;
-        const as = Math.max(5 / t.k, 4);
-        keggOrthoEdgesRef.current.forEach(edge => {
-          if (!edge._path) return;
-          if (!edge._rxnIds.some(rid => graphRxnIds.has(rid))) return;
-          const [eMinX, eMinY, eMaxX, eMaxY] = edge._bounds;
-          if (eMaxX < viewMinX || eMinX > viewMaxX || eMaxY < viewMinY || eMinY > viewMaxY) return;
-          ctx.stroke(edge._path);
-          // Arrowhead at end
-          const [lx, ly] = edge._endXY;
-          const ang = edge._arrowAngle;
-          ctx.beginPath();
-          ctx.moveTo(lx, ly);
-          ctx.lineTo(lx - as * Math.cos(ang - Math.PI / 6), ly - as * Math.sin(ang - Math.PI / 6));
-          ctx.lineTo(lx - as * Math.cos(ang + Math.PI / 6), ly - as * Math.sin(ang + Math.PI / 6));
-          ctx.closePath();
-          ctx.fill();
-        });
-        ctx.globalAlpha = 1;
-        ctx.restore();
-      }
 
       /* ── Nodes ── */
       const degMap = new Map();
@@ -1073,17 +1157,19 @@ const GraphCanvas = forwardRef(
       };
 
       // In KEGG layout, ensure nodes are always visible at any zoom level
-      const nodeDrawR = keggLayout ? Math.max(R_COMPOUND, 3.5 / t.k) : R_COMPOUND;
+      const sizeScale = nodeSizeScale;
+      const R_SCALED = R_COMPOUND * sizeScale;
+      const nodeDrawR = keggLayout ? Math.max(R_SCALED, (3.5 * sizeScale) / t.k) : R_SCALED;
 
       // Structures: fixed world HEIGHT, width adapts per molecule's aspect ratio
       const useStructures = nodeDisplay === 'structure';
-      const SH = STRUCT_WORLD_H; // world height
+      const SH = STRUCT_WORLD_H * sizeScale; // world height
       const halfH = SH / 2;
 
       /* ── KEGG global-orientation ghost nodes ── */
-      if (showAllKegg && keggLayout && keggPositionsRef.current) {
+      if (showAllKegg && keggLayout && keggPosArrayRef.current.length) {
         const searchNodeIds = new Set(drawNodes.map(n => n.id));
-        const ghostR = Math.max(R_COMPOUND * 0.8, 2 / t.k);
+        const ghostR = Math.max(R_SCALED * 0.8, (2 * sizeScale) / t.k);
         const ghostFill = dark ? '#94a3b8' : '#64748b';
         const ghostStroke = dark ? '#cbd5e1' : '#475569';
         ctx.save();
@@ -1091,7 +1177,6 @@ const GraphCanvas = forwardRef(
         ctx.lineWidth = Math.max(0.8, 0.5 / t.k);
         ctx.fillStyle = ghostFill;
         ctx.strokeStyle = ghostStroke;
-        // Batch all ghost nodes into two paths (fill + stroke) — single draw call each
         ctx.beginPath();
         for (const [cid, pos] of keggPosArrayRef.current) {
           if (searchNodeIds.has(cid)) continue;
@@ -1121,9 +1206,9 @@ const GraphCanvas = forwardRef(
         // Subtle glow behind backbone-matched molecules
         if (bbMatch && !bbDim) {
           ctx.save();
-          const glowR = tex ? (SH * (tex._aspect || 1) / 2 + 8) : (R_COMPOUND + 8);
+          const glowR = tex ? (SH * (tex._aspect || 1) / 2 + 2) : (R_SCALED + 2);
           ctx.shadowColor = `rgba(${themeBrandPrimary},0.5)`;
-          ctx.shadowBlur = 18;
+          ctx.shadowBlur = 6;
           ctx.fillStyle = 'rgba(0,0,0,0)';
           ctx.beginPath();
           ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
@@ -1140,7 +1225,7 @@ const GraphCanvas = forwardRef(
         } else {
           ctx.fillStyle = fill;
           ctx.strokeStyle = stroke;
-          ctx.lineWidth = 1.2;
+          ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.arc(n.x, n.y, nodeDrawR, 0, Math.PI * 2);
           ctx.fill();
@@ -1156,11 +1241,11 @@ const GraphCanvas = forwardRef(
           ctx.beginPath();
           if (tex) {
             const aspect = tex._aspect || 1;
-            const hw = SH * aspect / 2 + 4;
-            const hh = halfH + 4;
-            ctx.roundRect(n.x - hw, n.y - hh, hw * 2, hh * 2, 6);
+            const hw = SH * aspect / 2 + 1;
+            const hh = halfH + 1;
+            ctx.roundRect(n.x - hw, n.y - hh, hw * 2, hh * 2, 2);
           } else {
-            ctx.arc(n.x, n.y, R_COMPOUND + 4, 0, Math.PI * 2);
+            ctx.arc(n.x, n.y, R_SCALED + 1, 0, Math.PI * 2);
           }
           ctx.stroke();
           ctx.restore();
@@ -1177,10 +1262,10 @@ const GraphCanvas = forwardRef(
           ctx.beginPath();
           if (tex) {
             const aspect = tex._aspect || 1;
-            const hw = SH * aspect / 2 + 5, hh = SH / 2 + 5;
-            ctx.roundRect(n.x - hw, n.y - hh, hw * 2, hh * 2, 6);
+            const hw = SH * aspect / 2 + 1, hh = SH / 2 + 1;
+            ctx.roundRect(n.x - hw, n.y - hh, hw * 2, hh * 2, 2);
           } else {
-            ctx.arc(n.x, n.y, R_COMPOUND + 5, 0, Math.PI * 2);
+            ctx.arc(n.x, n.y, R_SCALED + 1, 0, Math.PI * 2);
           }
           ctx.stroke();
           ctx.setLineDash([]);
@@ -1188,32 +1273,118 @@ const GraphCanvas = forwardRef(
         }
       });
 
-      /* ── Labels (below nodes for readability) ── */
+      /* ── Labels (below nodes for readability) ──
+         Real KEGG map compounds are often only a few px apart — at any zoom
+         level where labels are legible, many of them would otherwise render
+         fully on top of each other (unreadable stacked text). EVERY node must
+         still get its name shown (never hidden) — so instead of skipping a
+         colliding label, we try a small cascade of candidate positions
+         (below/above at increasing vertical offsets) and use the first one
+         that doesn't overlap an already-placed label; if all candidates
+         collide (extremely tight cluster), we fall back to the default
+         position anyway rather than hiding the label. */
       if (t.k >= 0.3) {
-        const fontSize = Math.max(5, Math.min(8, 7 / t.k * t.k));
+        const fontSizeScale = 1 + (sizeScale - 1) * 0.5;
+        const fontSize = Math.max(5, Math.min(8, 7 / t.k * t.k)) * fontSizeScale;
         ctx.font = `500 ${fontSize}px "Inter", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        const labelOffset = useStructures ? halfH + 3 : R_COMPOUND + 3;
+        const labelOffset = useStructures ? halfH + 1 : R_SCALED + 1;
+
+        const placedLabelGrid = new Map(); // "gx,gy" -> [{x0,y0,x1,y1}, ...]
+        const GRID = Math.max(8, fontSize * 2);
+        const labelOverlaps = (x0, y0, x1, y1) => {
+          const gx0 = Math.floor(x0 / GRID), gx1 = Math.floor(x1 / GRID);
+          const gy0 = Math.floor(y0 / GRID), gy1 = Math.floor(y1 / GRID);
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const cell = placedLabelGrid.get(gx + ',' + gy);
+              if (!cell) continue;
+              for (const r of cell) {
+                if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) return true;
+              }
+            }
+          }
+          return false;
+        };
+        const placeLabelRect = (x0, y0, x1, y1) => {
+          const gx0 = Math.floor(x0 / GRID), gx1 = Math.floor(x1 / GRID);
+          const gy0 = Math.floor(y0 / GRID), gy1 = Math.floor(y1 / GRID);
+          for (let gx = gx0; gx <= gx1; gx++) {
+            for (let gy = gy0; gy <= gy1; gy++) {
+              const key = gx + ',' + gy;
+              let cell = placedLabelGrid.get(key);
+              if (!cell) { cell = []; placedLabelGrid.set(key, cell); }
+              cell.push({ x0, y0, x1, y1 });
+            }
+          }
+        };
+
+        const priorityNodes = [];
+        const normalNodes = [];
         drawNodes.forEach(n => {
           if (!inView(n.x, n.y)) return;
+          const isHl = highlightIds.has(n.id);
+          const bbMatch = hasBackbone && backboneMatchIds.has(n.id);
+          (isHl || bbMatch ? priorityNodes : normalNodes).push(n);
+        });
+
+        // Candidate label positions: ALWAYS below the node, never above — on
+        // collision we only push further down (stacked cascade), so a label's
+        // vertical direction relative to its node is 100% consistent everywhere.
+        // `dy` is the vertical offset added to n.y for BOTH the bbox and the
+        // fillText baseline (textBaseline stays "top" throughout).
+        const candidateDys = [
+          labelOffset,
+          labelOffset + 1 * (fontSize + 3),
+          labelOffset + 2 * (fontSize + 3),
+          labelOffset + 3 * (fontSize + 3),
+          labelOffset + 4 * (fontSize + 3),
+          labelOffset + 5 * (fontSize + 3),
+        ];
+
+        const drawLabel = (n, forceShow) => {
           const isHl = highlightIds.has(n.id);
           const dimLabel = hasHighlight && !isHl;
           const bbLabelDim = hasBackbone && !backboneMatchIds.has(n.id);
           const bbLabelMatch = hasBackbone && backboneMatchIds.has(n.id);
+          const displayLabel = showNames
+            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+            : (n.label ?? n.id);
+          const w = ctx.measureText(displayLabel).width;
+          const x0 = n.x - w / 2 - 1, x1 = n.x + w / 2 + 1;
+
+          let chosenDy = candidateDys[0];
+          if (!forceShow) {
+            let found = false;
+            for (const dy of candidateDys) {
+              const y0 = n.y + dy - 1, y1 = n.y + dy + fontSize + 1;
+              if (!labelOverlaps(x0, y0, x1, y1)) {
+                chosenDy = dy;
+                found = true;
+                break;
+              }
+            }
+            // All candidates collide (extremely tight cluster) — still show the
+            // label at the default position rather than hiding it.
+            if (!found) chosenDy = candidateDys[0];
+          }
+          const y0 = n.y + chosenDy - 1, y1 = n.y + chosenDy + fontSize + 1;
+          placeLabelRect(x0, y0, x1, y1);
           if (bbLabelDim) ctx.globalAlpha = 0.1;
           else if (dimLabel) ctx.globalAlpha = 0.4;
-          ctx.fillStyle = bbLabelMatch
+          const labelColor = bbLabelMatch
             ? `rgb(${themeBrandPrimary})`
             : isHl
               ? `rgb(${themeInfo})`
               : `rgb(${themeTextMuted})`;
-          const displayLabel = showNames
-            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
-            : (n.label ?? n.id);
-          ctx.fillText(displayLabel, n.x, n.y + labelOffset);
+          ctx.fillStyle = labelColor;
+          ctx.fillText(displayLabel, n.x, n.y + chosenDy);
           if (bbLabelDim || dimLabel) ctx.globalAlpha = 1;
-        });
+        };
+
+        priorityNodes.forEach(n => drawLabel(n, true));
+        normalNodes.forEach(n => drawLabel(n, false));
       }
 
       // Ctrl+drag selection box (world coords)
@@ -1235,7 +1406,7 @@ const GraphCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggOrthoEdges, keggLayout, showAllKegg, showKeggLines, hideEdges, backboneMatchIds]);
+    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, nodeSizeScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggLayout, showAllKegg, showKeggLines, hideEdges, showPathways, keggBgOpacity, backboneMatchIds]);
 
     drawRef.current = draw;
     syncSelectionRef.current = syncSelection;
@@ -1263,97 +1434,93 @@ const GraphCanvas = forwardRef(
 
     useEffect(() => {
       draw(graph.nodes);
-    }, [showOverlay, graph, draw]);
+    }, [showOverlay, graph, draw, keggBgOpacity]);
 
-    // Fetch KEGG ortho edges on first toggle-on (keggOrthoEdges or showAllKegg), then redraw
+    // Fetch conf line / adjacency data whenever KEGG layout mode is on — this powers the
+    // weighted-centroid placement of unmatched compounds, independent of the (heavier)
+    // background SVG + ghost-node rendering which only kick in for showAllKegg/showKeggLines.
     useEffect(() => {
-      const needEdges = keggOrthoEdges || showAllKegg || showKeggLines;
-      if (!needEdges) {
-        drawRef.current?.(nodesRef.current);
-        return;
-      }
-      if (keggOrthoEdgesRef.current) {
-        drawRef.current?.(nodesRef.current);
-        return;
-      }
-      fetch(getApiUrl('kegg-ortho-edges'))
+      if (!keggLayout) return;
+      if (keggConfLinesRef.current) return; // already fetched
+      fetch(getApiUrl('kegg-conf-lines'))
         .then(r => r.json())
         .then(data => {
-          keggOrthoEdgesRef.current = data.edges || [];
-          // Pre-build the static background Path2D once
-          const bgPath = new Path2D();
-          for (const edge of keggOrthoEdgesRef.current) {
-            const pts = edge.points;
-            if (!pts || pts.length < 2) continue;
-            const firstX = pts[0][0] * KEGG_SCALE, firstY = pts[0][1] * KEGG_SCALE;
-            const lastX = pts[pts.length-1][0] * KEGG_SCALE, lastY = pts[pts.length-1][1] * KEGG_SCALE;
-            let totalTurn = 0;
-            for (let i = 1; i < pts.length - 1; i++) {
-              const ax = pts[i][0]-pts[i-1][0], ay = pts[i][1]-pts[i-1][1];
-              const bx = pts[i+1][0]-pts[i][0], by = pts[i+1][1]-pts[i][1];
-              totalTurn += Math.abs(Math.atan2(ax*by - ay*bx, ax*bx + ay*by));
-            }
-            bgPath.moveTo(firstX, firstY);
-            if (pts.length <= 2 || totalTurn <= 0.8) {
-              for (let i = 1; i < pts.length - 1; i++) {
-                bgPath.arcTo(pts[i][0]*KEGG_SCALE, pts[i][1]*KEGG_SCALE, pts[i+1][0]*KEGG_SCALE, pts[i+1][1]*KEGG_SCALE, 6);
-              }
-              bgPath.lineTo(lastX, lastY);
-            } else {
-              for (let i = 1; i < pts.length - 1; i++) {
-                const px = pts[i][0]*KEGG_SCALE, py = pts[i][1]*KEGG_SCALE;
-                const nx = pts[i+1][0]*KEGG_SCALE, ny = pts[i+1][1]*KEGG_SCALE;
-                bgPath.quadraticCurveTo(px, py, (px+nx)/2, (py+ny)/2);
-              }
-              bgPath.lineTo(lastX, lastY);
+          // Attach colors from SVG to each line (sample from SVG bg image)
+          // For now, use a default color per line — we drew colors into the SVG already
+          keggConfLinesRef.current = data.lines || [];
+          keggCpdLinesRef.current = data.compound_lines || {};
+          console.log(`[NEBULA] KEGG conf: ${(data.lines||[]).length} lines, ${Object.keys(data.compound_lines||{}).length} cpd mappings`);
+
+          // Build full KEGG adjacency graph via line→compounds index (O(n+m) instead of O(n²))
+          const lineToCompounds = new Map();  // lineIdx → Set<compoundId>
+          for (const [cid, lineIndices] of Object.entries(data.compound_lines || {})) {
+            for (const li of lineIndices) {
+              if (!lineToCompounds.has(li)) lineToCompounds.set(li, new Set());
+              lineToCompounds.get(li).add(cid);
             }
           }
-          keggBgPathRef.current = bgPath;
-          // Pre-build per-edge Path2D, bounding boxes, reaction IDs for filtered rendering
-          for (const edge of keggOrthoEdgesRef.current) {
-            const pts = edge.points;
-            if (!pts || pts.length < 2) { edge._path = null; continue; }
-            const p = new Path2D();
-            const fx = pts[0][0]*KEGG_SCALE, fy = pts[0][1]*KEGG_SCALE;
-            const ex = pts[pts.length-1][0]*KEGG_SCALE, ey = pts[pts.length-1][1]*KEGG_SCALE;
-            let minX=fx, minY=fy, maxX=fx, maxY=fy;
-            let turn = 0;
-            for (let i = 1; i < pts.length - 1; i++) {
-              const ax=pts[i][0]-pts[i-1][0], ay=pts[i][1]-pts[i-1][1];
-              const bx=pts[i+1][0]-pts[i][0], by=pts[i+1][1]-pts[i][1];
-              turn += Math.abs(Math.atan2(ax*by-ay*bx, ax*bx+ay*by));
-            }
-            p.moveTo(fx, fy);
-            if (pts.length <= 2 || turn <= 0.8) {
-              for (let i = 1; i < pts.length - 1; i++) {
-                const cx=pts[i][0]*KEGG_SCALE, cy=pts[i][1]*KEGG_SCALE;
-                const dnx=pts[i+1][0]*KEGG_SCALE, dny=pts[i+1][1]*KEGG_SCALE;
-                if(cx<minX) minX=cx; if(cx>maxX) maxX=cx; if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
-                p.arcTo(cx, cy, dnx, dny, 6);
+          const adjGraph = new Map();  // compoundId → Set<neighborCompoundIds>
+          for (const [cid, lineIndices] of Object.entries(data.compound_lines || {})) {
+            if (!adjGraph.has(cid)) adjGraph.set(cid, new Set());
+            const neighbors = adjGraph.get(cid);
+            for (const li of lineIndices) {
+              for (const otherCid of lineToCompounds.get(li) || []) {
+                if (otherCid !== cid) neighbors.add(otherCid);
               }
-              p.lineTo(ex, ey);
-            } else {
-              for (let i = 1; i < pts.length - 1; i++) {
-                const cx=pts[i][0]*KEGG_SCALE, cy=pts[i][1]*KEGG_SCALE;
-                const dnx=pts[i+1][0]*KEGG_SCALE, dny=pts[i+1][1]*KEGG_SCALE;
-                if(cx<minX) minX=cx; if(cx>maxX) maxX=cx; if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
-                p.quadraticCurveTo(cx, cy, (cx+dnx)/2, (cy+dny)/2);
-              }
-              p.lineTo(ex, ey);
             }
-            if(ex<minX) minX=ex; if(ex>maxX) maxX=ex; if(ey<minY) minY=ey; if(ey>maxY) maxY=ey;
-            edge._path = p;
-            edge._bounds = [minX, minY, maxX, maxY];
-            edge._endXY = [ex, ey];
-            const ppx = pts[pts.length-2][0]*KEGG_SCALE, ppy = pts[pts.length-2][1]*KEGG_SCALE;
-            edge._arrowAngle = Math.atan2(ey - ppy, ex - ppx);
-            edge._rxnIds = (edge.reaction || '').split(/\s+/).map(r => r.replace(/^rn:/, ''));
           }
-          console.log(`[NEBULA] KEGG ortho edges: ${keggOrthoEdgesRef.current.length} polylines loaded, Path2D cached`);
-          drawRef.current?.(nodesRef.current);
+          keggAdjGraphRef.current = adjGraph;
+          console.log(`[NEBULA] KEGG adjacency graph: ${adjGraph.size} compounds`);
+
+          // Re-run the layout effect now that adjacency data is available — nodes placed
+          // before this resolved would have used the naive fallback instead of the
+          // weighted-centroid BFS placement.
+          setKeggAdjVersion(v => v + 1);
         })
-        .catch(e => console.warn('[NEBULA] Failed to fetch KEGG ortho edges:', e));
-    }, [keggOrthoEdges, showAllKegg, showKeggLines]);
+        .catch(err => console.warn('[NEBULA] Failed to fetch KEGG conf lines:', err));
+    }, [keggLayout]);
+
+    // Load SVG background images when KEGG map background display is toggled on.
+    // "KEGG layout" (showAllKegg/showKeggLines) and "Pathway regions"
+    // (showPathways) are fully INDEPENDENT layers in the source art (separate
+    // <g> groups — skeleton lines/ellipses vs native region-name text), backed
+    // by two separate files with no combined variant — so each layer gets its
+    // own ref/effect and is fetched/cleared strictly by its own toggle; the
+    // two images are composited together at draw time instead.
+    useEffect(() => {
+      const wantLines = showAllKegg || showKeggLines;
+      if (!wantLines) {
+        keggBgLinesImageRef.current = null;
+        drawRef.current?.(nodesRef.current);
+        return;
+      }
+      keggBgLinesImageRef.current = null;
+      const img = new Image();
+      img.onload = () => {
+        keggBgLinesImageRef.current = img;
+        console.log('[NEBULA] KEGG map lines background SVG loaded');
+        drawRef.current?.(nodesRef.current);
+      };
+      img.onerror = () => console.warn('[NEBULA] Failed to load KEGG map lines background SVG');
+      img.src = getApiUrl('kegg-map-bg') + '?variant=lines&t=' + Date.now();
+    }, [showAllKegg, showKeggLines]);
+
+    useEffect(() => {
+      if (!showPathways) {
+        keggBgTextImageRef.current = null;
+        drawRef.current?.(nodesRef.current);
+        return;
+      }
+      keggBgTextImageRef.current = null;
+      const img = new Image();
+      img.onload = () => {
+        keggBgTextImageRef.current = img;
+        console.log('[NEBULA] KEGG map text background SVG loaded');
+        drawRef.current?.(nodesRef.current);
+      };
+      img.onerror = () => console.warn('[NEBULA] Failed to load KEGG map text background SVG');
+      img.src = getApiUrl('kegg-map-bg') + '?variant=text&t=' + Date.now();
+    }, [showPathways]);
 
     /* ── Helper: fit view to nodes ── */
     const fitViewToNodes = useCallback((nodesCopy) => {
@@ -1410,10 +1577,27 @@ const GraphCanvas = forwardRef(
       const keggJustToggled = keggLayout !== prevKeggLayoutRef.current;
       prevKeggLayoutRef.current = keggLayout;
 
+      // Only re-fit the camera for STRUCTURAL changes (new data, KEGG mode just
+      // enabled/disabled, or the map-lines/show-all view mode changing) — cosmetic
+      // changes like nodeDisplay, nodeSizeScale, spacingScale, edgeStyle should
+      // never yank the user's current pan/zoom around.
+      const isNewData = data !== prevDataRef.current;
+      prevDataRef.current = data;
+      const keggAdjChanged = keggAdjVersion !== prevKeggAdjVersionRef.current;
+      prevKeggAdjVersionRef.current = keggAdjVersion;
+      const keggViewModeChanged = showAllKegg !== prevShowAllKeggRef.current || showKeggLines !== prevShowKeggLinesRef.current;
+      prevShowAllKeggRef.current = showAllKegg;
+      prevShowKeggLinesRef.current = showKeggLines;
+      if (isNewData || keggJustToggled || keggViewModeChanged || (keggLayout && keggAdjChanged)) {
+        needsFitRef.current = true;
+      }
+
       if (keggLayout) {
         // ── KEGG layout mode: fetch positions (once), apply to matching nodes ──
 
         // Shared helper: place nodes at KEGG coords, spread unplaced, resolve collisions
+        // `cx`/`cy` here MUST be in KEGG map coordinate space (not canvas pixel space) —
+        // they're only used as a last-resort fallback for nodes with zero KEGG neighbors.
         const applyKegg = (nds, lks, positions, cx, cy) => {
           let matched = 0;
           nds.forEach(n => {
@@ -1421,36 +1605,192 @@ const GraphCanvas = forwardRef(
             if (pos) { n.x = pos.x * KEGG_SCALE; n.y = pos.y * KEGG_SCALE; matched++; }
           });
 
-          // Place unplaced nodes near their positioned neighbors
+          // Place unplaced nodes using BFS through the full KEGG adjacency graph
+          // This finds positioned KEGG neighbors even if they're not in the current query results
           const nodeMap = new Map(nds.map(n => [n.id, n]));
           const unplaced = nds.filter(n => !positions[n.id]);
-          // Larger separation for structure-mode nodes (STRUCT_WORLD_H=70, so need 70+R for struct+circle)
-          const MIN_SEP = nodeDisplay === 'structure' ? 90 : R_COMPOUND * 2 + 8;
+          // Size separation for whichever display mode is ACTUALLY active right now
+          // (read via ref so this effect doesn't need nodeDisplay in its dependency
+          // array — toggling "Show structures" still doesn't trigger a full re-layout).
+          // Using the always-large structure-sized separation regardless of mode was
+          // over-pushing real KEGG-map compounds (which sit only a few px apart) far
+          // from their correct fixed positions even in plain circle mode.
+          const MIN_SEP = nodeDisplayRef.current === 'structure'
+            ? STRUCT_WORLD_H * nodeSizeScale * 1.3
+            : R_COMPOUND * nodeSizeScale * 2.3;
 
-          unplaced.forEach((n, idx) => {
-            const neighbors = [];
-            lks.forEach(l => {
-              const sId = l.source?.id || l.source;
-              const tId = l.target?.id || l.target;
-              if (sId === n.id) { const nb = nodeMap.get(tId); if (nb && positions[tId]) neighbors.push(nb); }
-              if (tId === n.id) { const nb = nodeMap.get(sId); if (nb && positions[sId]) neighbors.push(nb); }
+          // Helper: BFS through full KEGG graph to find positioned neighbors with inverse-distance weighting
+          const findWeightedKeggCentroid = (compoundId) => {
+            const adjGraph = keggAdjGraphRef.current;
+            if (!adjGraph || !adjGraph.has(compoundId)) return null;
+
+            const visited = new Set([compoundId]);
+            const depthMap = new Map(); // nodeId → discovery depth (for weighting)
+            let queue = [...(adjGraph.get(compoundId) || [])];
+            let depth = 1;
+            const MAX_DEPTH = 4; // Limit BFS to 4 hops — further neighbors have negligible weight
+
+            while (queue.length > 0 && depth <= MAX_DEPTH) {
+              const nextQueue = [];
+
+              for (const neighborId of queue) {
+                if (visited.has(neighborId)) continue;
+                visited.add(neighborId);
+                depthMap.set(neighborId, depth); // Record discovery depth
+
+                // Enqueue unvisited neighbors for next depth level
+                const furtherNeighbors = adjGraph.get(neighborId);
+                if (furtherNeighbors) {
+                  for (const fn of furtherNeighbors) {
+                    if (!visited.has(fn)) nextQueue.push(fn);
+                  }
+                }
+              }
+
+              // Compute weighted centroid from all positioned nodes discovered so far
+              let totalWeight = 0;
+              let weightedX = 0;
+              let weightedY = 0;
+
+              for (const [nodeId, nodeDepth] of depthMap) {
+                const nbPos = positions[nodeId];
+                if (nbPos) {
+                  const w = 1.0 / nodeDepth; // Inverse-distance: closer neighbors pull harder
+                  weightedX += nbPos.x * KEGG_SCALE * w;
+                  weightedY += nbPos.y * KEGG_SCALE * w;
+                  totalWeight += w;
+                }
+              }
+
+              if (totalWeight > 0) {
+                return { x: weightedX / totalWeight, y: weightedY / totalWeight };
+              }
+
+              queue = nextQueue;
+              depth++;
+            }
+
+            return null; // No positioned KEGG neighbors found within MAX_DEPTH hops
+          };
+
+          // Group nodes sharing (nearly) the same anchor point so their ring placement
+          // is computed relative to THEIR OWN group's size/order, not a global index —
+          // otherwise two nodes anchored to completely different centroids could still
+          // land at the same angle/radius (relative to their respective centroids) and
+          // collide by coincidence, since the old code sized rings off the position in
+          // the overall `unplaced` array rather than the position within its own group.
+          const ringPlace = (items, keyFn) => {
+            const groups = new Map();
+            items.forEach(entry => {
+              const key = keyFn(entry);
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key).push(entry);
             });
-            if (neighbors.length > 0) {
-              const avgX = neighbors.reduce((s, nb) => s + nb.x, 0) / neighbors.length;
-              const avgY = neighbors.reduce((s, nb) => s + nb.y, 0) / neighbors.length;
-              // Spread unplaced nodes in a circle around the avg neighbor position
-              const angle = (idx / Math.max(unplaced.length, 1)) * Math.PI * 2;
-              const radius = MIN_SEP * (1 + Math.floor(idx / 6));
-              n.x = avgX + Math.cos(angle) * radius;
-              n.y = avgY + Math.sin(angle) * radius;
+            for (const group of groups.values()) {
+              const groupSize = group.length;
+              group.forEach((entry, localIdx) => {
+                const angle = (localIdx / groupSize) * Math.PI * 2;
+                const ring = Math.floor(localIdx / 6); // start a new, larger ring every 6 nodes
+                const radius = MIN_SEP * (1.15 + ring * 0.85);
+                entry.node.x = entry.anchor.x + Math.cos(angle) * radius;
+                entry.node.y = entry.anchor.y + Math.sin(angle) * radius;
+              });
+            }
+          };
+
+          let stillUnplaced = [];
+          const keggAnchored = [];
+          unplaced.forEach(n => {
+            const centroid = findWeightedKeggCentroid(n.id);
+            if (centroid) {
+              keggAnchored.push({ node: n, anchor: centroid });
             } else {
-              n.x = cx + (Math.random() - 0.5) * 200;
-              n.y = cy + (Math.random() - 0.5) * 200;
+              stillUnplaced.push(n);
             }
           });
+          ringPlace(keggAnchored, e => `${Math.round(e.anchor.x / 4)},${Math.round(e.anchor.y / 4)}`);
 
-          // Collision resolution: push overlapping nodes apart
-          for (let iter = 0; iter < 20; iter++) {
+          // Many nodes in a search result (e.g. novel/generated compounds) won't exist in
+          // the real KEGG map at all, so the global-adjacency BFS above finds nothing for
+          // them. Instead of dumping them all onto one point (severe overcrowding), use the
+          // *local* search-result graph (lks) to propagate positions outward from already-
+          // placed neighbors — same idea as the KEGG BFS, but over the current result set.
+          if (stillUnplaced.length > 0) {
+            const localAdj = new Map();
+            lks.forEach(l => {
+              const s = l.source?.id || l.source;
+              const t = l.target?.id || l.target;
+              if (!localAdj.has(s)) localAdj.set(s, new Set());
+              if (!localAdj.has(t)) localAdj.set(t, new Set());
+              localAdj.get(s).add(t);
+              localAdj.get(t).add(s);
+            });
+
+            let remaining = stillUnplaced;
+            for (let round = 0; round < 8 && remaining.length > 0; round++) {
+              const nextRemaining = [];
+              const localAnchored = [];
+              remaining.forEach(n => {
+                const neighbors = localAdj.get(n.id);
+                let sumX = 0, sumY = 0, count = 0;
+                if (neighbors) {
+                  neighbors.forEach(nbId => {
+                    const nb = nodeMap.get(nbId);
+                    if (nb && nb.x !== undefined && nb.y !== undefined) {
+                      sumX += nb.x; sumY += nb.y; count++;
+                    }
+                  });
+                }
+                if (count > 0) {
+                  localAnchored.push({ node: n, anchor: { x: sumX / count, y: sumY / count } });
+                } else {
+                  nextRemaining.push(n);
+                }
+              });
+              ringPlace(localAnchored, e => `${Math.round(e.anchor.x / 4)},${Math.round(e.anchor.y / 4)}`);
+              remaining = nextRemaining;
+            }
+
+            // True last resort: nodes with no positioned neighbors anywhere (local or KEGG).
+            // Spread them on a spiral around the fallback center instead of a tight jittered
+            // blob, so even a large batch of isolated nodes stays visually separated.
+            remaining.forEach((n, idx) => {
+              const angle = idx * 2.4; // golden-angle-ish spiral for even spacing
+              const radius = MIN_SEP * 1.5 * Math.sqrt(idx + 1);
+              n.x = cx + Math.cos(angle) * radius;
+              n.y = cy + Math.sin(angle) * radius;
+            });
+          }
+
+          // Collision resolution: push overlapping nodes apart.
+          // KEGG-anchored ("fixed") nodes must stay close to their TRUE map position —
+          // real KEGG map compounds are often only a few px apart (esp. dense regions
+          // like glycan structures), well under any reasonable MIN_SEP. Pushing both
+          // sides of a fixed-fixed pair with no bound caused runaway drift across dense
+          // clusters (each node conflicts with many neighbors, compounding every
+          // iteration), scattering nodes far from their correct location over 40
+          // iterations. So fixed nodes get a hard cap on total distance moved from
+          // their real anchor — once at the cap, they stop yielding further and only
+          // the (still free) unplaced/unfixed side of a conflict keeps moving.
+          const anchorOf = new Map();
+          nds.forEach(n => {
+            const pos = positions[n.id];
+            if (pos) anchorOf.set(n.id, { x: pos.x * KEGG_SCALE, y: pos.y * KEGG_SCALE });
+          });
+          const MAX_DRIFT = MIN_SEP * 0.6;
+          const clampToAnchor = (n) => {
+            const a = anchorOf.get(n.id);
+            if (!a) return;
+            const ddx = n.x - a.x, ddy = n.y - a.y;
+            const d = Math.sqrt(ddx * ddx + ddy * ddy);
+            if (d > MAX_DRIFT) {
+              const s = MAX_DRIFT / d;
+              n.x = a.x + ddx * s;
+              n.y = a.y + ddy * s;
+            }
+          };
+
+          for (let iter = 0; iter < 40; iter++) {
             let moved = false;
             for (let i = 0; i < nds.length; i++) {
               for (let j = i + 1; j < nds.length; j++) {
@@ -1473,14 +1813,20 @@ const GraphCanvas = forwardRef(
                     nds[j].x += ux * push * 2; nds[j].y += uy * push * 2;
                     moved = true;
                   } else {
-                    // Both KEGG-placed: gentle mutual push to clear overlap
-                    nds[i].x -= ux * push * 0.4; nds[i].y -= uy * push * 0.4;
-                    nds[j].x += ux * push * 0.4; nds[j].y += uy * push * 0.4;
+                    // Both KEGG-placed: small mutual nudge only, then clamp back to
+                    // within MAX_DRIFT of each one's true anchor — real map density
+                    // wins over full artificial separation.
+                    nds[i].x -= ux * push * 0.5; nds[i].y -= uy * push * 0.5;
+                    nds[j].x += ux * push * 0.5; nds[j].y += uy * push * 0.5;
+                    clampToAnchor(nds[i]);
+                    clampToAnchor(nds[j]);
                     moved = true;
                   }
                 } else if (dist === 0) {
+                  const jFixed = !!positions[nds[j].id];
                   nds[j].x += MIN_SEP * (0.5 + Math.random());
                   nds[j].y += MIN_SEP * (0.5 + Math.random());
+                  if (jFixed) clampToAnchor(nds[j]);
                   moved = true;
                 }
               }
@@ -1493,36 +1839,51 @@ const GraphCanvas = forwardRef(
         const finalize = (nds, matched) => {
           nds.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
           nodesRef.current = nds;
+          const shouldFit = needsFitRef.current;
           needsFitRef.current = false;
-          if (showAllKegg && keggPositionsRef.current) {
-            const allPos = Object.values(keggPositionsRef.current);
-            if (allPos.length > 10) {
-              // Use 5th–95th percentile to center on the dense compound region
-              const sortedX = allPos.map(p => p.x * KEGG_SCALE).sort((a, b) => a - b);
-              const sortedY = allPos.map(p => p.y * KEGG_SCALE).sort((a, b) => a - b);
-              const lo = Math.floor(allPos.length * 0.05);
-              const hi = Math.floor(allPos.length * 0.95);
-              fitViewToBounds(sortedX[lo], sortedY[lo], sortedX[hi], sortedY[hi]);
-            } else { fitViewToNodes(nds); }
-          } else {
-            fitViewToNodes(nds);
+          if (shouldFit) {
+            if ((showAllKegg || showKeggLines) && keggPositionsRef.current) {
+              // Fit to dense content region (5th–95th percentile) so map fills screen
+              const allPos = Object.values(keggPositionsRef.current);
+              if (allPos.length > 20) {
+                const sX = allPos.map(p => p.x).sort((a, b) => a - b);
+                const sY = allPos.map(p => p.y).sort((a, b) => a - b);
+                const lo = Math.floor(allPos.length * 0.02);
+                const hi = Math.floor(allPos.length * 0.98);
+                fitViewToBounds(sX[lo], sY[lo], sX[hi], sY[hi]);
+              } else {
+                fitViewToBounds(0, 0, 4961, 3199);
+              }
+            } else {
+              fitViewToNodes(nds);
+            }
           }
           drawRef.current?.(nds);
           console.log(`[NEBULA] KEGG layout: ${matched}/${nds.length} compounds placed`);
         };
 
-        if (keggPositionsRef.current) {
-          const matched = applyKegg(nodesCopy, linksCopy, keggPositionsRef.current, centerX, centerY);
-          finalize(nodesCopy, matched);
-        } else {
-          fetch(getApiUrl('kegg-layout'))
+        // Always fetch fresh positions (never use stale cache)
+        {
+          keggPositionsRef.current = null;
+          keggPosArrayRef.current = [];
+          fetch(getApiUrl('kegg-layout') + '?t=' + Date.now())
             .then(r => r.json())
             .then(data => {
               keggPositionsRef.current = data.positions || {};
               keggPosArrayRef.current = Object.entries(keggPositionsRef.current);
               const freshCopy = graph.nodes.map(n => ({ ...n }));
               const freshLinks = graph.links.map(l => ({ ...l }));
-              const matched = applyKegg(freshCopy, freshLinks, keggPositionsRef.current, centerX, centerY);
+              // Fallback center MUST be in KEGG map coordinate space, not canvas pixel
+              // space — otherwise unmatched nodes cluster near the map's tiny (cw/2, ch/2)
+              // pixel-sized region instead of the middle of the actual metabolic map.
+              const allPos = Object.values(keggPositionsRef.current);
+              const mapCx = allPos.length
+                ? allPos.reduce((s, p) => s + p.x, 0) / allPos.length * KEGG_SCALE
+                : centerX;
+              const mapCy = allPos.length
+                ? allPos.reduce((s, p) => s + p.y, 0) / allPos.length * KEGG_SCALE
+                : centerY;
+              const matched = applyKegg(freshCopy, freshLinks, keggPositionsRef.current, mapCx, mapCy);
               finalize(freshCopy, matched);
             })
             .catch(e => console.warn('[NEBULA] Failed to fetch KEGG layout:', e));
@@ -1549,7 +1910,7 @@ const GraphCanvas = forwardRef(
 
       // Grid-snap nodes when orthogonal edge style is active
       if (edgeStyle === 'orthogonal') {
-        const G = 48; // must match gridSpacing
+        const G = 10; // must match gridSpacing
         nodesCopy.forEach(n => {
           n.x = Math.round(n.x / G) * G;
           n.y = Math.round(n.y / G) * G;
@@ -1589,19 +1950,13 @@ const GraphCanvas = forwardRef(
 
       nodesRef.current = nodesCopy;
 
-      // Auto-fit on new data
-      if (data !== prevDataRef.current) {
-        prevDataRef.current = data;
-        needsFitRef.current = true;
-      }
-
       if (needsFitRef.current && nodesCopy.length > 0) {
         needsFitRef.current = false;
         fitViewToNodes(nodesCopy);
       }
 
       drawRef.current?.(nodesCopy);
-    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, showAllKegg, nodeDisplay, fitViewToNodes, fitViewToBounds]);
+    }, [graph, height, spacingScale, data, edgeStyle, keggLayout, showAllKegg, fitViewToNodes, fitViewToBounds, keggAdjVersion]);
 
     /* ── Canvas & Zoom setup ── */
     useEffect(() => {
@@ -1637,11 +1992,11 @@ const GraphCanvas = forwardRef(
           const hitNode = nodesRef.current.find(n => {
             if (useStruct && structTexRef.current.has(n.id)) {
               const tex = structTexRef.current.get(n.id);
-              const halfH = STRUCT_WORLD_H / 2;
+              const halfH = (STRUCT_WORLD_H * nodeSizeScaleRef.current) / 2;
               const halfW = halfH * (tex._aspect || 1);
               return Math.abs(mx - n.x) <= halfW && Math.abs(my - n.y) <= halfH;
             }
-            return (mx - n.x) ** 2 + (my - n.y) ** 2 <= (R_COMPOUND + 4) ** 2;
+            return (mx - n.x) ** 2 + (my - n.y) ** 2 <= (R_COMPOUND * nodeSizeScaleRef.current + 4) ** 2;
           });
           return !hitNode;
         })
@@ -1679,11 +2034,11 @@ const GraphCanvas = forwardRef(
           const n = nodes[i];
           if (useStruct && structTexRef.current.has(n.id)) {
             const tex = structTexRef.current.get(n.id);
-            const halfH = STRUCT_WORLD_H / 2;
+            const halfH = (STRUCT_WORLD_H * nodeSizeScaleRef.current) / 2;
             const halfW = halfH * (tex._aspect || 1);
             if (Math.abs(mx - n.x) <= halfW && Math.abs(my - n.y) <= halfH) return n;
           } else {
-            if ((mx - n.x) ** 2 + (my - n.y) ** 2 < (R_COMPOUND + 4) ** 2) return n;
+            if ((mx - n.x) ** 2 + (my - n.y) ** 2 < (R_COMPOUND * nodeSizeScaleRef.current + 4) ** 2) return n;
           }
         }
         return null;
@@ -1820,7 +2175,7 @@ const GraphCanvas = forwardRef(
         }
 
         if (dragging) {
-          const MIN_DIST = R_COMPOUND * 3;
+          const MIN_DIST = R_COMPOUND * nodeSizeScaleRef.current * 3;
           for (const other of nodesRef.current) {
             if (other === dragging) continue;
             const dx = dragging.x - other.x;
@@ -1908,11 +2263,11 @@ const GraphCanvas = forwardRef(
           let hit = false;
           if (useStruct && structTexRef.current.has(n.id)) {
             const tex = structTexRef.current.get(n.id);
-            const hh = STRUCT_WORLD_H / 2;
+            const hh = (STRUCT_WORLD_H * nodeSizeScaleRef.current) / 2;
             const hw = hh * (tex._aspect || 1);
             hit = Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh;
           } else {
-            hit = (mx - n.x) ** 2 + (my - n.y) ** 2 < (R_COMPOUND + 6) ** 2;
+            hit = (mx - n.x) ** 2 + (my - n.y) ** 2 < (R_COMPOUND * nodeSizeScaleRef.current + 6) ** 2;
           }
           if (hit) {
             setCtxMenu({ x: e.clientX, y: e.clientY, type: 'node', nodeId: n.id });
@@ -1966,6 +2321,28 @@ const GraphCanvas = forwardRef(
 
     /* ── Imperative API ── */
     useImperativeHandle(ref, () => ({
+      // Pin + center + zoom to a compound by id (used by the compound search panel).
+      // Returns true if the compound was found in the currently loaded graph.
+      selectCompound: (id) => {
+        const canvas = canvasRef.current;
+        if (!canvas || !zoomRef.current) return false;
+        const node = nodesRef.current.find(n => n.id === id);
+        if (!node) return false;
+
+        pinnedNodesRef.current.clear();
+        pinnedNodesRef.current.add(id);
+        syncSelectionRef.current?.();
+        drawRef.current?.(nodesRef.current);
+
+        const cw = canvas.clientWidth || 800;
+        const ch = canvas.clientHeight || 600;
+        const scale = Math.max(transformRef.current.k, 1.5);
+        const tx = cw / 2 - node.x * scale;
+        const ty = ch / 2 - node.y * scale;
+        const tr = d3.zoomIdentity.translate(tx, ty).scale(scale);
+        d3.select(canvas).transition().duration(500).call(zoomRef.current.transform, tr);
+        return true;
+      },
       zoomIn: () => {
         d3.select(canvasRef.current).transition().call(zoomRef.current.scaleBy, 1.5);
       },
@@ -2006,7 +2383,7 @@ const GraphCanvas = forwardRef(
         applySimpleLayout(nodes, graph.links, cw / 2, ch / 2, {}, spacingScale);
         // Grid-snap if orthogonal
         if (edgeStyle === 'orthogonal') {
-          const G = 48;
+          const G = 10;
           nodes.forEach(n => {
             n.x = Math.round(n.x / G) * G;
             n.y = Math.round(n.y / G) * G;
@@ -2028,33 +2405,119 @@ const GraphCanvas = forwardRef(
         nodes.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
         draw(nodes);
       },
-      downloadSVG: () => {
+      downloadSVG: async () => {
         const nodes = nodesRef.current;
         if (!nodes.length) return;
 
+        // ── KEGG background: lines skeleton and region text are fetched as
+        // their REAL vector SVG source (map01100_bg_notext.svg /
+        // map01100_bg_textonly.svg) and inlined directly as native
+        // <path>/<ellipse>/<text> elements — NOT rasterized — each in its
+        // own named <g> layer below, so the export stays 100% vector and
+        // opens in Illustrator as independently toggleable "KEGG Map Lines"
+        // / "KEGG Region Text" layers with fully editable paths.
+        //
+        // The source file (map01100.svg, Snap.svg output) has a chain of
+        // pointless SINGLE-CHILD wrapper <g>s (<g id="viewport-...">/<desc>/
+        // empty <g>) with no attributes of their own — we skip those. But
+        // one level below that chain it genuinely BRANCHES into several
+        // sibling groups by element type (e.g. reaction paths, compound dot
+        // ellipses, legend-pill rects, legend text) — confirmed by
+        // inspecting the file directly. THAT real structure is worth
+        // keeping (it's what let you toggle/select e.g. just the legend
+        // pills in Illustrator), so we preserve exactly that one branching
+        // level as named sibling <g>s, instead of either re-emitting the
+        // whole pointless wrapper chain or flattening everything into one
+        // undifferentiated soup of paths.
+        const KEGG_GROUP_NAMES = { path: 'Reaction_Paths', ellipse: 'Compound_Dots', rect: 'Legend_Backgrounds', text: 'Legend_Labels' };
+        const fetchKeggLayerSvg = async (variant) => {
+          const bgUrl = getApiUrl('kegg-map-bg') + `?variant=${variant}`;
+          const res = await fetch(bgUrl);
+          if (!res.ok) throw new Error('failed to fetch KEGG background SVG');
+          const svgText = await res.text();
+          const root = new DOMParser().parseFromString(svgText, 'image/svg+xml').documentElement;
+          const vb = (root.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+          const nativeW = parseFloat(root.getAttribute('width')) || vb[2] || 3774;
+          const nativeH = parseFloat(root.getAttribute('height')) || vb[3] || 2250;
+
+          let cur = root.querySelector('g.svg-pan-zoom_viewport') || root;
+          while (true) {
+            const gKids = Array.from(cur.children).filter(c => c.tagName === 'g');
+            const otherKids = Array.from(cur.children).filter(c => c.tagName !== 'g' && c.tagName !== 'desc');
+            if (gKids.length === 1 && otherKids.length === 0) { cur = gKids[0]; continue; }
+            break;
+          }
+          // If `cur`'s children are themselves non-empty <g>s, those ARE the
+          // real sibling content groups (e.g. the lines file: paths /
+          // ellipses / legend-rects / legend-text). But some variants (e.g.
+          // the text-only file) have no further branching at all — `cur`
+          // lands directly on the group that holds the leaf elements
+          // (<text>, not <g>) — in that case `cur` itself IS the one and
+          // only content group, so use it directly instead of filtering it
+          // away to nothing.
+          const gChildGroups = Array.from(cur.children).filter(c => c.tagName === 'g' && c.children.length > 0);
+          const contentGroups = gChildGroups.length > 0 ? gChildGroups : [cur];
+          const serializer = new XMLSerializer();
+          const usedNames = new Set();
+          const markup = contentGroups.map(g => {
+            const firstTag = g.children[0]?.tagName || 'g';
+            let name = KEGG_GROUP_NAMES[firstTag] || 'Group';
+            while (usedNames.has(name)) name += '_2';
+            usedNames.add(name);
+            g.setAttribute('id', name);
+            return serializer.serializeToString(g);
+          }).join('');
+          return { markup, nativeW, nativeH };
+        };
+        let keggLinesSvg = null;
+        let keggTextSvg = null;
+        const keggWantLines = showAllKegg || showKeggLines;
+        const keggWantText = showPathways;
+        if (keggLayout && keggWantLines) {
+          try { keggLinesSvg = await fetchKeggLayerSvg('lines'); }
+          catch (e) { console.warn('[NEBULA] Failed to fetch KEGG lines for SVG export:', e); }
+        }
+        if (keggLayout && keggWantText) {
+          try { keggTextSvg = await fetchKeggLayerSvg('text'); }
+          catch (e) { console.warn('[NEBULA] Failed to fetch KEGG text for SVG export:', e); }
+        }
+
         const useStruct = nodeDisplayRef.current === 'structure';
-        const SH = STRUCT_WORLD_H;
+        const SH = STRUCT_WORLD_H * nodeSizeScale;
         const halfH = SH / 2;
         const isOrtho = edgeStyle === 'orthogonal';
-        const G = 48;
-        const R = R_COMPOUND;
+        const G = 10;
+        const R = R_COMPOUND * nodeSizeScale;
         const hasPinned = pinnedNodesRef.current.size > 0;
 
-        // ── Bounding box ──
+        // ── Bounding box: UNION of (a) every node's actual position and
+        // (b) the KEGG background's own full destination rect, WHEN a
+        // background layer is enabled — NOT the current pan/zoom viewport.
+        // The viewport is just ephemeral window state (however far the user
+        // happens to have zoomed out) and including it caused arbitrary
+        // extra blank margins. Content is exactly: the nodes, plus the
+        // whole map when it's turned on (so it's never cropped, matching
+        // the "map should always show whole, not cut off" requirement)
+        // — nothing more, nothing tied to what the on-screen camera framed.
+        const KEGG_DEST_X = -4.41, KEGG_DEST_Y = 12.79, KEGG_DEST_W = 4891.49, KEGG_DEST_H = 3195.12;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        if (keggLinesSvg || keggTextSvg) {
+          minX = KEGG_DEST_X; minY = KEGG_DEST_Y;
+          maxX = KEGG_DEST_X + KEGG_DEST_W; maxY = KEGG_DEST_Y + KEGG_DEST_H;
+        }
         nodes.forEach(n => {
-          if (useStruct && structTexRef.current.has(n.id)) {
-            const tex = structTexRef.current.get(n.id);
-            const hw = halfH * (tex._aspect || 1);
-            minX = Math.min(minX, n.x - hw); maxX = Math.max(maxX, n.x + hw);
-            minY = Math.min(minY, n.y - halfH); maxY = Math.max(maxY, n.y + halfH);
-          } else {
-            minX = Math.min(minX, n.x - R); maxX = Math.max(maxX, n.x + R);
-            minY = Math.min(minY, n.y - R); maxY = Math.max(maxY, n.y + R);
-          }
+          if (n.x < minX) minX = n.x;
+          if (n.y < minY) minY = n.y;
+          if (n.x > maxX) maxX = n.x;
+          if (n.y > maxY) maxY = n.y;
         });
-        const pad = 80;
-        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        // Per-node padding: structures are much wider/taller than the plain
+        // circle radius, and labels (when on) are drawn below each node —
+        // pad generously on every side so nothing gets clipped.
+        const sidePad = useStruct ? STRUCT_WORLD_H * nodeSizeScale : R_COMPOUND * nodeSizeScale * 4;
+        const bottomPad = sidePad + (showNames ? 70 * nodeSizeScale : 0);
+        minX -= sidePad; maxX += sidePad;
+        minY -= sidePad; maxY += bottomPad;
         const svgW = maxX - minX;
         const svgH = maxY - minY;
 
@@ -2071,6 +2534,8 @@ const GraphCanvas = forwardRef(
           });
         }
         const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        // Sanitize a string for use as an SVG group id (Illustrator layer name)
+        const safeId = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
         // ── Node color helper ──
         const degMap = new Map();
@@ -2084,20 +2549,53 @@ const GraphCanvas = forwardRef(
         }
         const maxDeg = degMap.size > 0 ? Math.max(1, ...degMap.values()) : 1;
         const nodeColor = (n) => {
-          if (colorMode === 'type') return getTypeColor(n.type, dark);
+          if (colorMode === 'type') return getTypeColor(n.type, false);
           if (colorMode === 'degree') {
             const deg = degMap.get(n.id) || 0;
             const b = Math.round((deg / maxDeg) * 100);
-            return getSchemeColor(colorScheme, b / 100, dark);
+            return getSchemeColor(colorScheme, b / 100, false);
           }
           const gen = n.generation || 0;
           const b = maxGeneration > 0 ? Math.round((gen / maxGeneration) * 100) : 0;
-          return getSchemeColor(colorScheme, b / 100, dark);
+          return getSchemeColor(colorScheme, b / 100, false);
         };
+
+        // ── Theme colors (export is always light mode, so use fixed light constants) ──
+        const svgBorder = '160,170,185';
+        const svgTextMuted = '100,116,139';
+        const svgInfo = '37,99,235';
+        const edgeCol = `rgb(${svgBorder})`;
 
         const svg = [];
         svg.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${svgW}" height="${svgH}" viewBox="${minX} ${minY} ${svgW} ${svgH}">`);
 
+        // ── KEGG background: the REAL vector markup fetched above is
+        // inlined directly (native <path>/<ellipse>/<text> elements, no
+        // rasterization) inside a <g> whose transform maps the source SVG's
+        // own native pixel space onto the exact same world-space rect the
+        // on-screen canvas uses in draw()'s
+        // `ctx.drawImage(img, -4.41, 12.79, 4891.49, 3195.12)` call — same
+        // non-uniform scale, just expressed as an SVG transform instead of
+        // a canvas draw call. Lines and text are separate named <g> groups —
+        // independently visible/toggleable layers in Illustrator (or any
+        // SVG editor), mirroring the app's own independent "Show map lines"
+        // / "Pathway regions" toggles, with fully editable vector paths.
+        // No clip-path needed: the bounding box above already always
+        // expands to contain this rect in full whenever either layer is on. ──
+        if (keggLinesSvg) {
+          const sx = KEGG_DEST_W / keggLinesSvg.nativeW;
+          const sy = KEGG_DEST_H / keggLinesSvg.nativeH;
+          svg.push(`<g id="KEGG_Map_Lines" opacity="${keggBgOpacity.toFixed(2)}" transform="translate(${KEGG_DEST_X},${KEGG_DEST_Y}) scale(${sx.toFixed(6)},${sy.toFixed(6)})">`);
+          svg.push(keggLinesSvg.markup);
+          svg.push('</g>');
+        }
+        if (keggTextSvg) {
+          const sx = KEGG_DEST_W / keggTextSvg.nativeW;
+          const sy = KEGG_DEST_H / keggTextSvg.nativeH;
+          svg.push(`<g id="KEGG_Region_Text" opacity="${keggBgOpacity.toFixed(2)}" transform="translate(${KEGG_DEST_X},${KEGG_DEST_Y}) scale(${sx.toFixed(6)},${sy.toFixed(6)})">`);
+          svg.push(keggTextSvg.markup);
+          svg.push('</g>');
+        }
 
         // ── Edge routing helpers (same as draw) ──
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -2170,16 +2668,10 @@ const GraphCanvas = forwardRef(
           pairCount.set(key, pairCount.get(key) + 1);
         });
 
-        const _cs = getComputedStyle(document.documentElement);
-        const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
-        const svgBorder = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
-        const svgTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
-        const svgInfo = _rv('--info') || (dark ? '147,197,253' : '37,99,235');
-        const edgeCol = `rgb(${svgBorder})`;
-
-        // ── Draw edges ──
-        svg.push('<g fill="none" stroke-linecap="round" stroke-linejoin="round">');
-        allEdges.forEach(({ src, trg, link }, idx) => {
+        // ── Layer: Edges (skip if hideEdges is enabled) ──
+        if (!hideEdgesRef.current && allEdges.length > 0) {
+          svg.push('<g id="Edges" fill="none" stroke-linecap="round" stroke-linejoin="round">');
+          allEdges.forEach(({ src, trg, link }, idx) => {
           const isDimmed = highlightIds && !highlightIds.has(src.id) && !highlightIds.has(trg.id);
           const alpha = isDimmed ? 0.08 : 0.4;
           const sw = isDimmed ? 0.5 : 1;
@@ -2237,7 +2729,7 @@ const GraphCanvas = forwardRef(
             }
 
             // SVG path with rounded corners
-            const bR = Math.min(G * 0.35, 8);
+            const bR = Math.min(G * 0.35, 2);
             let d = `M ${pathPts[0].x} ${pathPts[0].y}`;
             for (let pi = 1; pi < pathPts.length - 1; pi++) {
               const prev = pathPts[pi - 1], cur = pathPts[pi], next = pathPts[pi + 1];
@@ -2258,8 +2750,8 @@ const GraphCanvas = forwardRef(
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             const s0 = surfPt(src, dx, dy), s1 = surfPt(trg, -dx, -dy);
             const nx = -dy / dist, ny = dx / dist;
-            const curveOff = total === 1 ? 0 : (myIdx - (total - 1) / 2) * 18;
-            const curvature = Math.min(dist * 0.15, 30) + curveOff;
+            const curveOff = total === 1 ? 0 : (myIdx - (total - 1) / 2) * 4;
+            const curvature = Math.min(dist * 0.15, 6) + curveOff;
             const cpx = (s0.x + s1.x) / 2 + nx * curvature;
             const cpy = (s0.y + s1.y) / 2 + ny * curvature;
             svg.push(`<path d="M ${s0.x} ${s0.y} Q ${cpx} ${cpy} ${s1.x} ${s1.y}" stroke="${edgeCol}" stroke-opacity="${alpha}" stroke-width="${sw}"/>`);
@@ -2289,44 +2781,55 @@ const GraphCanvas = forwardRef(
           }
         });
         svg.push('</g>');
+        }
 
-        // ── Nodes ──
-        svg.push('<g>');
+        // ── Layer: Compounds (front-most layer) ──
+        // Nested by generation, then by compound — each compound group contains
+        // its shape and its text label together, named by KEGG id, for easy
+        // selection/coloring/moving in Illustrator.
+        const labelOff = useStruct ? halfH + 1 : R + 1;
+        const fontSizeScale = 1 + (nodeSizeScale - 1) * 0.5;
+        const nodesByGen = new Map();
         nodes.forEach(n => {
-          const isDimmed = highlightIds && !highlightIds.has(n.id);
-          const opacity = isDimmed ? 0.4 : 1;
-          const { fill, stroke } = nodeColor(n);
-          const tex = useStruct ? structTexRef.current.get(n.id) : null;
-
-          if (tex) {
-            const aspect = tex._aspect || 1;
-            const drawW = SH * aspect;
-            const hw = drawW / 2;
-            // Convert canvas to base64 data URI
-            const dataUrl = tex.toDataURL('image/png');
-            svg.push(`<image x="${n.x - hw}" y="${n.y - halfH}" width="${drawW}" height="${SH}" href="${dataUrl}" opacity="${opacity}"/>`);
-          } else {
-            svg.push(`<circle cx="${n.x}" cy="${n.y}" r="${R}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" opacity="${opacity}"/>`);
-          }
+          const gen = n.generation || 0;
+          if (!nodesByGen.has(gen)) nodesByGen.set(gen, []);
+          nodesByGen.get(gen).push(n);
         });
-        svg.push('</g>');
+        const sortedGens = Array.from(nodesByGen.keys()).sort((a, b) => a - b);
 
-        // ── Labels ──
-        svg.push('<g font-family="Inter, sans-serif" font-weight="500" font-size="7" text-anchor="middle">');
-        const labelOff = useStruct ? halfH + 3 : R + 3;
-        nodes.forEach(n => {
-          const isDimmed = highlightIds && !highlightIds.has(n.id);
-          const opacity = isDimmed ? 0.4 : 1;
-          const col = (highlightIds && highlightIds.has(n.id))
-            ? `rgb(${svgInfo})`
-            : `rgb(${svgTextMuted})`;
-          const svgLabel = nodeDisplayRef.current === 'structure'
-            ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
-            : showNamesRef.current
+        svg.push('<g id="Compounds">');
+        for (const gen of sortedGens) {
+          svg.push(`<g id="Generation_${gen}">`);
+          for (const n of nodesByGen.get(gen)) {
+            const isDimmed = highlightIds && !highlightIds.has(n.id);
+            const opacity = isDimmed ? 0.4 : 1;
+            const { fill, stroke } = nodeColor(n);
+            const tex = useStruct ? structTexRef.current.get(n.id) : null;
+            const col = (highlightIds && highlightIds.has(n.id))
+              ? `rgb(${svgInfo})`
+              : `rgb(${svgTextMuted})`;
+            const svgLabel = nodeDisplayRef.current === 'structure'
               ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
-              : (n.label ?? n.id);
-          svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" fill="${col}" opacity="${opacity}">${esc(svgLabel)}</text>`);
-        });
+              : showNamesRef.current
+                ? (compoundNamesRef.current.get(n.id) ?? n.label ?? n.id)
+                : (n.label ?? n.id);
+
+            svg.push(`<g id="${safeId(n.id)}">`);
+            if (tex) {
+              const aspect = tex._aspect || 1;
+              const drawW = SH * aspect;
+              const hw = drawW / 2;
+              // Convert canvas to base64 data URI
+              const dataUrl = tex.toDataURL('image/png');
+              svg.push(`<image x="${n.x - hw}" y="${n.y - halfH}" width="${drawW}" height="${SH}" href="${dataUrl}" opacity="${opacity}"/>`);
+            } else {
+              svg.push(`<circle cx="${n.x}" cy="${n.y}" r="${R}" fill="${fill}" stroke="${stroke}" stroke-width="0.5" opacity="${opacity}"/>`);
+            }
+            svg.push(`<text x="${n.x}" y="${n.y + labelOff + 6}" font-family="Inter, sans-serif" font-weight="500" font-size="${(7 * fontSizeScale).toFixed(2)}" text-anchor="middle" fill="${col}" opacity="${opacity}">${esc(svgLabel)}</text>`);
+            svg.push('</g>');
+          }
+          svg.push('</g>');
+        }
         svg.push('</g>');
 
         svg.push('</svg>');
@@ -2357,7 +2860,7 @@ const GraphCanvas = forwardRef(
         const nodes = nodesRef.current;
         if (!nodes.length) return;
 
-        const nodeRadius = () => R_COMPOUND * 2.5;
+        const nodeRadius = () => R_COMPOUND * nodeSizeScale * 2.5;
         const EDGE_TENSION = 0.05;
         const REPEL = 0.002;
         const DAMPING = 0.80;
@@ -2394,7 +2897,7 @@ const GraphCanvas = forwardRef(
                 const push = (minDist - dist) * 1.5;
                 fx[i] += ux * push; fy[i] += uy * push;
                 fx[j] -= ux * push; fy[j] -= uy * push;
-              } else if (dist < 200) {
+              } else if (dist < 40) {
                 const repF = REPEL * minDist * minDist / (dist * dist);
                 fx[i] += ux * repF; fy[i] += uy * repF;
                 fx[j] -= ux * repF; fy[j] -= uy * repF;

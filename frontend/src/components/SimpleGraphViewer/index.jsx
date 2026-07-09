@@ -17,6 +17,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   // User customization
   const [edgeOpacity, setEdgeOpacity] = useState(0.5);
   const [spacingScale, setSpacingScale] = useState(1.0);
+  const [nodeSizeScale, setNodeSizeScale] = useState(1.0);
 
   // Color settings
   const [colorMode, setColorMode] = useState('generation');
@@ -27,11 +28,12 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
   const [pruneEdges, setPruneEdges] = useState(true);
   const [nodeDisplay, setNodeDisplay] = useState('circle');
   const [showNames, setShowNames] = useState(false);
-  const [keggLayout, setKeggLayout] = useState(false);
-  const [keggOrthoEdges, setKeggOrthoEdges] = useState(false);
+  const [keggLayout, setKeggLayout] = useState(true);
   const [showAllKegg, setShowAllKegg] = useState(false);
-  const [showKeggLines, setShowKeggLines] = useState(false);
-  const [hideEdges, setHideEdges] = useState(false);
+  const [showKeggLines, setShowKeggLines] = useState(true);
+  const [hideEdges, setHideEdges] = useState(true);
+  const [showPathways, setShowPathways] = useState(true);
+  const [keggBgOpacity, setKeggBgOpacity] = useState(0.25);
 
   const safeResults = Array.isArray(results) ? results : [];
 
@@ -241,6 +243,7 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             showOverlay={showOverlay}
             edgeOpacity={edgeOpacity}
             spacingScale={spacingScale}
+            nodeSizeScale={nodeSizeScale}
             colorMode={colorMode}
             colorScheme={colorScheme}
             bgColor={bgColor}
@@ -250,10 +253,11 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             nodeDisplay={nodeDisplay}
             showNames={showNames}
             keggLayout={keggLayout}
-            keggOrthoEdges={keggOrthoEdges}
             showAllKegg={showAllKegg}
             showKeggLines={showKeggLines}
             hideEdges={hideEdges}
+            showPathways={showPathways}
+            keggBgOpacity={keggBgOpacity}
             backboneMatchIds={backboneMatchIds}
           />
 
@@ -262,6 +266,8 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             setEdgeOpacity={setEdgeOpacity}
             spacingScale={spacingScale}
             setSpacingScale={setSpacingScale}
+            nodeSizeScale={nodeSizeScale}
+            setNodeSizeScale={setNodeSizeScale}
             showOverlay={showOverlay}
             toggleOverlay={toggleOverlay}
             isFullscreen={isFullscreen}
@@ -289,14 +295,17 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
             setShowNames={setShowNames}
             keggLayout={keggLayout}
             setKeggLayout={setKeggLayout}
-            keggOrthoEdges={keggOrthoEdges}
-            setKeggOrthoEdges={setKeggOrthoEdges}
             showAllKegg={showAllKegg}
             setShowAllKegg={setShowAllKegg}
             showKeggLines={showKeggLines}
             setShowKeggLines={setShowKeggLines}
             hideEdges={hideEdges}
             setHideEdges={setHideEdges}
+            showPathways={showPathways}
+            setShowPathways={setShowPathways}
+            keggBgOpacity={keggBgOpacity}
+            setKeggBgOpacity={setKeggBgOpacity}
+            onSelectCompound={(id) => graphCanvasRef.current?.selectCompound(id) ?? false}
           />
         </div>
       </div>
