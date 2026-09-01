@@ -1501,11 +1501,17 @@ const GraphRendererCanvas = forwardRef(
         const nodes = nodesRef.current;
         if (!nodes.length) return;
 
+        const visibleNodes = nodes.filter(n => !hiddenIds.has(n.id));
         const visibleLinks = graph.links.filter((l) => {
           const s = l.source?.id || l.source;
           const t = l.target?.id || l.target;
           return !hiddenIds.has(s) && !hiddenIds.has(t);
         });
+
+        // Escape text for SVG (prevent broken markup from special chars)
+        const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        // Sanitize a string for use as an SVG group id (Illustrator layer name)
+        const safeId = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
         // Node size constants — scaled for print (labels need room at font-size 7)
         const SV_RC = 16, SV_ERX = 24, SV_ERY = 14;
@@ -1544,8 +1550,7 @@ const GraphRendererCanvas = forwardRef(
         // Determine tight bounds accounting for structure images and labels
         const nameExtra = showNodeNames ? 14 : 0;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        nodes.forEach((n) => {
-          if (hiddenIds.has(n.id)) return;
+        visibleNodes.forEach((n) => {
           const hasTex = showStructures && n.type === 'compound' && structTexRef.current.has(n.id);
           const hw = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 20 : 17);
           const hh = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 12 : 11);
@@ -1554,39 +1559,37 @@ const GraphRendererCanvas = forwardRef(
           maxX = Math.max(maxX, n.x + hw);
           maxY = Math.max(maxY, n.y + hh + nameExtra);
         });
+        // Add space for generation labels at top
+        if (genMapRef.current.length > 0) minY -= 18;
         minX -= EXPORT_PAD; minY -= EXPORT_PAD;
         maxX += EXPORT_PAD; maxY += EXPORT_PAD;
-        const width = maxX - minX;
-        const heightSvg = maxY - minY;
+        const svgWidth = maxX - minX;
+        const svgHeight = maxY - minY;
 
-        // Resolve theme colours from CSS vars (values are "R G B" triplets)
-        const _svgCs = getComputedStyle(document.documentElement);
-        const _svgRv = (v) => {
-          const r = _svgCs.getPropertyValue(v).trim();
-          if (!r) return null;
-          const p = r.split(/\s+/).map(Number);
-          return p.some(isNaN) ? null : '#' + p.map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
-        };
-        const svgBrandHex  = _svgRv('--brand-primary')  || (dark ? '#c4b5fd' : '#8B5CF6');
-        const svgBorderHex = _svgRv('--border-primary')  || (dark ? '#475569' : '#9CA3AF');
-        const svgTextHex   = _svgRv('--text-primary')    || (dark ? '#CBD5E1' : '#374151');
-        const svgMutedHex  = _svgRv('--text-muted')      || (dark ? '#94A3B8' : '#6B7280');
+        // ── Colors: ALWAYS use light-mode for SVG export ──
+        // Illustrator does not support rgba() CSS colors — they render as
+        // black. Force isDark=false so getSchemeColor/getTypeColor produce
+        // solid rgb() fills that every SVG editor handles correctly.
+        const svgBrandHex  = '#8B5CF6';
+        const svgBorderHex = '#9CA3AF';
+        const svgTextHex   = '#374151';
+        const svgMutedHex  = '#6B7280';
 
-        // Node style — mirrors canvas nodeColor() exactly
+        // Node style — always light-mode for Illustrator compatibility
         const svgMaxDeg = degreeMap.size > 0 ? Math.max(1, ...degreeMap.values()) : 1;
         const SVG_MAX_BUCKET = 100;
         const getNodeStyle = (n) => {
-          if (colorMode === 'type') return getTypeColor(n.type, dark);
+          if (colorMode === 'type') return getTypeColor(n.type, false);
           if (colorMode === 'degree') {
             const deg = degreeMap.get(n.id) || 0;
             const t = Math.round((deg / svgMaxDeg) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET;
-            return getSchemeColor(colorScheme, t, dark);
+            return getSchemeColor(colorScheme, t, false);
           }
           const gen = n.generation || 0;
           const t = maxGeneration > 0
             ? Math.round((gen / maxGeneration) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET
             : 0;
-          return getSchemeColor(colorScheme, t, dark);
+          return getSchemeColor(colorScheme, t, false);
         };
 
         // Edge opacity — mirrors canvas baseAlpha formula
@@ -1600,11 +1603,31 @@ const GraphRendererCanvas = forwardRef(
 
         const svgParts = [];
         // xmlns:xlink required for Illustrator compatibility with embedded images
-        svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width * EXPORT_SCALE}" height="${heightSvg * EXPORT_SCALE}" viewBox="${minX} ${minY} ${width} ${heightSvg}">`);
+        svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${svgWidth * EXPORT_SCALE}" height="${svgHeight * EXPORT_SCALE}" viewBox="${minX} ${minY} ${svgWidth} ${svgHeight}">`);
+
+        // ── Background rect (matches canvas bgColor) ──
+        if (bgColor) {
+          svgParts.push(`<rect x="${minX}" y="${minY}" width="${svgWidth}" height="${svgHeight}" fill="${bgColor}"/>`);
+        }
 
         const svgNodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-        // ── Edges as quadratic bezier paths (mirrors canvas draw) ──
+        // ── Generation column labels (mirrors canvas gen labels) ──
+        if (genMapRef.current.length > 0) {
+          const scaledGap = SUB_COL_GAP * spacingScale;
+          const scaledGenGap = GEN_GAP * spacingScale;
+          const bandWidth = 4 * scaledGap + scaledGenGap;
+          svgParts.push('<g id="Generation_Labels">');
+          genMapRef.current.forEach(({ gen, idx }) => {
+            const bandX = idx * bandWidth;
+            const label = gen === 0 ? 'Seed' : `Gen ${gen}`;
+            svgParts.push(`<text x="${bandX}" y="${minY + EXPORT_PAD + 10}" text-anchor="middle" font-size="9" font-weight="bold" fill="${svgMutedHex}" opacity="0.72" font-family="Inter, Arial, sans-serif">${esc(label)}</text>`);
+          });
+          svgParts.push('</g>');
+        }
+
+        // ── Layer: Edges (grouped for Illustrator editability) ──
+        svgParts.push('<g id="Edges" fill="none" stroke-linecap="round">');
         visibleLinks.forEach((l) => {
           const sId = l.source?.id || l.source;
           const tId = l.target?.id || l.target;
@@ -1616,8 +1639,8 @@ const GraphRendererCanvas = forwardRef(
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           let dashAttr = '';
-          if (l.type && l.type.startsWith('ec')) dashAttr = 'stroke-dasharray="2 4"';
-          else if (l.type === 'reaction') dashAttr = 'stroke-dasharray="6 4"';
+          if (l.type && l.type.startsWith('ec')) dashAttr = ' stroke-dasharray="2 4"';
+          else if (l.type === 'reaction') dashAttr = ' stroke-dasharray="6 4"';
 
           const edgeSvgKey = `${sId}--${tId}`;
           const customStroke = edgeColorsRef.current.get(edgeSvgKey);
@@ -1643,7 +1666,7 @@ const GraphRendererCanvas = forwardRef(
             ly = ((s0.y + s1.y) / 2).toFixed(2);
           }
           const customColorAttr = customStroke ? ` data-custom-color="${customStroke}"` : '';
-          svgParts.push(`<path d="${pathD}" stroke="${stroke}" stroke-width="1.5" stroke-linecap="round" stroke-opacity="${svgBaseAlpha.toFixed(3)}" fill="none" data-edge-key="${edgeSvgKey}"${customColorAttr} ${dashAttr}/>`);
+          svgParts.push(`<path d="${pathD}" stroke="${stroke}" stroke-width="1.5" stroke-opacity="${svgBaseAlpha.toFixed(3)}" data-edge-key="${edgeSvgKey}"${customColorAttr}${dashAttr}/>`);
 
           // Stoichiometry label — offset perpendicularly so it doesn't sit on the stroke
           if (l.stoichiometry && l.stoichiometry > 1 && (l.type === 'substrate' || l.type === 'product')) {
@@ -1651,55 +1674,74 @@ const GraphRendererCanvas = forwardRef(
             const perpOff = 6;
             const plx = dist > 0 ? +lx + (-dy / dist) * perpOff : +lx;
             const ply = dist > 0 ? +ly + ( dx / dist) * perpOff : +ly;
-            svgParts.push(`<text x="${plx.toFixed(2)}" y="${ply.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="bold" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${sLabel}</text>`);
+            svgParts.push(`<text x="${plx.toFixed(2)}" y="${ply.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="bold" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(sLabel)}</text>`);
           }
         });
+        svgParts.push('</g>');
 
-        // ── Nodes ──
-        nodes.forEach((n) => {
-          if (hiddenIds.has(n.id)) return;
-          const { fill, stroke } = getNodeStyle(n);
+        // ── Layer: Nodes — grouped by generation, then by node id ──
+        // Mirrors the Map viewer's nesting: Nodes > Generation_N > nodeId
+        // Each node group contains its shape + label together for easy
+        // selection/coloring/moving in Illustrator.
+        const nodesByGen = new Map();
+        visibleNodes.forEach(n => {
+          const gen = n.generation || 0;
+          if (!nodesByGen.has(gen)) nodesByGen.set(gen, []);
+          nodesByGen.get(gen).push(n);
+        });
+        const sortedGens = Array.from(nodesByGen.keys()).sort((a, b) => a - b);
 
-          const structTex = (showStructures && n.type === 'compound')
-            ? structTexRef.current.get(n.id) : null;
+        svgParts.push('<g id="Nodes">');
+        for (const gen of sortedGens) {
+          svgParts.push(`<g id="Generation_${gen}">`);
+          for (const n of nodesByGen.get(gen)) {
+            const { fill, stroke } = getNodeStyle(n);
+            svgParts.push(`<g id="${safeId(n.id)}">`);
 
-          if (structTex) {
-            // Embed structure as base64 PNG image
-            const sW = STRUCT_WORLD_H * (structTex._aspect || 1);
-            const sH = STRUCT_WORLD_H;
-            const dataUrl = structTex.toDataURL('image/png');
-            svgParts.push(`<image xlink:href="${dataUrl}" x="${(n.x - sW / 2).toFixed(2)}" y="${(n.y - sH / 2).toFixed(2)}" width="${sW.toFixed(2)}" height="${sH.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`);
+            const structTex = (showStructures && n.type === 'compound')
+              ? structTexRef.current.get(n.id) : null;
 
-            // Label below structure
-            let label = n.label ?? n.id;
-            svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 4).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="9" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${label}</text>`);
-            if (showNodeNames) {
-              const name = _compoundNameMap.get(n.id);
-              if (name) svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 13).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${name}</text>`);
-            }
-          } else {
-            if (n.type === 'compound') {
-              svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
-            } else if (n.type === 'ec') {
-              svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX}" ry="${SV_ERY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+            if (structTex) {
+              // Embed structure as base64 PNG image
+              const sW = STRUCT_WORLD_H * (structTex._aspect || 1);
+              const sH = STRUCT_WORLD_H;
+              const dataUrl = structTex.toDataURL('image/png');
+              svgParts.push(`<image xlink:href="${dataUrl}" x="${(n.x - sW / 2).toFixed(2)}" y="${(n.y - sH / 2).toFixed(2)}" width="${sW.toFixed(2)}" height="${sH.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`);
+
+              // Label below structure
+              let label = n.label ?? n.id;
+              svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 4).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="9" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
+              if (showNodeNames) {
+                const name = _compoundNameMap.get(n.id);
+                if (name) svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 13).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(name)}</text>`);
+              }
             } else {
-              svgParts.push(`<rect x="${n.x - SV_RW / 2}" y="${n.y - SV_RH / 2}" width="${SV_RW}" height="${SV_RH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
-            }
+              if (n.type === 'compound') {
+                svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              } else if (n.type === 'ec') {
+                svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX}" ry="${SV_ERY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              } else {
+                svgParts.push(`<rect x="${n.x - SV_RW / 2}" y="${n.y - SV_RH / 2}" width="${SV_RW}" height="${SV_RH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              }
 
-            // ID label inside node
-            let label = n.label ?? n.id;
-            if (/reaction-/.test(n.type)) label = label.split('_')[0];
-            svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="600" fill="${svgTextHex}" font-family="Arial, Helvetica, sans-serif">${label}</text>`);
+              // ID label inside node
+              let label = n.label ?? n.id;
+              if (/reaction-/.test(n.type)) label = label.split('_')[0];
+              svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="600" fill="${svgTextHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
 
-            // Compound name below node
-            if (showNodeNames && n.type === 'compound') {
-              const name = _compoundNameMap.get(n.id);
-              if (name) {
-                svgParts.push(`<text x="${n.x}" y="${n.y + SV_RC + 4}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${name}</text>`);
+              // Compound name below node
+              if (showNodeNames && n.type === 'compound') {
+                const name = _compoundNameMap.get(n.id);
+                if (name) {
+                  svgParts.push(`<text x="${n.x}" y="${n.y + SV_RC + 4}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(name)}</text>`);
+                }
               }
             }
+            svgParts.push('</g>');
           }
-        });
+          svgParts.push('</g>');
+        }
+        svgParts.push('</g>');
 
         svgParts.push('</svg>');
 

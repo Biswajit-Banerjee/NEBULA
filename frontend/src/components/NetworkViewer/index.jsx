@@ -1749,8 +1749,13 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const handleDownloadPNG = () => {
     if (!fgRef.current) return;
     const renderer = fgRef.current.renderer?.();
-    const canvas = renderer?.domElement;
+    if (!renderer) return;
+    const canvas = renderer.domElement;
     if (!canvas) return;
+    // Force a render right before capture so the buffer is fresh
+    const scene = fgRef.current.scene?.();
+    const camera = fgRef.current.camera?.();
+    if (scene && camera) renderer.render(scene, camera);
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
@@ -2220,6 +2225,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         <WebGLErrorBoundary resetKey={filteredData}>
         <ForceGraph3D
           ref={fgRef}
+          rendererConfig={{ preserveDrawingBuffer: true, antialias: true }}
           graphData={filteredData}
           nodeThreeObject={nodeThreeObject}
           nodeThreeObjectExtend={nodeThreeObjectExtend}

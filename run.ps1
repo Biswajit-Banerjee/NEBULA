@@ -121,8 +121,9 @@ function Start-BackendServer {
 
     $env:PYTHONPATH = "$backendDir;$env:PYTHONPATH"
 
-    $proc = Start-Process -FilePath "python" `
-        -ArgumentList "-m uvicorn app.main:app --reload --port 8020 --host 0.0.0.0" `
+    $venvPython = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
+    $proc = Start-Process -FilePath $venvPython `
+        -ArgumentList "-m uvicorn app.main:app --port 8020 --host 0.0.0.0" `
         -WorkingDirectory $backendDir `
         -PassThru -NoNewWindow
 

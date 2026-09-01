@@ -244,6 +244,152 @@ export const THEMES = {
     },
   },
 
+  'willow-light': {
+    label: 'Willow Light',
+    isDark: false,
+    swatch: { bg: '#F4F2EC', accent: '#3F7567', text: '#26342F' },
+    colors: {
+      'surface-primary':   '244 242 236',
+      'surface-secondary': '232 238 232',
+      'surface-elevated':  '252 251 247',
+      'surface-overlay':   '248 249 245',
+      'surface-inset':     '220 229 223',
+
+      'text-primary':   '38 52 47',
+      'text-secondary': '70 90 82',
+      'text-muted':     '88 108 99',
+      'text-inverse':   '255 255 255',
+
+      'border-primary':   '201 214 206',
+      'border-secondary': '155 177 166',
+      'border-focus':     '63 117 103',
+
+      'brand-primary':       '63 117 103',
+      'brand-primary-hover': '49 95 84',
+      'brand-secondary':     '82 116 146',
+      'brand-gradient-from': '63 117 103',
+      'brand-gradient-via':  '76 131 116',
+      'brand-gradient-to':   '82 116 146',
+
+      'success':        '53 111 76',
+      'success-subtle': '220 239 226',
+      'warning':        '139 98 32',
+      'warning-subtle': '249 239 210',
+      'error':          '151 68 75',
+      'error-subtle':   '248 226 227',
+      'info':           '66 105 140',
+      'info-subtle':    '224 236 246',
+
+      'input-bg':     '252 251 247',
+      'input-border': '155 177 166',
+      'input-focus':  '63 117 103',
+      'btn-primary':  '63 117 103',
+      'btn-text':     '255 255 255',
+
+      'tree-metabolite': '45 112 123',
+      'tree-reaction':   '91 82 137',
+      'tree-source':     '53 111 76',
+      'tree-seed':       '66 105 140',
+      'tree-cofactor':   '101 113 107',
+      'tree-solution':   '53 111 76',
+
+      'node-compound-fill':   '209 235 226',
+      'node-compound-stroke': '42 119 96',
+      'node-reaction-fill':   '226 225 242',
+      'node-reaction-stroke': '91 82 137',
+      'node-ec-fill':         '247 232 194',
+      'node-ec-stroke':       '139 98 32',
+
+      'accent-teal':    '42 119 96',
+      'accent-indigo':  '91 82 137',
+      'accent-amber':   '139 98 32',
+      'accent-emerald': '53 111 76',
+      'accent-cyan':    '45 112 123',
+      'accent-violet':  '105 77 126',
+
+      'scrollbar-track':       '220 229 223',
+      'scrollbar-thumb':       '130 157 145',
+      'scrollbar-thumb-hover': '63 117 103',
+
+      'code-bg':   '232 238 232',
+      'code-text': '38 52 47',
+      'ring':      '63 117 103',
+    },
+  },
+
+  'willow-dark': {
+    label: 'Willow Dark',
+    isDark: true,
+    swatch: { bg: '#18231F', accent: '#8FC9B5', text: '#EAF1EC' },
+    colors: {
+      'surface-primary':   '24 35 31',
+      'surface-secondary': '33 49 43',
+      'surface-elevated':  '43 61 54',
+      'surface-overlay':   '33 49 43',
+      'surface-inset':     '17 26 23',
+
+      'text-primary':   '234 241 236',
+      'text-secondary': '194 208 200',
+      'text-muted':     '159 177 167',
+      'text-inverse':   '20 42 35',
+
+      'border-primary':   '60 81 72',
+      'border-secondary': '88 112 101',
+      'border-focus':     '143 201 181',
+
+      'brand-primary':       '143 201 181',
+      'brand-primary-hover': '169 217 200',
+      'brand-secondary':     '154 184 210',
+      'brand-gradient-from': '143 201 181',
+      'brand-gradient-via':  '119 177 158',
+      'brand-gradient-to':   '154 184 210',
+
+      'success':        '126 207 151',
+      'success-subtle': '31 70 47',
+      'warning':        '232 193 111',
+      'warning-subtle': '76 59 28',
+      'error':          '238 143 148',
+      'error-subtle':   '80 38 43',
+      'info':           '154 184 210',
+      'info-subtle':    '35 59 79',
+
+      'input-bg':     '17 26 23',
+      'input-border': '88 112 101',
+      'input-focus':  '143 201 181',
+      'btn-primary':  '143 201 181',
+      'btn-text':     '20 42 35',
+
+      'tree-metabolite': '114 202 210',
+      'tree-reaction':   '181 166 225',
+      'tree-source':     '126 207 151',
+      'tree-seed':       '154 184 210',
+      'tree-cofactor':   '159 177 167',
+      'tree-solution':   '126 207 151',
+
+      'node-compound-fill':   '67 151 125',
+      'node-compound-stroke': '126 222 190',
+      'node-reaction-fill':   '103 91 160',
+      'node-reaction-stroke': '190 178 235',
+      'node-ec-fill':         '160 119 43',
+      'node-ec-stroke':       '240 201 119',
+
+      'accent-teal':    '126 222 190',
+      'accent-indigo':  '190 178 235',
+      'accent-amber':   '240 201 119',
+      'accent-emerald': '126 207 151',
+      'accent-cyan':    '114 202 210',
+      'accent-violet':  '202 166 220',
+
+      'scrollbar-track':       '17 26 23',
+      'scrollbar-thumb':       '88 112 101',
+      'scrollbar-thumb-hover': '143 201 181',
+
+      'code-bg':   '17 26 23',
+      'code-text': '218 230 223',
+      'ring':      '143 201 181',
+    },
+  },
+
   /* ─────────────────────── Solarized Light ─────────────────────── */
   'solarized-light': {
     label: 'Solarized Light',

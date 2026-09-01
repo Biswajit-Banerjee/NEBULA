@@ -2714,7 +2714,7 @@ const GraphCanvas = forwardRef(
               const hw = drawW / 2;
               // Convert canvas to base64 data URI
               const dataUrl = tex.toDataURL('image/png');
-              svg.push(`<image x="${n.x - hw}" y="${n.y - halfH}" width="${drawW}" height="${SH}" href="${dataUrl}" opacity="${opacity}"/>`);
+              svg.push(`<image x="${n.x - hw}" y="${n.y - halfH}" width="${drawW}" height="${SH}" xlink:href="${dataUrl}" opacity="${opacity}"/>`);
             } else {
               svg.push(`<circle cx="${n.x}" cy="${n.y}" r="${R}" fill="${fill}" stroke="${stroke}" stroke-width="0.5" opacity="${opacity}"/>`);
             }
