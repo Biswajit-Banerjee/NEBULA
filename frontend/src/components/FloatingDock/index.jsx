@@ -94,9 +94,11 @@ const FloatingDock = ({
 
   // Auto-search: when a required value is selected, trigger search after a debounce
   // Longer delay allows users to add multiple queries before search starts
+  const autoSearchTimerRef = useRef(null);
   const triggerAutoSearch = useCallback(() => {
     pendingSearchRef.current = true;
-    setTimeout(() => {
+    clearTimeout(autoSearchTimerRef.current);
+    autoSearchTimerRef.current = setTimeout(() => {
       if (pendingSearchRef.current) {
         pendingSearchRef.current = false;
         setSearchPairs(currentPairs => {
@@ -114,6 +116,11 @@ const FloatingDock = ({
       }
     }, 1000);
   }, [onSearch, setSearchPairs]);
+
+  // Cleanup auto-search timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(autoSearchTimerRef.current);
+  }, []);
 
   const handleTargetSelect = useCallback((index, id) => {
     updatePair(index, { target: id, targetDisplay: '' });

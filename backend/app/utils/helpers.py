@@ -3,6 +3,11 @@ import numpy as np
 import re
 from typing import Set, Dict, List
 
+# Pre-compiled regex patterns (avoids recompilation on every call)
+_COMPOUND_RE = re.compile(r"[CZ][0-9]{5}")
+# Cache for get_first_occurance product patterns
+_PRODUCT_PATTERN_CACHE: Dict[str, re.Pattern] = {}
+
 def parse_ec_list(ec_string: str) -> List[str]:
     """Parse EC list string into a list of EC numbers"""
     if pd.isna(ec_string):
@@ -45,7 +50,7 @@ def create_backtrack_df(df, target_compound, gen_mapper, cofactors=None, src_com
             
             # Add new reactants to process
             for _, row in relevant_reactions.iterrows():
-                reactants = set(re.findall("([CZ][0-9]{5})", row['reactants']))
+                reactants = set(_COMPOUND_RE.findall(row['reactants']))
                 compounds_to_process.update(reactants)
                 
         processed_compounds.add(current_compound)
@@ -61,8 +66,12 @@ def create_backtrack_df(df, target_compound, gen_mapper, cofactors=None, src_com
 def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
     # Use word-boundary regex to avoid substring false positives
     # (e.g. searching C0001 should not match C00011)
-    pattern = r'(?:^|\+|\s)' + re.escape(target) + r'(?:$|\+|\s)'
-    target_df = df[df.products.str.contains(pattern, regex=True, na=False)]
+    if target not in _PRODUCT_PATTERN_CACHE:
+        _PRODUCT_PATTERN_CACHE[target] = re.compile(
+            r'(?:^|\+|\s)' + re.escape(target) + r'(?:$|\+|\s)'
+        )
+    pat = _PRODUCT_PATTERN_CACHE[target]
+    target_df = df[df.products.str.contains(pat, regex=True, na=False)]
     if target_df.empty:
         return target_df
     target_df = target_df[target_df.product_gen <= target_df.product_gen.min()]
@@ -71,7 +80,7 @@ def get_first_occurance(df: pd.DataFrame, target: str) -> pd.DataFrame:
     return target_df
 
 def add_compound_generation(eqn, gen_mapper):
-    compound_list = re.findall("([CZ][0-9]{5})", eqn)
+    compound_list = _COMPOUND_RE.findall(eqn)
     
     gen_dict = {c : gen_mapper.get(c, -1) for c in compound_list}
     

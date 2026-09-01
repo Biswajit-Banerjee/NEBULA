@@ -78,6 +78,8 @@ def _save_cache():
         _CACHE_FILE.write_text(json.dumps(_cache, indent=2, sort_keys=True), encoding="utf-8")
     except Exception as e:
         logger.warning(f"Could not persist SMILES cache: {e}")
+    if len(_cache) > 50000:
+        logger.warning(f"SMILES cache has grown to {len(_cache)} entries — consider investigating")
 
 
 def _save_mol_cache():
@@ -86,6 +88,8 @@ def _save_mol_cache():
         _MOL_CACHE_FILE.write_text(json.dumps(_mol_cache, indent=2, sort_keys=True), encoding="utf-8")
     except Exception as e:
         logger.warning(f"Could not persist MOL cache: {e}")
+    if len(_mol_cache) > 50000:
+        logger.warning(f"MOL cache has grown to {len(_mol_cache)} entries — consider investigating")
 
 
 def _fetch_smiles_pubchem(compound_id: str) -> Optional[str]:
@@ -146,14 +150,19 @@ def get_smiles_batch(compound_ids: list) -> Dict[str, Optional[str]]:
             to_fetch.append(cid)
 
     if to_fetch:
+        import concurrent.futures
         logger.info(f"Fetching SMILES for {len(to_fetch)} compounds from PubChem...")
-        for i, cid in enumerate(to_fetch):
-            smiles = _fetch_smiles_pubchem(cid)
-            _cache[cid] = smiles
-            result[cid] = smiles
-            # Rate limit: PubChem allows 5 req/sec
-            if i < len(to_fetch) - 1:
-                time.sleep(0.22)
+        # Use up to 3 workers to respect PubChem rate limits (~5 req/sec)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(_fetch_smiles_pubchem, cid): cid for cid in to_fetch}
+            for future in concurrent.futures.as_completed(futures):
+                cid = futures[future]
+                try:
+                    smiles = future.result()
+                except Exception:
+                    smiles = None
+                _cache[cid] = smiles
+                result[cid] = smiles
 
         _save_cache()
         fetched = sum(1 for c in to_fetch if _cache.get(c) is not None)
@@ -178,14 +187,19 @@ def get_mol_batch(compound_ids: list) -> Dict[str, Optional[str]]:
             to_fetch.append(cid)
 
     if to_fetch:
+        import concurrent.futures
         logger.info(f"Fetching MOL files for {len(to_fetch)} compounds from KEGG...")
-        for i, cid in enumerate(to_fetch):
-            mol = _fetch_mol_kegg(cid)
-            _mol_cache[cid] = mol
-            result[cid] = mol
-            # KEGG rate limit: ~3 req/sec
-            if i < len(to_fetch) - 1:
-                time.sleep(0.35)
+        # Use up to 3 workers to respect KEGG rate limits (~3 req/sec)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(_fetch_mol_kegg, cid): cid for cid in to_fetch}
+            for future in concurrent.futures.as_completed(futures):
+                cid = futures[future]
+                try:
+                    mol = future.result()
+                except Exception:
+                    mol = None
+                _mol_cache[cid] = mol
+                result[cid] = mol
 
         _save_mol_cache()
         fetched = sum(1 for c in to_fetch if _mol_cache.get(c) is not None)
@@ -206,6 +220,8 @@ def _save_name_cache():
         _NAME_CACHE_FILE.write_text(json.dumps(_name_cache, indent=2, sort_keys=True), encoding="utf-8")
     except Exception as e:
         logger.warning(f"Could not persist name cache: {e}")
+    if len(_name_cache) > 50000:
+        logger.warning(f"Name cache has grown to {len(_name_cache)} entries — consider investigating")
 
 
 def _fetch_kegg_names_batch(compound_ids: list) -> Dict[str, str]:

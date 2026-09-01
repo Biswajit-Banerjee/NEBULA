@@ -67,9 +67,9 @@ class HyperGraph:
         """Build the hypergraph from a simulations DataFrame."""
         graph = cls()
 
-        for idx, row in df.iterrows():
-            reactants_str = str(row.get("reactants", ""))
-            products_str = str(row.get("products", ""))
+        for row in df.itertuples(index=True):
+            reactants_str = str(getattr(row, "reactants", ""))
+            products_str = str(getattr(row, "products", ""))
 
             reactant_set = frozenset(COMPOUND_RE.findall(reactants_str))
             product_set = frozenset(COMPOUND_RE.findall(products_str))
@@ -78,36 +78,37 @@ class HyperGraph:
                 continue
 
             # Parse EC list
-            ec_raw = row.get("ec_list", "")
+            ec_raw = getattr(row, "ec_list", "")
             if pd.isna(ec_raw) or ec_raw == "":
                 ec_list = []
             else:
                 ec_list = [e.strip() for e in str(ec_raw).split(",") if e.strip()]
 
             # Unique edge key: reaction name + direction + row index for uniqueness
-            reaction_name = str(row.get("reaction", f"R_{idx}"))
-            direction = str(row.get("direction", "forward"))
+            idx = row.Index
+            reaction_name = str(getattr(row, "reaction", f"R_{idx}"))
+            direction = str(getattr(row, "direction", "forward"))
             edge_id = f"{reaction_name}_{direction}_{idx}"
 
-            coenzyme = row.get("coenzyme", "")
+            coenzyme = getattr(row, "coenzyme", "")
             if pd.isna(coenzyme):
                 coenzyme = ""
 
-            source = row.get("source", "")
+            source = getattr(row, "source", "")
             if pd.isna(source):
                 source = ""
 
             edge = HyperEdge(
                 id=edge_id,
                 reaction=reaction_name,
-                reaction_id=str(row.get("reaction_id", "")),
+                reaction_id=str(getattr(row, "reaction_id", "")),
                 reactants=reactant_set,
                 products=product_set,
-                reactant_gen=float(row.get("reactant_gen", 0) or 0),
-                product_gen=float(row.get("product_gen", 0) or 0),
-                generation=float(row.get("generation", 0) or 0),
+                reactant_gen=float(getattr(row, "reactant_gen", 0) or 0),
+                product_gen=float(getattr(row, "product_gen", 0) or 0),
+                generation=float(getattr(row, "generation", 0) or 0),
                 ec_list=ec_list,
-                equation=str(row.get("equation", "")),
+                equation=str(getattr(row, "equation", "")),
                 source=source,
                 coenzyme=coenzyme,
                 direction=direction,
@@ -220,6 +221,17 @@ def backward_reachability(
         stats["max_depth"] = max(stats["max_depth"], depth)
 
         gen = gen_mapper.get(compound, -1)
+
+        # Depth limit to prevent stack overflow on deeply nested networks
+        if depth > 200:
+            node = CompoundNode(
+                id=compound,
+                generation=gen,
+                is_leaf=True,
+                leaf_reason="depth_limit",
+            )
+            stats["total_compounds"] += 1
+            return node
 
         # Check leaf conditions
         leaf, reason = _is_leaf(compound)
@@ -486,6 +498,10 @@ def enumerate_solutions(
                     # This AND-branch is unsatisfiable
                     partial = []
                     break
+
+                # Guard against combinatorial explosion in intermediate results
+                if len(partial) * len(child_solutions) > 10000:
+                    partial = partial[:max(1, max_solutions // max(1, len(child_solutions)))]
 
                 # Cross-product: merge each partial with each child solution
                 new_partial: List[FrozenSet[str]] = []

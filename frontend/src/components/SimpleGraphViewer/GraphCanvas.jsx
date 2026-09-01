@@ -61,7 +61,7 @@ const GraphCanvas = forwardRef(
     },
     ref
   ) => {
-    const { dark } = useContext(ThemeContext);
+    const { dark, themeName } = useContext(ThemeContext);
     const canvasRef = useRef(null);
     const nodesRef = useRef([]);
     const zoomRef = useRef(null);
@@ -409,6 +409,7 @@ const GraphCanvas = forwardRef(
     useEffect(() => {
       if (nodeDisplay !== 'structure' || !graph.nodes.length) return;
       let cancelled = false;
+      const abortCtrl = new AbortController();
 
       // Collect both C and Z compound IDs
       const compoundIds = graph.nodes
@@ -425,6 +426,7 @@ const GraphCanvas = forwardRef(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ compound_ids: needed }),
+            signal: abortCtrl.signal,
           });
           if (!resp.ok || cancelled) return;
           const { smiles, mol, names } = await resp.json();
@@ -472,6 +474,7 @@ const GraphCanvas = forwardRef(
                   offscreen.width = STRUCT_TEX;
                   offscreen.height = STRUCT_TEX;
                   drawer.draw(tree, offscreen, theme, false);
+                  if (structTexRef.current.size > 500) structTexRef.current.clear();
                   structTexRef.current.set(cid, cropToContent(offscreen));
                   resolve();
                 }, (err) => { reject(err); });
@@ -490,7 +493,10 @@ const GraphCanvas = forwardRef(
                 const parsed = parseMol(molText);
                 if (parsed.atoms.length > 0) {
                   const tex = renderMol(parsed, STRUCT_TEX, dark);
-                  if (tex) structTexRef.current.set(cid, tex);
+                  if (tex) {
+                    if (structTexRef.current.size > 500) structTexRef.current.clear();
+                    structTexRef.current.set(cid, tex);
+                  }
                 }
               } catch (e) {
                 // Skip unparseable MOL files
@@ -504,23 +510,27 @@ const GraphCanvas = forwardRef(
               if (cancelled) return;
               if (structTexRef.current.has(cid)) continue;
               const tex = renderNameTex(name, STRUCT_TEX, dark);
-              if (tex) structTexRef.current.set(cid, tex);
+              if (tex) {
+                if (structTexRef.current.size > 500) structTexRef.current.clear();
+                structTexRef.current.set(cid, tex);
+              }
             }
           }
 
           if (!cancelled) drawRef.current?.(nodesRef.current);
         } catch (e) {
-          console.warn('[NEBULA] Structure fetch failed:', e);
+          if (e.name !== 'AbortError') console.warn('[NEBULA] Structure fetch failed:', e);
         }
       })();
 
-      return () => { cancelled = true; };
+      return () => { cancelled = true; abortCtrl.abort(); };
     }, [graph.nodes, nodeDisplay, dark]);
 
     /* ── Fetch compound names ── */
     useEffect(() => {
       if (!showNames || !graph.nodes.length) return;
       let cancelled = false;
+      const abortCtrl = new AbortController();
 
       const compoundIds = graph.nodes
         .filter(n => n.type === 'compound' || !n.type)
@@ -536,6 +546,7 @@ const GraphCanvas = forwardRef(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ compound_ids: compoundIds }),
+            signal: abortCtrl.signal,
           });
           if (!resp.ok || cancelled) return;
           const { names } = await resp.json();
@@ -545,11 +556,11 @@ const GraphCanvas = forwardRef(
           });
           drawRef.current?.(nodesRef.current);
         } catch (e) {
-          console.warn('[NEBULA] Compound name fetch failed:', e);
+          if (e.name !== 'AbortError') console.warn('[NEBULA] Compound name fetch failed:', e);
         }
       })();
 
-      return () => { cancelled = true; };
+      return () => { cancelled = true; abortCtrl.abort(); };
     }, [graph.nodes, showNames]);
 
     /* ── Max generation for color scaling ── */
@@ -631,21 +642,23 @@ const GraphCanvas = forwardRef(
       // Read theme colors from CSS custom properties for canvas rendering —
       // cached and only recomputed when `dark` changes (getComputedStyle forces a
       // style recalc, which is expensive to pay on every single animation frame).
-      if (!themeColorsRef.current || themeColorsRef.current.dark !== dark) {
+      if (!themeColorsRef.current || themeColorsRef.current.themeName !== themeName) {
         const _cs = getComputedStyle(document.documentElement);
         const _rv = (v) => { const r = _cs.getPropertyValue(v).trim(); return r ? r.replace(/ /g, ',') : null; };
         themeColorsRef.current = {
           dark,
+          themeName,
           themeTextMuted: _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139'),
           themeTextSecondary: _rv('--text-secondary') || (dark ? '148,163,184' : '71,85,105'),
           themeBorderPrimary: _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185'),
+          themeBorderSecondary: _rv('--border-secondary') || (dark ? '148,163,184' : '100,116,139'),
           themeSurfacePrimary: _rv('--surface-primary') || (dark ? '30,41,59' : '255,255,255'),
           themeBrandPrimary: _rv('--brand-primary') || (dark ? '167,139,250' : '124,58,237'),
           themeInfo: _rv('--info') || (dark ? '147,197,253' : '37,99,235'),
         };
       }
       const {
-        themeTextMuted, themeTextSecondary, themeBorderPrimary,
+        themeTextMuted, themeTextSecondary, themeBorderPrimary, themeBorderSecondary,
         themeSurfacePrimary, themeBrandPrimary, themeInfo,
       } = themeColorsRef.current;
 
@@ -664,7 +677,7 @@ const GraphCanvas = forwardRef(
       if (gridScreenPx >= 3) {
         const effectiveGridColor = gridColor
           ? gridColor + "18"
-          : `rgba(${themeBorderPrimary},0.09)`;
+          : `rgba(${themeBorderSecondary},0.22)`;
         ctx.save();
         ctx.strokeStyle = effectiveGridColor;
         ctx.lineWidth = 1 / t.k;
@@ -1177,7 +1190,7 @@ const GraphCanvas = forwardRef(
          severe hidden cost at large scale. Cache per-node colors in a Map keyed by
          node id, invalidated only when the relevant inputs actually change. */
       const MAX_BUCKET = 100;
-      const colorKey = `${colorMode}|${colorScheme}|${dark}|${maxGeneration}`;
+      const colorKey = `${colorMode}|${colorScheme}|${themeName}|${maxGeneration}`;
       let nodeColorCache;
       if (cacheHit && cache.colorKey === colorKey) {
         nodeColorCache = cache.nodeColorCache;
@@ -1232,10 +1245,10 @@ const GraphCanvas = forwardRef(
         // instead of allocating a fresh Set from drawNodes on every single frame.
         const searchNodeIds = nodeMap;
         const ghostR = Math.max(R_SCALED * 0.8, (2 * sizeScale) / t.k);
-        const ghostFill = dark ? '#94a3b8' : '#64748b';
-        const ghostStroke = dark ? '#cbd5e1' : '#475569';
+        const ghostFill = `rgb(${themeTextMuted})`;
+        const ghostStroke = `rgb(${themeTextSecondary})`;
         ctx.save();
-        ctx.globalAlpha = 0.18;
+        ctx.globalAlpha = 0.32;
         ctx.lineWidth = Math.max(0.8, 0.5 / t.k);
         ctx.fillStyle = ghostFill;
         ctx.strokeStyle = ghostStroke;
@@ -1468,7 +1481,7 @@ const GraphCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, nodeSizeScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggLayout, showAllKegg, showKeggLines, hideEdges, showPathways, keggBgOpacity, backboneMatchIds]);
+    }, [dark, themeName, graph, maxGeneration, showOverlay, pairColorMap, edgeOpacity, spacingScale, nodeSizeScale, colorMode, colorScheme, bgColor, gridColor, edgeStyle, nodeDisplay, showNames, keggLayout, showAllKegg, showKeggLines, hideEdges, showPathways, keggBgOpacity, backboneMatchIds]);
 
     drawRef.current = draw;
     syncSelectionRef.current = syncSelection;
@@ -1524,6 +1537,12 @@ const GraphCanvas = forwardRef(
       // backend's source SVG changes), so let the browser cache it across toggles/
       // reloads instead of re-downloading ~650KB-1.2MB every single time.
       img.src = getApiUrl('kegg-map-bg') + '?variant=lines';
+      return () => {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        keggBgLinesImageRef.current = null;
+      };
     }, [showAllKegg, showKeggLines]);
 
     useEffect(() => {
@@ -1542,6 +1561,12 @@ const GraphCanvas = forwardRef(
       img.onerror = () => console.warn('[NEBULA] Failed to load KEGG map text background SVG');
       // No cache-busting timestamp — see comment on the lines-variant fetch above.
       img.src = getApiUrl('kegg-map-bg') + '?variant=text';
+      return () => {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        keggBgTextImageRef.current = null;
+      };
     }, [showPathways]);
 
     /* ── Helper: fit view to nodes ── */
@@ -1610,6 +1635,10 @@ const GraphCanvas = forwardRef(
       prevShowKeggLinesRef.current = showKeggLines;
       if (isNewData || keggJustToggled || keggViewModeChanged) {
         needsFitRef.current = true;
+      }
+      // Clear stale position cache from previous search
+      if (isNewData) {
+        positionCacheRef.current = {};
       }
 
       if (keggLayout) {
@@ -2870,6 +2899,16 @@ const GraphCanvas = forwardRef(
       drawRef.current?.(nodesRef.current);
     };
 
+    // Cleanup refs on unmount to prevent memory leaks
+    useEffect(() => {
+      return () => {
+        structTexRef.current.clear();
+        compoundNamesRef.current.clear();
+        smilesDataRef.current = {};
+        positionCacheRef.current = {};
+      };
+    }, []);
+
     const ctxNodeLabel = ctxMenu?.type === 'node'
       ? (compoundNamesRef.current.get(ctxMenu.nodeId) ?? ctxMenu.nodeId ?? '')
       : null;
@@ -2918,22 +2957,22 @@ const GraphCanvas = forwardRef(
             {ctxMenu.type === 'node' && (
               <>
                 <div className="px-3 py-1 text-content-secondary font-medium truncate max-w-[200px]">{ctxNodeLabel}</div>
-                <div className="h-px bg-border-primary mx-2 my-1" />
+                <div className="h-px bg-brd mx-2 my-1" />
                 <button
-                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content-primary transition-colors"
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content transition-colors"
                   onClick={() => handleDeleteIncoming(ctxMenu.nodeId)}
                 >
                   Delete incoming edges
                 </button>
                 <button
-                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content-primary transition-colors"
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-content transition-colors"
                   onClick={() => handleDeleteOutgoing(ctxMenu.nodeId)}
                 >
                   Delete outgoing edges
                 </button>
-                <div className="h-px bg-border-primary mx-2 my-1" />
+                <div className="h-px bg-brd mx-2 my-1" />
                 <button
-                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-red-500 hover:text-red-400 transition-colors"
+                  className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-err hover:text-err/80 transition-colors"
                   onClick={() => handleDeleteNode(ctxMenu.nodeId)}
                 >
                   Delete node + bridge edges
@@ -2942,7 +2981,7 @@ const GraphCanvas = forwardRef(
             )}
             {ctxMenu.type === 'edge' && (
               <button
-                className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-red-500 hover:text-red-400 transition-colors"
+                className="w-full text-left px-3 py-1.5 hover:bg-surface-secondary text-err hover:text-err/80 transition-colors"
                 onClick={() => handleDeleteEdge(ctxMenu.link)}
               >
                 Delete edge

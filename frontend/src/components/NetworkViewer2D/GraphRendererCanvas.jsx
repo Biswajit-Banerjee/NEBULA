@@ -125,7 +125,7 @@ const GraphRendererCanvas = forwardRef(
     },
     ref
   ) => {
-    const { dark } = useContext(ThemeContext);
+    const { dark, themeName } = useContext(ThemeContext);
     const canvasRef = useRef(null);
     const nodesRef = useRef([]); // static node array (no physics)
     const zoomRef = useRef(null);
@@ -293,6 +293,7 @@ const GraphRendererCanvas = forwardRef(
     useEffect(() => {
       if (!showStructures || !graph.nodes || !graph.nodes.length) return;
       let cancelled = false;
+      const abortCtrl = new AbortController();
 
       // Clear cache if theme changed so textures are re-rendered with correct colors
       const currentTheme = dark ? 'dark' : 'light';
@@ -300,6 +301,9 @@ const GraphRendererCanvas = forwardRef(
         structTexRef.current.clear();
         structTexThemeRef.current = currentTheme;
       }
+
+      // Evict oldest entries if cache grows too large
+      if (structTexRef.current.size > 500) structTexRef.current.clear();
 
       const compoundIds = graph.nodes
         .filter(n => n.type === 'compound')
@@ -315,6 +319,7 @@ const GraphRendererCanvas = forwardRef(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ compound_ids: needed }),
+            signal: abortCtrl.signal,
           });
           if (!resp.ok || cancelled) return;
           const { smiles, mol, names } = await resp.json();
@@ -382,7 +387,7 @@ const GraphRendererCanvas = forwardRef(
         }
       })();
 
-      return () => { cancelled = true; };
+      return () => { cancelled = true; abortCtrl.abort(); };
     }, [graph.nodes, showStructures, dark]);
 
     /* ------------------------------------------------------------------ */
@@ -429,6 +434,7 @@ const GraphRendererCanvas = forwardRef(
       const themeTextMuted = _rv('--text-muted') || (dark ? '148,163,184' : '100,116,139');
       const themeTextPrimary = _rv('--text-primary') || (dark ? '203,213,225' : '55,65,81');
       const themeBorderPrimary = _rv('--border-primary') || (dark ? '140,160,190' : '160,170,185');
+      const themeBorderSecondary = _rv('--border-secondary') || (dark ? '148,163,184' : '100,116,139');
       const themeInfoColor = _rv('--info') || (dark ? '96,165,250' : '59,130,246');
       const themeBrandColor = _rv('--brand-primary') || (dark ? '196,181,253' : '139,92,246');
 
@@ -449,7 +455,7 @@ const GraphRendererCanvas = forwardRef(
       const gridSpacing = nodeGridSize;
       const effectiveGridColor = gridColor
         ? gridColor + '18' // user color with ~10% opacity (hex alpha)
-        : `rgba(${themeBorderPrimary},0.09)`;
+        : `rgba(${themeBorderSecondary},0.22)`;
 
       ctx.save();
       ctx.strokeStyle = effectiveGridColor;
@@ -480,7 +486,7 @@ const GraphRendererCanvas = forwardRef(
       /* ---------------------------------------------------------- */
       if (genMapRef.current.length > 0) {
         ctx.save();
-        const colLabelColor = `rgba(${themeTextMuted},0.4)`;
+        const colLabelColor = `rgba(${themeTextMuted},0.72)`;
         ctx.font = `bold 9px "Inter", sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
@@ -957,7 +963,7 @@ const GraphRendererCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
+    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
 
     // Keep refs always pointing to the latest functions (fixes stale closure in event handlers)
     drawRef.current = draw;
@@ -1027,6 +1033,8 @@ const GraphRendererCanvas = forwardRef(
       if (data !== prevDataRef.current) {
         prevDataRef.current = data;
         needsFitRef.current = true;
+        // Clear stale position cache from previous search
+        positionCacheRef.current = {};
       }
 
       if (needsFitRef.current && visibleNodes.length > 0 && canvasRef.current && zoomRef.current) {
@@ -2043,6 +2051,16 @@ const GraphRendererCanvas = forwardRef(
     /* ------------------------------------------------------------------ */
     /* Render                                                              */
     /* ------------------------------------------------------------------ */
+
+    // Cleanup texture cache and refs on unmount to prevent memory leaks
+    useEffect(() => {
+      return () => {
+        structTexRef.current.clear();
+        smilesDataRef.current = {};
+        positionCacheRef.current = {};
+        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      };
+    }, []);
 
     const GROUP_ACTIONS = [
       { type: 'flipH',    label: 'Flip Horizontal', icon: '↔' },

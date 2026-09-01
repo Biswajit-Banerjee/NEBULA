@@ -9,6 +9,16 @@ import { ThemeContext } from '../ThemeProvider/ThemeProvider';
 import GenerationControls from '../NetworkViewer2D/GenerationControls';
 
 // =============================================================================
+// Constants
+// =============================================================================
+
+const GENERATION_COLORS = [
+  '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
+  '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
+  '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
+];
+
+// =============================================================================
 // Styled Components
 // =============================================================================
 
@@ -107,7 +117,7 @@ const Slider = styled.input`
   }
   
   &::-webkit-slider-thumb:hover {
-    background: rgb(var(--brand-hover));
+    background: rgb(var(--brand-primary-hover));
     transform: scale(1.1);
   }
 `;
@@ -215,7 +225,7 @@ const ToggleSlider = styled.span`
     width: 16px;
     left: 2px;
     bottom: 2px;
-    background-color: white;
+    background-color: rgb(var(--btn-text));
     transition: 0.4s;
     border-radius: 50%;
   }
@@ -285,7 +295,7 @@ const TopLeftButtonGroup = styled.div`
 const ControlButton = styled.button`
   background: ${({ $active }) =>
     $active
-      ? 'rgb(var(--brand-primary) / 0.3)'
+      ? 'rgb(var(--brand-primary))'
       : 'rgb(var(--surface-overlay) / 0.85)'};
   backdrop-filter: blur(6px);
   padding: 8px 12px;
@@ -309,7 +319,7 @@ const ControlButton = styled.button`
   &:hover {
     background: ${({ $active }) =>
       $active
-        ? 'rgb(var(--brand-primary) / 0.4)'
+        ? 'rgb(var(--brand-primary-hover))'
         : 'rgb(var(--surface-inset) / 0.9)'};
   }
 
@@ -596,7 +606,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   // (and the noisy uncaught errors that come with it) in sandboxed/GPU-disabled browsers.
   const [webglSupported] = useState(() => isWebGLAvailable());
   const rotateIntervalRef = useRef(null);
-  const { dark } = useContext(ThemeContext);
+  const { dark, themeName } = useContext(ThemeContext);
   const [showOptions, setShowOptions] = useState(false);
   const [hoverNode, setHoverNode] = useState(null);
   const [hoverLink, setHoverLink] = useState(null);
@@ -899,94 +909,95 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const getNodeColor = useCallback((node) => {
     if (node.type === 'ec') return '#92d3ff';
     
-    // Define color ranges for generations
-    const colors = [
-      '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
-      '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
-      '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
-    ];
-    
-    const generationIndex = node.generation % colors.length;
-    const base = colors[generationIndex];
+    const generationIndex = node.generation % GENERATION_COLORS.length;
+    const base = GENERATION_COLORS[generationIndex];
 
     if (!hoverNode) return base;
     if (node.id === hoverNode.id) return base;
     const neigh = neighborsMap.get(hoverNode.id);
     if (neigh && neigh.has(node.id)) return base;
     return cssVarToHex('--surface-inset', dark ? '#2a3342' : '#e5e7eb');
-  }, [hoverNode, neighborsMap, dark]);
+  }, [hoverNode, neighborsMap, dark, themeName]);
 
-  // Generate node geometries based on node type
-  const getNodeGeometry = useCallback((node) => {
-    if (node.type === 'compound') {
-      return new THREE.SphereGeometry(node.val);
-    } 
-    else if (node.type === 'reaction') {
-      // Create rounded box for reaction nodes
-      const boxGeometry = new THREE.BoxGeometry(node.val * 1.2, node.val * 1.2, node.val * 0.8);
-      return boxGeometry;
-    } 
-    else if (node.type === 'ec') {
-      // Create octahedron for EC nodes
-      return new THREE.OctahedronGeometry(node.val * 0.8);
+  // Geometry & material pools — reuse shared instances to avoid WebGL resource leaks
+  const geomPoolRef = useRef({});
+  const nodeObjCacheRef = useRef(new Map()); // nodeId -> { mesh, lastColor }
+
+  const getPooledGeometry = useCallback((type, val) => {
+    const pool = geomPoolRef.current;
+    if (type === 'compound') {
+      const key = `sphere_${val}`;
+      if (!pool[key]) pool[key] = new THREE.SphereGeometry(val);
+      return pool[key];
+    } else if (type === 'reaction') {
+      const key = `box_${val}`;
+      if (!pool[key]) pool[key] = new THREE.BoxGeometry(val * 1.2, val * 1.2, val * 0.8);
+      return pool[key];
+    } else if (type === 'ec') {
+      const key = `oct_${val}`;
+      if (!pool[key]) pool[key] = new THREE.OctahedronGeometry(val * 0.8);
+      return pool[key];
     }
-    
-    return new THREE.SphereGeometry(1);
+    if (!pool['default']) pool['default'] = new THREE.SphereGeometry(1);
+    return pool['default'];
   }, []);
 
-  // Custom node rendering
+  const getPooledGlowGeometry = useCallback((type, val) => {
+    const pool = geomPoolRef.current;
+    if (type === 'compound') {
+      const key = `gsphere_${val}`;
+      if (!pool[key]) pool[key] = new THREE.SphereGeometry(val * 1.5);
+      return pool[key];
+    } else if (type === 'reaction') {
+      const key = `gbox_${val}`;
+      if (!pool[key]) pool[key] = new THREE.BoxGeometry(val * 1.8, val * 1.8, val * 1.2);
+      return pool[key];
+    } else {
+      const key = `goct_${val}`;
+      if (!pool[key]) pool[key] = new THREE.OctahedronGeometry(val * 1.3);
+      return pool[key];
+    }
+  }, []);
+
+  // Custom node rendering — pools geometry, caches mesh per node
   const nodeThreeObject = useCallback((node) => {
     const color = getNodeColor(node);
-    const geometry = getNodeGeometry(node);
-    
-    // Create material based on node type
-    let material;
-    
-    if (node.type === 'compound') {
-      material = new THREE.MeshPhongMaterial({ 
-        color, 
-        transparent: true,
-        opacity: 0.85,
-        shininess: 90
-      });
-    } 
-    else if (node.type === 'reaction') {
-      material = new THREE.MeshPhongMaterial({ 
-        color, 
-        transparent: true,
-        opacity: 0.8,
-        shininess: 80
-      });
-    } 
-    else if (node.type === 'ec') {
-      material = new THREE.MeshPhongMaterial({ 
-        color, 
-        transparent: true,
-        opacity: 0.7,
-        wireframe: true
-      });
+    const cached = nodeObjCacheRef.current.get(node.id);
+
+    // Reuse existing mesh if color hasn't changed
+    if (cached && cached.lastColor === color && cached.lastVal === node.val) {
+      return cached.mesh;
     }
-    
+
+    const geometry = getPooledGeometry(node.type, node.val);
+
+    // Create material (not pooled — each node needs its own color)
+    let material;
+    if (node.type === 'compound') {
+      material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.85, shininess: 90 });
+    } else if (node.type === 'reaction') {
+      material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.8, shininess: 80 });
+    } else if (node.type === 'ec') {
+      material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.7, wireframe: true });
+    }
+
     const mesh = new THREE.Mesh(geometry, material);
-    
+
     // Add glowing effect
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.15
-    });
-    
-    const glowGeometry = node.type === 'compound' 
-      ? new THREE.SphereGeometry(node.val * 1.5)
-      : node.type === 'reaction'
-        ? new THREE.BoxGeometry(node.val * 1.8, node.val * 1.8, node.val * 1.2)
-        : new THREE.OctahedronGeometry(node.val * 1.3);
-    
+    const glowGeometry = getPooledGlowGeometry(node.type, node.val);
+    const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15 });
     const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
     mesh.add(glowMesh);
-    
+
+    // Dispose previous mesh's materials (geometry is pooled, don't dispose it)
+    if (cached) {
+      cached.mesh.material?.dispose?.();
+      cached.mesh.children?.forEach(c => c.material?.dispose?.());
+    }
+
+    nodeObjCacheRef.current.set(node.id, { mesh, lastColor: color, lastVal: node.val });
     return mesh;
-  }, [getNodeColor, getNodeGeometry]);
+  }, [getNodeColor, getPooledGeometry, getPooledGlowGeometry]);
 
   // Custom node label rendering
   const nodeThreeObjectExtend = useCallback(() => true, []);
@@ -1007,27 +1018,24 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     return node.label;
   }, [hideLabels]);
 
-  // Custom link object for arrows
+  // Custom link object for arrows — pools geometry by weight
   const linkThreeObject = useCallback((link) => {
     if (!link.arrows) return null;
     
     const size = link.weight || 1;
-    const arrowGeometry = new THREE.ConeGeometry(0.5 * size, 1.5 * size, 8);
+    const gKey = `cone_${size}`;
+    if (!geomPoolRef.current[gKey]) {
+      geomPoolRef.current[gKey] = new THREE.ConeGeometry(0.5 * size, 1.5 * size, 8);
+    }
+    const arrowGeometry = geomPoolRef.current[gKey];
     
     // Get color based on node generation
     let arrowColor;
     
     // For solid links, generate a gradient color based on source node generation
     if (link.sourceGeneration !== undefined) {
-      // Get colors for source generation
-      const colors = [
-        '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
-        '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
-        '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
-      ];
-      
-      const sourceIndex = link.sourceGeneration % colors.length;
-      arrowColor = colors[sourceIndex];
+      const sourceIndex = link.sourceGeneration % GENERATION_COLORS.length;
+      arrowColor = GENERATION_COLORS[sourceIndex];
     } else {
       arrowColor = link.color || '#ffffff';
     }
@@ -1076,15 +1084,8 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     
     // For solid links, generate a gradient color based on source and target generations
     if (link.sourceGeneration !== undefined && link.targetGeneration !== undefined) {
-      // Get colors for both generations
-      const colors = [
-        '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
-        '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
-        '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
-      ];
-      
-      const sourceIndex = link.sourceGeneration % colors.length;
-      const c = colors[sourceIndex]; // Using source node color for simplicity
+      const sourceIndex = link.sourceGeneration % GENERATION_COLORS.length;
+      const c = GENERATION_COLORS[sourceIndex]; // Using source node color for simplicity
       if (!hoverNode) return c;
       const s = typeof link.source === 'object' ? link.source.id : link.source;
       const t = typeof link.target === 'object' ? link.target.id : link.target;
@@ -1099,7 +1100,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     const t = typeof link.target === 'object' ? link.target.id : link.target;
     if (s === hoverNode?.id || t === hoverNode?.id) return link.color || '#ffffff';
     return dimColor;
-  }, [hoverNode, dark]);
+  }, [hoverNode, dark, themeName]);
 
   // =============================================================================
   // Effect Hooks
@@ -1134,7 +1135,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     setLoading(false);
     
     // Initialize force graph with a timeout to ensure it's mounted
-    setTimeout(() => {
+    const initTimer = setTimeout(() => {
       if (fgRef.current) {
         // Ensure simulation and forces are properly initialized
         if (fgRef.current.d3Force('charge')) {
@@ -1152,6 +1153,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
         fgRef.current.d3ReheatSimulation();
       }
     }, 300);
+    return () => clearTimeout(initTimer);
   }, [results]);
 
   // Apply different layout algorithms
@@ -1159,7 +1161,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     if (!fgRef.current) return;
     
     // Wait a bit to ensure graph is initialized
-    setTimeout(() => {
+    const layoutTimer = setTimeout(() => {
       if (layoutMode === 'tornado') {
         // Apply spiral layout
         if (fgRef.current.d3Force('charge')) {
@@ -1261,7 +1263,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
       // Reheat simulation
       fgRef.current.d3ReheatSimulation();
     }, 300);
-    
+    return () => clearTimeout(layoutTimer);
   }, [layoutMode, graphData.nodes, repulsion, linkDistance]);
 
   // Update forces if physics sliders change while in force layout
@@ -1354,16 +1356,32 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     };
   }, []);
 
-  // Effect to clean up rotation interval on unmount
+  // Effect to clean up rotation interval, play interval, and THREE.js resources on unmount
   useEffect(() => {
     return () => {
       // Clear any running rotation intervals
-      clearInterval(window.axisRotationInterval);
-      
-      // Clear play interval if running
-      if (playInterval) {
-        clearInterval(playInterval);
+      if (rotateIntervalRef.current) {
+        clearInterval(rotateIntervalRef.current);
+        rotateIntervalRef.current = null;
       }
+      
+      // Dispose all cached node materials
+      nodeObjCacheRef.current.forEach(({ mesh }) => {
+        mesh.material?.dispose?.();
+        mesh.children?.forEach(c => c.material?.dispose?.());
+      });
+      nodeObjCacheRef.current.clear();
+
+      // Dispose pooled geometries
+      Object.values(geomPoolRef.current).forEach(g => g?.dispose?.());
+      geomPoolRef.current = {};
+    };
+  }, []);
+
+  // Clean up play interval when it changes
+  useEffect(() => {
+    return () => {
+      if (playInterval) clearInterval(playInterval);
     };
   }, [playInterval]);
 
@@ -1427,6 +1445,9 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     // Cleanup when component unmounts or dependencies change
     return () => {
       scene.remove(grid);
+      sphereGeom.dispose();
+      wireGeom.dispose();
+      material.dispose();
     };
   }, [dark, showGrid, graphData]);
 
@@ -1586,7 +1607,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     }
     
     // Set up rotation interval for continuous rotation while button is held
-    clearInterval(window.axisRotationInterval);
+    clearInterval(rotateIntervalRef.current);
     
     // Define rotation amounts
     const rotationAmount = direction === 'pos' ? Math.PI/60 : -Math.PI/60;
@@ -1616,12 +1637,13 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     rotateOnAxis(); // Execute once immediately
     
     // Set up interval for continuous rotation
-    window.axisRotationInterval = setInterval(rotateOnAxis, 16); // ~60fps
+    rotateIntervalRef.current = setInterval(rotateOnAxis, 16); // ~60fps
   };
   
   // Handle rotation stop when button is released
   const handleAxisControlEnd = () => {
-    clearInterval(window.axisRotationInterval);
+    clearInterval(rotateIntervalRef.current);
+    rotateIntervalRef.current = null;
   };
   
   // Handle node click to show details
@@ -2365,7 +2387,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
 
 const NetworkViewerContainer = forwardRef(({ results, height }, ref) => {
   const innerRef = useRef();
-  const { dark } = useContext(ThemeContext);
+  const { dark, themeName } = useContext(ThemeContext);
 
   // Expose imperative API by delegating to the inner 3D viewer
   useImperativeHandle(ref, () => ({

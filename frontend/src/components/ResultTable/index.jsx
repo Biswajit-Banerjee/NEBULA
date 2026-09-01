@@ -96,6 +96,14 @@ const ResultTable = ({
     setSelectedRows(new Set());
   };
 
+  // Clear accumulated detail state when results change
+  useEffect(() => {
+    setReactionDetails({});
+    setReactionImages({});
+    setLoadingDetails({});
+    setExpandedRows(new Set());
+  }, [filteredResults]);
+
   const toggleRowExpansion = (index, row) => {
     const newExpanded = new Set(expandedRows);
 
@@ -113,7 +121,8 @@ const ResultTable = ({
         setLoadingDetails((prev) => ({ ...prev, [reaction]: true }));
 
         // Fetch reaction details from local API
-        fetch(getApiUrl(`reaction/${reaction}`))
+        const abortCtrl = new AbortController();
+        fetch(getApiUrl(`reaction/${reaction}`), { signal: abortCtrl.signal })
           .then((response) => response.json())
           .then((data) => {
             setReactionDetails((prev) => ({
@@ -122,11 +131,13 @@ const ResultTable = ({
             }));
           })
           .catch((error) => {
-            console.error("Error fetching reaction details:", error);
-            setReactionDetails((prev) => ({
-              ...prev,
-              [reaction]: "Failed to load definition",
-            }));
+            if (error.name !== 'AbortError') {
+              console.error("Error fetching reaction details:", error);
+              setReactionDetails((prev) => ({
+                ...prev,
+                [reaction]: "Failed to load definition",
+              }));
+            }
           })
           .finally(() => {
             setLoadingDetails((prev) => ({ ...prev, [reaction]: false }));

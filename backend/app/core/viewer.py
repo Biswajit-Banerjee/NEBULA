@@ -6,6 +6,7 @@ from typing import Dict, Optional, List
 import json
 import tempfile
 import os
+import threading
 from pathlib import Path
 
 from app.utils.helpers import create_backtrack_df, parse_ec_list, add_compound_generation
@@ -62,6 +63,7 @@ class MetabolicViewer:
         self.gen_mapper = self.generation_df["modified_generation"].dropna().to_dict()
         self.current_df: Optional[pd.DataFrame] = None
         self.current_target: Optional[str] = None
+        self._export_lock = threading.Lock()
 
         # Build hypergraph index for AND-OR backward reachability
         self.hypergraph = HyperGraph.from_dataframe(self.df)
@@ -119,7 +121,8 @@ class MetabolicViewer:
         Returns reaction pathway data including EC numbers
         """
         try:
-            self.current_target = target
+            with self._export_lock:
+                self.current_target = target
             
             if skip_cofactor:
                 cofactors = self.cofactors
@@ -152,7 +155,8 @@ class MetabolicViewer:
                 'ec_list': backtrack_df['ec_list'],
             })
             
-            self.current_df = display_df.copy()
+            with self._export_lock:
+                self.current_df = display_df.copy()
             
             # drop duplicate reaction entry
             display_df.drop_duplicates(["equation"], inplace=True)
@@ -448,15 +452,19 @@ class MetabolicViewer:
 
     async def download_csv(self, background_tasks: BackgroundTasks) -> FileResponse:
         """Generate and return a CSV file of the current dataframe"""
-        if self.current_df is None:
+        with self._export_lock:
+            df_snapshot = self.current_df.copy() if self.current_df is not None else None
+            target_snapshot = self.current_target
+
+        if df_snapshot is None:
             raise HTTPException(status_code=400, detail="No data available for download")
         
         try:
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as tmp_file:
-                self.current_df.to_csv(tmp_file.name, index=False)
+                df_snapshot.to_csv(tmp_file.name, index=False)
                 tmp_file_path = tmp_file.name
 
-            filename = f"metabolic_pathway_{self.current_target or 'data'}.csv"
+            filename = f"metabolic_pathway_{target_snapshot or 'data'}.csv"
             
             # Schedule cleanup task
             background_tasks.add_task(os.unlink, tmp_file_path)

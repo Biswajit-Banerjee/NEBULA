@@ -20,6 +20,7 @@ const AutocompleteInput = ({
   const [suggestions, setSuggestions] = useState([]);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
   const componentRef = useRef(null);
+  const blurTimerRef = useRef(null);
 
   useEffect(() => {
     if (value && Array.isArray(compoundData) && compoundData.length > 0) {
@@ -76,7 +77,8 @@ const AutocompleteInput = ({
   };
 
   const handleInputBlur = () => {
-    setTimeout(() => {
+    clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(() => {
       if (componentRef.current && !componentRef.current.contains(document.activeElement)) {
         setIsDropdownVisible(false);
 
@@ -118,7 +120,10 @@ const AutocompleteInput = ({
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      clearTimeout(blurTimerRef.current);
+    };
   }, []);
 
   return (

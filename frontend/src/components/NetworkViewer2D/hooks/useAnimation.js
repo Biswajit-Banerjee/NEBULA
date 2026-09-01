@@ -21,6 +21,7 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
   const [transitionSpeed, setTransitionSpeed] = useState(2); // Default 2 seconds
   const playIntervalRef = useRef(null);
   const transitionInProgressRef = useRef(false);
+  const transitionTimerRef = useRef(null); // track setTimeout for cleanup
   // Keep a ref to populatedGens so the interval closure sees the latest value
   const populatedGensRef = useRef(populatedGens);
   populatedGensRef.current = populatedGens;
@@ -48,7 +49,8 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
             transitionInProgressRef.current = true;
             
             // Set a timeout to mark the transition as complete
-            setTimeout(() => {
+            clearTimeout(transitionTimerRef.current);
+            transitionTimerRef.current = setTimeout(() => {
               transitionInProgressRef.current = false;
             }, Math.min(1000, transitionSpeed * 500));
             
@@ -65,6 +67,7 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
       if (playIntervalRef.current) {
         clearInterval(playIntervalRef.current);
       }
+      clearTimeout(transitionTimerRef.current);
     };
   }, [isPlaying, maxGeneration, setCurrentGeneration, transitionSpeed]);
 
@@ -93,7 +96,8 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
     if (next !== null) {
       transitionInProgressRef.current = true;
       setCurrentGeneration(next);
-      setTimeout(() => { transitionInProgressRef.current = false; }, 500);
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = setTimeout(() => { transitionInProgressRef.current = false; }, 500);
     }
   };
 
@@ -102,7 +106,8 @@ function useAnimation(currentGeneration, setCurrentGeneration, maxGeneration, mi
     if (prev !== null) {
       transitionInProgressRef.current = true;
       setCurrentGeneration(prev);
-      setTimeout(() => { transitionInProgressRef.current = false; }, 500);
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = setTimeout(() => { transitionInProgressRef.current = false; }, 500);
     }
   };
 

@@ -99,11 +99,12 @@ const ViewPane = ({
         </div>
       </div>
 
-      {/* 2D Network — always mounted once data exists */}
+      {/* 2D Network — always mounted once data exists; inert when hidden to reduce resource usage */}
       {has2dData && (
         <div
           className="absolute inset-0"
           style={{ display: viewType === 'network2d' ? 'block' : 'none' }}
+          {...(viewType !== 'network2d' ? { inert: '' } : {})}
         >
           <Suspense fallback={<LoadingFallback label="2D Network" />}>
             <LazyNetworkViewer2D
@@ -121,6 +122,7 @@ const ViewPane = ({
         <div
           className="absolute inset-0"
           style={{ display: viewType === 'map' ? 'block' : 'none' }}
+          {...(viewType !== 'map' ? { inert: '' } : {})}
         >
           <Suspense fallback={<LoadingFallback label="Map" />}>
             <LazySimpleGraphViewer
@@ -132,11 +134,12 @@ const ViewPane = ({
         </div>
       )}
 
-      {/* 3D Network — always mounted once data exists */}
+      {/* 3D Network — always mounted once data exists; inert when hidden */}
       {has3dData && (
         <div
           className="absolute inset-0"
           style={{ display: viewType === 'network3d' ? 'block' : 'none' }}
+          {...(viewType !== 'network3d' ? { inert: '' } : {})}
         >
           <Suspense fallback={<LoadingFallback label="3D Network" />}>
             <LazyNetworkViewer3D
@@ -153,6 +156,7 @@ const ViewPane = ({
         <div
           className="absolute inset-0"
           style={{ display: viewType === 'tree' ? 'block' : 'none' }}
+          {...(viewType !== 'tree' ? { inert: '' } : {})}
         >
           <Suspense fallback={<LoadingFallback label="Tree View" />}>
             <LazyHypergraphTreeView

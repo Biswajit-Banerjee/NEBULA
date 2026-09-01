@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '../../config/api';
 
-// Cache for storing compound data
+// Cache for storing compound data (bounded to prevent memory leaks)
 const compoundCache = new Map();
+const MAX_CACHE_SIZE = 500;
 
 const CompoundTooltip = ({ compoundId }) => {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -11,7 +12,9 @@ const CompoundTooltip = ({ compoundId }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!compoundId) return;
+    if (!compoundId || !showTooltip || data || error) return;
+
+    const abortCtrl = new AbortController();
 
     const fetchData = async () => {
       // Return cached data if available
@@ -24,26 +27,26 @@ const CompoundTooltip = ({ compoundId }) => {
       setError(null);
 
       try {
-        const response = await fetch(getApiUrl(`compound/${compoundId}`));
+        const response = await fetch(getApiUrl(`compound/${compoundId}`), { signal: abortCtrl.signal });
         if (!response.ok) {
           throw new Error(response.statusText);
         }
         const result = await response.json();
         
-        // Cache the result
+        // Cache the result (evict if too large)
+        if (compoundCache.size >= MAX_CACHE_SIZE) compoundCache.clear();
         compoundCache.set(compoundId, result.data);
         setData(result.data);
       } catch (err) {
-        setError(err.message);
+        if (err.name !== 'AbortError') setError(err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    if (showTooltip && !data && !error) {
-      fetchData();
-    }
-  }, [compoundId, showTooltip]);
+    fetchData();
+    return () => abortCtrl.abort();
+  }, [compoundId, showTooltip, data, error]);
 
   // Check if compound ID is valid KEGG format
   const isValidKeggId = /^C\d{5}$/.test(compoundId);

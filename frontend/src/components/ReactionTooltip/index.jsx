@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '../../config/api';
 
+// Bounded cache to prevent memory leaks
 const reactionCache = new Map();
+const MAX_CACHE_SIZE = 500;
 
 const ReactionTooltip = ({ equation }) => {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -15,7 +17,9 @@ const ReactionTooltip = ({ equation }) => {
   const isValidReactionId = Boolean(reactionId);
 
   useEffect(() => {
-    if (!reactionId || !showTooltip) return;
+    if (!reactionId || !showTooltip || data || error) return;
+
+    const abortCtrl = new AbortController();
 
     const fetchData = async () => {
       // Check cache first
@@ -28,28 +32,30 @@ const ReactionTooltip = ({ equation }) => {
       setError(null);
 
       try {
-        const response = await fetch(getApiUrl(`reaction/${encodeURIComponent(reactionId)}`));
+        const response = await fetch(getApiUrl(`reaction/${encodeURIComponent(reactionId)}`), { signal: abortCtrl.signal });
         const result = await response.json();
 
         if (result.error) {
           throw new Error(result.error);
         }
 
-        // Cache the result using reactionId instead of equation
+        // Cache the result (evict if too large)
+        if (reactionCache.size >= MAX_CACHE_SIZE) reactionCache.clear();
         reactionCache.set(reactionId, result.data);
         setData(result.data);
       } catch (err) {
-        console.error('Error fetching reaction data:', err);
-        setError(err.message);
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching reaction data:', err);
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    if (!data && !error) {
-      fetchData();
-    }
-  }, [reactionId, showTooltip]);
+    fetchData();
+    return () => abortCtrl.abort();
+  }, [reactionId, showTooltip, data, error]);
 
   return (
     <div className="relative inline-block">

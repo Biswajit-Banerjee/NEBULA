@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+import asyncio
 import logging
+import os
 from pathlib import Path
 import re
 import requests
@@ -26,9 +28,10 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=_allowed_origins,
     allow_credentials=False,  # Must be False when using wildcard origins
     allow_methods=["*"],
     allow_headers=["*"],
@@ -511,7 +514,8 @@ async def get_compound_data(compound_id: str):
     
     try:
         # Query KEGG API
-        response = requests.get(
+        response = await asyncio.to_thread(
+            requests.get,
             f"https://rest.kegg.jp/get/{compound_id}",
             timeout=10  # 10 seconds timeout
         )
@@ -605,7 +609,8 @@ async def get_reaction_data(reaction_id: str):
         clean_reaction_id = match.group(1)
         
         # Query KEGG API
-        response = requests.get(
+        response = await asyncio.to_thread(
+            requests.get,
             f"https://rest.kegg.jp/get/{clean_reaction_id}",
             timeout=10
         )
@@ -1052,7 +1057,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8020,
         reload=True,
         log_level="info"
     )

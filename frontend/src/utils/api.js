@@ -6,10 +6,16 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs))
 }
 
-// Cache objects
+// Cache objects (bounded to prevent memory leaks)
 const compoundCache = new Map();
 const reactionCache = new Map();
 const ecCache = new Map();
+const MAX_CACHE_SIZE = 500;
+
+const _boundedSet = (cache, key, value) => {
+  if (cache.size >= MAX_CACHE_SIZE) cache.clear();
+  cache.set(key, value);
+};
 
 export const fetchCompoundData = async (compoundId) => {
   if (compoundCache.has(compoundId)) {
@@ -22,7 +28,7 @@ export const fetchCompoundData = async (compoundId) => {
       throw new Error('Failed to fetch compound data');
     }
     const data = await response.json();
-    compoundCache.set(compoundId, data);
+    _boundedSet(compoundCache, compoundId, data);
     return data;
   } catch (error) {
     console.error('Error fetching compound data:', error);
@@ -41,7 +47,7 @@ export const fetchReactionData = async (equation) => {
       throw new Error('Failed to fetch reaction data');
     }
     const data = await response.json();
-    reactionCache.set(equation, data);
+    _boundedSet(reactionCache, equation, data);
     return data;
   } catch (error) {
     console.error('Error fetching reaction data:', error);
@@ -60,7 +66,7 @@ export const fetchECData = async (ecNumber) => {
       throw new Error('Failed to fetch EC data');
     }
     const data = await response.json();
-    ecCache.set(ecNumber, data);
+    _boundedSet(ecCache, ecNumber, data);
     return data;
   } catch (error) {
     console.error('Error fetching EC data:', error);
