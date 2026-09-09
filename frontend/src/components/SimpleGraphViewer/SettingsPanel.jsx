@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   ChevronRight, Settings2, Download, Image, Maximize, Minimize,
-  HelpCircle, Layers, RotateCcw, Palette, Circle, Activity, Scaling,
+  HelpCircle, Layers, RotateCcw, Palette, Scaling,
   Spline, GitCommitHorizontal, Hexagon, Map, Tag, Globe2, Network, Signpost,
   Search, SearchX,
 } from 'lucide-react';
-import { SCHEME_NAMES, schemeGradientCSS } from '../NetworkViewer2D/utils/colorSchemes';
+import { RAINBOW_PALETTE } from '../NetworkViewer2D/utils/colorSchemes';
 import AutocompleteInput from '../SearchPanel/AutocompleteInput';
 import compoundDataJson from '../SearchPanel/compound_map.json';
 
@@ -92,51 +92,12 @@ const ColorInput = ({ label, value, onChange, defaultColor }) => (
   </div>
 );
 
-const COLOR_MODES = [
-  { id: 'generation', label: 'Generation', icon: Circle },
-  { id: 'type', label: 'Type', icon: Circle },
-  { id: 'degree', label: 'Degree', icon: Activity },
-];
-
-const ColorModeSelector = ({ value, onChange }) => (
-  <div className="flex rounded-lg overflow-hidden border border-brd/60">
-    {COLOR_MODES.map(({ id, label, icon: Icon }) => (
-      <button
-        key={id}
-        onClick={() => onChange(id)}
-        className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-semibold transition-all ${
-          value === id
-            ? 'bg-brand text-content-inverse shadow-sm'
-            : 'text-content-secondary hover:bg-surface-inset/60'
-        }`}
-      >
-        <Icon className="w-3 h-3" />
-        {label}
-      </button>
-    ))}
-  </div>
-);
-
-const SchemePicker = ({ value, onChange }) => (
+const SchemePicker = () => (
   <div className="space-y-1">
     <span className="text-[11px] font-medium text-content-secondary">Color Scheme</span>
-    <div className="grid grid-cols-3 gap-1">
-      {SCHEME_NAMES.map((name) => (
-        <button
-          key={name}
-          onClick={() => onChange(name)}
-          className={`relative h-[18px] rounded overflow-hidden transition-all ${
-            value === name
-              ? 'ring-2 ring-brand ring-offset-1 ring-offset-surface'
-              : 'ring-1 ring-brd/40 hover:ring-brd'
-          }`}
-          title={name}
-        >
-          <div className="absolute inset-0" style={{ background: schemeGradientCSS(name) }} />
-          <span className="relative text-[7px] font-bold uppercase tracking-wide text-content-inverse drop-shadow-md px-0.5">
-            {name}
-          </span>
-        </button>
+    <div className="flex h-[18px] overflow-hidden rounded ring-1 ring-brd/40" title="Rainbow by generation">
+      {RAINBOW_PALETTE.light.map((color) => (
+        <span key={color} className="flex-1" style={{ backgroundColor: color }} />
       ))}
     </div>
   </div>
@@ -238,8 +199,8 @@ const SettingsPanel = ({
   resetLayout,
   tightenEdges,
   toggleHelp,
-  colorMode, setColorMode,
-  colorScheme, setColorScheme,
+  colorMode,
+  colorScheme,
   bgColor, setBgColor,
   gridColor, setGridColor,
   edgeStyle, setEdgeStyle,
@@ -396,18 +357,7 @@ const SettingsPanel = ({
             <SectionTitle>
               <span className="flex items-center gap-1.5"><Palette className="w-3 h-3" /> Colors</span>
             </SectionTitle>
-            <ColorModeSelector value={colorMode} onChange={setColorMode} />
-            {(colorMode === 'generation' || colorMode === 'degree') && (
-              <SchemePicker value={colorScheme} onChange={setColorScheme} />
-            )}
-            {colorMode === 'type' && (
-              <div className="space-y-1 pl-1">
-                <div className="flex items-center gap-2 text-[10px] text-content-secondary">
-                  <span className="w-3 h-3 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: 'rgb(var(--node-compound-fill))', border: '1px solid rgb(var(--node-compound-stroke))' }} />
-                  Compound (circle)
-                </div>
-              </div>
-            )}
+            <SchemePicker />
             <div className="h-px bg-brd/60 my-1" />
             <ColorInput label="Background" value={bgColor} onChange={setBgColor} defaultColor="#f8fafc" />
             <ColorInput label="Grid lines" value={gridColor} onChange={setGridColor} defaultColor="#e2e8f0" />

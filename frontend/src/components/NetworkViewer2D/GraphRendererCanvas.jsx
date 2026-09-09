@@ -12,6 +12,7 @@ import SmilesDrawer from "smiles-drawer";
 import { getApiUrl } from '../../config/api';
 import { processData, applyHierarchicalLayout, SUB_COL_GAP, GEN_GAP, ROW_SPACING } from "./utils/graphProcessing";
 import { getSchemeColor, getTypeColor } from "./utils/colorSchemes";
+import { safeId, normalizeColor } from "./utils/svgLayout";
 import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 import NodeInfoPanel from "./NodeInfoPanel";
 import compoundMapJson from "../SearchPanel/compound_map.json";
@@ -111,8 +112,12 @@ const GraphRendererCanvas = forwardRef(
       isFullscreen,
       pairColorMap = {},
       showOverlay = false,
-      edgeOpacity = 0.5,
+      edgeOpacity = 0.7,
+      edgeThickness = 1.0,
       spacingScale = 1.0,
+      nodeScale = 1.0,
+      fontScale = 1.0,
+      nodeAvoidance = false,
       colorMode = 'generation',
       colorScheme = 'viridis',
       bgColor = '',
@@ -152,12 +157,25 @@ const GraphRendererCanvas = forwardRef(
     const syncSelectionRef = useRef(null); // always points to latest syncSelection
     const needsFitRef = useRef(true);    // auto-fit view on first layout / new data
     const prevDataRef = useRef(null);    // track data identity for auto-fit
+    const prevSpacingRef = useRef(spacingScale); // track spacing for bidirectional spread
+    const prevGenKeyRef = useRef('');  // track visible generation set for gap detection
+    const annotationsRef = useRef([]);     // Imported SVG annotations (text, lines)
+    // Imported SVG positions — persists across generation changes so nodes
+    // that become visible later use the imported positions instead of computing fresh ones.
+    // Keyed by safeId(nodeId) → { x, y }. Cleared on new data / reset layout.
+    const importedPositionsRef = useRef(new Map());
     const genMapRef = useRef([]);        // compact generation mapping from layout
     const edgeColorsRef = useRef(new Map()); // Map<edgeKey, cssColor> for brush tool
+    const nodeColorsRef = useRef(new Map()); // Map<nodeId, {fill, stroke}> imported from SVG edits
+    const nodeLabelsRef = useRef(new Map()); // Map<nodeId, string> custom label imported from SVG edits
     const brushModeRef = useRef(brushMode);  // live refs to avoid stale closures
     brushModeRef.current = brushMode;
     const brushColorRef = useRef(brushColor);
     brushColorRef.current = brushColor;
+    const nodeAvoidanceRef = useRef(nodeAvoidance);
+    nodeAvoidanceRef.current = nodeAvoidance;
+    const nodeScaleRef = useRef(nodeScale);
+    nodeScaleRef.current = nodeScale;
     const graphLinksRef = useRef([]);    // kept in sync with graph.links
     const curvedEdgesRef = useRef(curvedEdges);
     curvedEdgesRef.current = curvedEdges;
@@ -455,7 +473,9 @@ const GraphRendererCanvas = forwardRef(
       const gridSpacing = nodeGridSize;
       const effectiveGridColor = gridColor
         ? gridColor + '18' // user color with ~10% opacity (hex alpha)
-        : `rgba(${themeBorderSecondary},0.22)`;
+        : dark
+          ? `rgba(${themeBorderSecondary},0.42)`
+          : `rgba(${themeTextMuted},0.30)`;
 
       ctx.save();
       ctx.strokeStyle = effectiveGridColor;
@@ -504,10 +524,10 @@ const GraphRendererCanvas = forwardRef(
         ctx.restore();
       }
 
-      // Node size constants (used for edge clipping & node drawing)
-      const R_COMPOUND = 12;
-      const EC_RX = 18, EC_RY = 10;
-      const RECT_W = 30, RECT_H = 18, RECT_R = 3;
+      // Node size constants (used for edge clipping & node drawing) — scaled by nodeScale
+      const R_COMPOUND = 12 * nodeScale;
+      const EC_RX = 18 * nodeScale, EC_RY = 10 * nodeScale;
+      const RECT_W = 30 * nodeScale, RECT_H = 18 * nodeScale, RECT_R = 3;
 
       // Compute point on node surface in direction (dx, dy) from center
       const surfacePoint = (node, dx, dy) => {
@@ -619,6 +639,11 @@ const GraphRendererCanvas = forwardRef(
       // Build per-node link index for hover highlighting
       const linksByNode = new Map();
       const visibleEdges = [];
+      // Pre-compute highlight set for viewport culling exception
+      const _hovId = hoveredNodeRef.current;
+      const _pinned = pinnedNodesRef.current;
+      const _preHighlight = new Set(_pinned);
+      if (_hovId != null && nodeMap.has(_hovId)) _preHighlight.add(_hovId);
       graph.links.forEach((l) => {
         const srcId = l.source?.id || l.source;
         const trgId = l.target?.id || l.target;
@@ -626,7 +651,9 @@ const GraphRendererCanvas = forwardRef(
         const src = nodeMap.get(srcId);
         const trg = nodeMap.get(trgId);
         if (!src || !trg) return;
-        if (!inView(src.x, src.y) && !inView(trg.x, trg.y)) return;
+        // Always include edges connected to selected/hovered nodes
+        const forceVisible = _preHighlight.has(srcId) || _preHighlight.has(trgId);
+        if (!forceVisible && !inView(src.x, src.y) && !inView(trg.x, trg.y)) return;
         const idx = visibleEdges.length;
         visibleEdges.push({ src, trg, link: l });
         if (!linksByNode.has(srcId)) linksByNode.set(srcId, []);
@@ -690,9 +717,9 @@ const GraphRendererCanvas = forwardRef(
           const edgeKey = `${(link.source?.id || link.source)}--${(link.target?.id || link.target)}`;
           const customColor = edgeColorsRef.current.get(edgeKey);
           ctx.strokeStyle = customColor || `rgba(${r},${g},${b},${alpha})`;
-          ctx.lineWidth = isBright
+          ctx.lineWidth = (isBright
             ? Math.max(1.5 / t.k, 1)
-            : Math.max(0.6 / t.k, 0.4);
+            : Math.max(0.6 / t.k, 0.4)) * edgeThickness;
 
           // Dash convention:  solid = substrate/product,  dashed = reaction,  dotted = EC
           if (lType && lType.startsWith("ec")) {
@@ -747,29 +774,15 @@ const GraphRendererCanvas = forwardRef(
       }
       const maxDeg = degreeMap.size > 0 ? Math.max(1, ...degreeMap.values()) : 1;
 
-      // Unified node color function
-      // Generation & degree use a 0–100 normalized bucket scale:
-      //   - With few generations (e.g. 5), each maps to a wide bucket → discrete colors
-      //   - With many generations (e.g. 80), buckets are narrow → near-continuous gradient
+      // Use the single discrete rainbow palette for generation coloring.
       const MAX_BUCKET = 100;
       const nodeColor = (n) => {
-        if (colorMode === 'type') {
-          return getTypeColor(n.type, dark);
-        }
-        if (colorMode === 'degree') {
-          const deg = degreeMap.get(n.id) || 0;
-          // Normalize to 0–100 bucket, then to 0–1
-          const bucket = Math.round((deg / maxDeg) * MAX_BUCKET);
-          const t = bucket / MAX_BUCKET;
-          return getSchemeColor(colorScheme, t, dark);
-        }
-        // 'generation' (default) — map gen to 0–100 bucket scale
         const gen = n.generation || 0;
         const bucket = maxGeneration > 0
           ? Math.round((gen / maxGeneration) * MAX_BUCKET)
           : 0;
         const t = bucket / MAX_BUCKET;
-        return getSchemeColor(colorScheme, t, dark);
+        return getSchemeColor('rainbow', t, dark);
       };
 
       // (Node sizes defined above before edge drawing)
@@ -779,7 +792,10 @@ const GraphRendererCanvas = forwardRef(
         if (!inView(n.x, n.y)) return;
 
         const isHighlighted = highlightIds.has(n.id);
-        const { fill, stroke } = nodeColor(n);
+        const _colorOverride = nodeColorsRef.current.get(n.id);
+        const _baseColor = nodeColor(n);
+        const fill = _colorOverride?.fill || _baseColor.fill;
+        const stroke = _colorOverride?.stroke || _baseColor.stroke;
 
         // Structure texture for compound nodes
         const _structTex = (showStructures && n.type === 'compound')
@@ -860,7 +876,7 @@ const GraphRendererCanvas = forwardRef(
       /* Draw edge stoichiometry labels (only when weight > 1)     */
       /* ---------------------------------------------------------- */
       if (t.k >= 0.6) {
-        const stoichSize = Math.max(4, Math.min(6, 5 / t.k * t.k));
+        const stoichSize = Math.max(4, Math.min(6, 5 / t.k * t.k)) * fontScale;
         ctx.save();
         ctx.font = `bold ${stoichSize}px "Inter", sans-serif`;
         ctx.textAlign = "center";
@@ -899,7 +915,12 @@ const GraphRendererCanvas = forwardRef(
       /* Draw labels – progressive: only when zoomed in enough      */
       /* ---------------------------------------------------------- */
       if (t.k >= 0.45) {
-        const fontSize = Math.max(5, Math.min(7, 6 / t.k * t.k));
+        const baseFontSize = Math.max(5, Math.min(7, 6 / t.k * t.k)) * fontScale;
+        // Node label color: inverted to contrast against node fills.
+        // Dark mode has bright/pastel fills → use dark text.
+        // Light mode has dark/saturated fills → use light text.
+        const labelColor = '#1a1a2e';//dark ? '#1a1a2e' : '#f5f5fa';
+        const labelMuted = `rgba(${themeTextMuted},0.9)`;
         ctx.textAlign = "center";
         nodes.forEach((n) => {
           if (hiddenIds.has(n.id)) return;
@@ -913,35 +934,66 @@ const GraphRendererCanvas = forwardRef(
 
           if (showNodeNames && n.type === 'compound') {
             if (!_sTex2) {
-              // ID stays inside the node when no structure
-              ctx.font = `${fontSize}px "Inter", sans-serif`;
+              // ID stays inside the node when no structure — bold
+              ctx.font = `bold ${baseFontSize}px "Inter", sans-serif`;
               ctx.textBaseline = "middle";
-              ctx.fillStyle = `rgb(${themeTextPrimary})`;
-              ctx.fillText(n.label ?? n.id, n.x, n.y);
+              ctx.fillStyle = labelColor;
+              ctx.fillText(nodeLabelsRef.current.get(n.id) ?? (n.label ?? n.id), n.x, n.y);
             }
             // Human-readable name rendered below the node/structure
             const name = _compoundNameMap.get(n.id);
             if (name) {
-              ctx.font = `${Math.max(4, fontSize - 1)}px "Inter", sans-serif`;
+              ctx.font = `${Math.max(4, baseFontSize - 1)}px "Inter", sans-serif`;
               ctx.textBaseline = "top";
-              ctx.fillStyle = `rgba(${themeTextMuted},0.9)`;
+              ctx.fillStyle = labelMuted;
               ctx.fillText(name, n.x, _labelBaseY ?? (n.y + R_COMPOUND + 3));
             }
           } else {
-            let label = n.label ?? n.id;
-            if (/reaction-/.test(n.type)) label = label.split("_")[0];
-            ctx.font = `${fontSize}px "Inter", sans-serif`;
+            let label = nodeLabelsRef.current.get(n.id);
+            if (label === undefined) {
+              label = n.label ?? n.id;
+              if (/reaction-/.test(n.type)) label = label.split("_")[0];
+            }
+            // Bold label inside node
+            ctx.font = `bold ${baseFontSize}px "Inter", sans-serif`;
             if (_sTex2) {
               ctx.textBaseline = "top";
-              ctx.fillStyle = `rgba(${themeTextMuted},0.9)`;
+              ctx.fillStyle = labelMuted;
               ctx.fillText(label, n.x, _labelBaseY);
             } else {
               ctx.textBaseline = "middle";
-              ctx.fillStyle = `rgb(${themeTextPrimary})`;
+              ctx.fillStyle = labelColor;
               ctx.fillText(label, n.x, n.y);
             }
           }
         });
+      }
+
+      /* ---------------------------------------------------------- */
+      /* Draw imported SVG annotations (text + lines from Illustrator) */
+      /* ---------------------------------------------------------- */
+      if (annotationsRef.current.length > 0) {
+        ctx.save();
+        annotationsRef.current.forEach(a => {
+          if (a.type === 'text') {
+            const weight = a.bold ? 'bold ' : '';
+            ctx.font = `${weight}${a.fontSize}px "Helvetica", "Inter", sans-serif`;
+            ctx.fillStyle = a.fill || `rgb(${themeTextPrimary})`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+            a.lines.forEach(line => {
+              ctx.fillText(line.text, a.x, a.y + line.dy);
+            });
+          } else if (a.type === 'line') {
+            ctx.strokeStyle = a.stroke || '#999';
+            ctx.lineWidth = (a.strokeWidth || 2) / t.k * Math.min(t.k, 1);
+            ctx.beginPath();
+            ctx.moveTo(a.x1, a.y1);
+            ctx.lineTo(a.x2, a.y2);
+            ctx.stroke();
+          }
+        });
+        ctx.restore();
       }
 
       // Ctrl+drag selection box (world coords)
@@ -963,7 +1015,7 @@ const GraphRendererCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, spacingScale, colorMode, colorScheme, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
+    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, edgeThickness, spacingScale, nodeScale, fontScale, colorMode, colorScheme, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
 
     // Keep refs always pointing to the latest functions (fixes stale closure in event handlers)
     drawRef.current = draw;
@@ -980,10 +1032,10 @@ const GraphRendererCanvas = forwardRef(
       syncSelection();
     }, [graph, syncSelection]);
 
-    // Use effect to redraw when overlay toggled or graph updated
+    // Redraw when visual settings change (no re-layout, just repaint)
     useEffect(() => {
-      draw(graph.nodes);
-    }, [showOverlay, graph, draw]);
+      if (nodesRef.current.length > 0) draw(nodesRef.current);
+    }, [draw]);
 
     useEffect(() => {
       if (!graph.nodes.length) return;
@@ -1010,6 +1062,23 @@ const GraphRendererCanvas = forwardRef(
         positionCacheRef.current[n.id] = { x: n.x, y: n.y };
       });
 
+      // Track spacing changes — new spacing applies to freshly placed nodes only.
+      prevSpacingRef.current = spacingScale;
+
+      // Detect generation set changes — when generations are added/removed,
+      // clear cached X so nodes reposition to close gaps (Y stays sticky).
+      // Cofactor toggles within the same generation set won't trigger this.
+      const currentGenSet = new Set(visibleNodes.map(n => n.generation ?? 0));
+      const currentGenKey = [...currentGenSet].sort((a, b) => a - b).join(',');
+      if (prevGenKeyRef.current && prevGenKeyRef.current !== currentGenKey) {
+        // Generation structure changed — clear X from cache, keep Y
+        Object.keys(positionCacheRef.current).forEach(id => {
+          const cached = positionCacheRef.current[id];
+          if (cached) positionCacheRef.current[id] = { y: cached.y };
+        });
+      }
+      prevGenKeyRef.current = currentGenKey;
+
       // Static hierarchical layout: assigns x/y directly, no physics
       const layoutResult = applyHierarchicalLayout(
         visibleNodes,
@@ -1017,7 +1086,8 @@ const GraphRendererCanvas = forwardRef(
         positionCacheRef.current,
         false,
         visibleLinks,
-        spacingScale
+        spacingScale,
+        importedPositionsRef.current.size > 0 ? importedPositionsRef.current : null
       );
       genMapRef.current = layoutResult.genMap || [];
 
@@ -1035,6 +1105,8 @@ const GraphRendererCanvas = forwardRef(
         needsFitRef.current = true;
         // Clear stale position cache from previous search
         positionCacheRef.current = {};
+        importedPositionsRef.current.clear();
+        annotationsRef.current = [];
       }
 
       if (needsFitRef.current && visibleNodes.length > 0 && canvasRef.current && zoomRef.current) {
@@ -1063,12 +1135,13 @@ const GraphRendererCanvas = forwardRef(
       }
 
       // Draw immediately (no simulation ticks needed)
-      draw(visibleNodes);
+      drawRef.current?.(visibleNodes);
 
       return () => {
         if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
       };
-    }, [graph, hiddenIds, currentGeneration, height, containerRef, draw, spacingScale, data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [graph, hiddenIds, currentGeneration, height, spacingScale, data]);
 
     /* ------------------------------------------------------------------ */
     /* Canvas & Zoom                                                      */
@@ -1098,7 +1171,7 @@ const GraphRendererCanvas = forwardRef(
 
       const zoom = d3
         .zoom()
-        .scaleExtent([0.2, 10])
+        .scaleExtent([0.01, 20])
         .filter((ev) => {
           if (ev.ctrlKey) return false; // ctrl reserved for selection box
           if (ev.type !== 'mousedown') return true;
@@ -1113,7 +1186,8 @@ const GraphRendererCanvas = forwardRef(
               const hw = hh * (tex._aspect || 1);
               return Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh;
             }
-            const radius = n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20;
+            const ns = nodeScaleRef.current;
+            const radius = (n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20) * ns;
             return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
           });
           return !hitNode; // allow pan if not clicking on node
@@ -1185,6 +1259,8 @@ const GraphRendererCanvas = forwardRef(
 
       const hitTest = (mx, my) => {
         const nodes = nodesRef.current;
+        const ns = nodeScaleRef.current;
+        const hitR = 300 * ns * ns; // scale hit radius with node size
         for (let i = nodes.length - 1; i >= 0; i--) {
           const n = nodes[i];
           if (nodeDisplayRef.current && n.type === 'compound' && structTexRef.current.has(n.id)) {
@@ -1192,7 +1268,7 @@ const GraphRendererCanvas = forwardRef(
             const hh = STRUCT_WORLD_H / 2;
             const hw = hh * (tex._aspect || 1);
             if (Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh) return n;
-          } else if ((mx - n.x) ** 2 + (my - n.y) ** 2 < 300) return n;
+          } else if ((mx - n.x) ** 2 + (my - n.y) ** 2 < hitR) return n;
         }
         return null;
       };
@@ -1334,18 +1410,21 @@ const GraphRendererCanvas = forwardRef(
         }
 
         if (dragging) {
-          const MIN_DIST = 88;
-          for (const other of nodesRef.current) {
-            if (other === dragging) continue;
-            const dx = dragging.x - other.x;
-            const dy = dragging.y - other.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < MIN_DIST && dist > 0) {
-              const push = (MIN_DIST - dist) / 2 + 1;
-              const nx = dx / dist;
-              const ny = dy / dist;
-              dragging.x += nx * push;
-              dragging.y += ny * push;
+          // Only push away overlapping nodes when node avoidance is enabled
+          if (nodeAvoidanceRef.current) {
+            const MIN_DIST = 88;
+            for (const other of nodesRef.current) {
+              if (other === dragging) continue;
+              const dx = dragging.x - other.x;
+              const dy = dragging.y - other.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < MIN_DIST && dist > 0) {
+                const push = (MIN_DIST - dist) / 2 + 1;
+                const nx = dx / dist;
+                const ny = dy / dist;
+                dragging.x += nx * push;
+                dragging.y += ny * push;
+              }
             }
           }
           positionCacheRef.current[dragging.id] = { x: dragging.x, y: dragging.y };
@@ -1385,8 +1464,23 @@ const GraphRendererCanvas = forwardRef(
 
         const { mx, my } = worldCoords(evt);
 
-        // Brush mode: colour the nearest edge
+        // Brush mode: click on node → colour ALL connected edges; click near edge → colour that edge
         if (brushModeRef.current) {
+          const hitNode = hitTest(mx, my);
+          if (hitNode) {
+            // Color all edges connected to this node
+            const links = graphLinksRef.current;
+            links.forEach(l => {
+              const sId = l.source?.id || l.source;
+              const tId = l.target?.id || l.target;
+              if (sId === hitNode.id || tId === hitNode.id) {
+                edgeColorsRef.current.set(`${sId}--${tId}`, brushColorRef.current);
+              }
+            });
+            drawRef.current?.(nodesRef.current);
+            return;
+          }
+          // Fallback: colour the nearest edge
           const links = graphLinksRef.current;
           const nm = new Map(nodesRef.current.map(n => [n.id, n]));
           const HIT = 8; // world-unit threshold
@@ -1510,8 +1604,6 @@ const GraphRendererCanvas = forwardRef(
 
         // Escape text for SVG (prevent broken markup from special chars)
         const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        // Sanitize a string for use as an SVG group id (Illustrator layer name)
-        const safeId = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
         // Node size constants — scaled for print (labels need room at font-size 7)
         const SV_RC = 16, SV_ERX = 24, SV_ERY = 14;
@@ -1576,20 +1668,24 @@ const GraphRendererCanvas = forwardRef(
         const svgMutedHex  = '#6B7280';
 
         // Node style — always light-mode for Illustrator compatibility
-        const svgMaxDeg = degreeMap.size > 0 ? Math.max(1, ...degreeMap.values()) : 1;
         const SVG_MAX_BUCKET = 100;
         const getNodeStyle = (n) => {
-          if (colorMode === 'type') return getTypeColor(n.type, false);
-          if (colorMode === 'degree') {
-            const deg = degreeMap.get(n.id) || 0;
-            const t = Math.round((deg / svgMaxDeg) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET;
-            return getSchemeColor(colorScheme, t, false);
-          }
           const gen = n.generation || 0;
           const t = maxGeneration > 0
             ? Math.round((gen / maxGeneration) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET
             : 0;
-          return getSchemeColor(colorScheme, t, false);
+          const base = getSchemeColor('rainbow', t, false);
+          const override = nodeColorsRef.current.get(n.id);
+          return override ? { fill: override.fill || base.fill, stroke: override.stroke || base.stroke } : base;
+        };
+
+        // A custom label imported from an edited SVG wins over the computed default.
+        const getNodeLabel = (n) => {
+          const override = nodeLabelsRef.current.get(n.id);
+          if (override !== undefined) return override;
+          let label = n.label ?? n.id;
+          if (/reaction-/.test(n.type)) label = label.split('_')[0];
+          return label;
         };
 
         // Edge opacity — mirrors canvas baseAlpha formula
@@ -1709,7 +1805,7 @@ const GraphRendererCanvas = forwardRef(
               svgParts.push(`<image xlink:href="${dataUrl}" x="${(n.x - sW / 2).toFixed(2)}" y="${(n.y - sH / 2).toFixed(2)}" width="${sW.toFixed(2)}" height="${sH.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`);
 
               // Label below structure
-              let label = n.label ?? n.id;
+              const label = getNodeLabel(n);
               svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 4).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="9" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
               if (showNodeNames) {
                 const name = _compoundNameMap.get(n.id);
@@ -1725,8 +1821,7 @@ const GraphRendererCanvas = forwardRef(
               }
 
               // ID label inside node
-              let label = n.label ?? n.id;
-              if (/reaction-/.test(n.type)) label = label.split('_')[0];
+              const label = getNodeLabel(n);
               svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="600" fill="${svgTextHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
 
               // Compound name below node
@@ -1758,6 +1853,8 @@ const GraphRendererCanvas = forwardRef(
       resetLayout: () => {
         const centerY = (typeof height === "string" ? parseInt(height) : height) / 2;
         positionCacheRef.current = {};
+        importedPositionsRef.current.clear();
+        annotationsRef.current = [];
         const nodes = nodesRef.current;
         // Clear existing positions so the layout function assigns fresh DAG positions
         nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = undefined; n.fy = undefined; });
@@ -1769,6 +1866,8 @@ const GraphRendererCanvas = forwardRef(
       resetSpiral: () => {
         const centerY = (typeof height === "string" ? parseInt(height) : height) / 2;
         positionCacheRef.current = {};
+        importedPositionsRef.current.clear();
+        annotationsRef.current = [];
         const nodes = nodesRef.current;
         // Clear existing positions so the layout function assigns fresh DAG positions
         nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = undefined; n.fy = undefined; });
@@ -2010,13 +2109,44 @@ const GraphRendererCanvas = forwardRef(
         draw(nodes);
       },
       /**
-       * Apply positions extracted from an imported SVG.
-       * posMap: { label: [{x,y}, ...] } — arrays handle duplicate labels (reaction _in/_out).
-       * Unmatched nodes are placed near their already-placed neighbours.
+       * Apply positions/colors/labels extracted from an imported SVG.
+       *
+       * The current session graph is always the source of truth: only nodes
+       * that exist in this session are touched, and only the attributes a
+       * matching SVG entry actually provides are applied. Anything in the
+       * SVG that doesn't correspond to a session node is ignored.
+       *
+       * byId:    Map<safeNodeId, entry> — preferred match (survives Illustrator
+       *          edits since it doesn't depend on visible label text)
+       * byLabel: Map<label, entry[]>    — fallback match for older exports or
+       *          SVGs where ids were stripped; arrays handle duplicate labels
+       *          (e.g. reaction _in/_out pairs)
+       *
+       * A color/label is only recorded as a "custom" override if it differs
+       * from what this node's default would be — otherwise re-importing an
+       * untouched export would permanently lock colors to the light-mode
+       * export palette.
        */
-      importLayout: (posMap) => {
+      importLayout: (byId, byLabel) => {
         const nodes = nodesRef.current;
         if (!nodes.length) return;
+
+        // Persist ALL imported positions so nodes that become visible later
+        // (e.g. advancing generations) use the imported positions instead of
+        // computing fresh ones. Keyed by safeId(nodeId).
+        if (byId) {
+          byId.forEach((entry, sid) => {
+            if (entry.pos) importedPositionsRef.current.set(sid, { x: entry.pos.x, y: entry.pos.y });
+          });
+        }
+        if (byLabel) {
+          byLabel.forEach((entries) => {
+            entries.forEach(entry => {
+              // byLabel entries don't have node ids, but their positions are
+              // saved in positionCacheRef when matched in passes 1-3 below.
+            });
+          });
+        }
 
         const getLabel = (n) => {
           let label = n.label ?? n.id;
@@ -2024,26 +2154,53 @@ const GraphRendererCanvas = forwardRef(
           return label;
         };
 
+        const applyEntry = (n, entry) => {
+          if (!entry) return;
+          if (entry.pos) {
+            n.x = entry.pos.x; n.y = entry.pos.y;
+            positionCacheRef.current[n.id] = { x: entry.pos.x, y: entry.pos.y };
+          }
+          // Always apply imported colors — respect whatever the user set in Illustrator
+          if (entry.fill || entry.stroke) {
+            nodeColorsRef.current.set(n.id, {
+              fill: entry.fill || undefined,
+              stroke: entry.stroke || undefined,
+            });
+          }
+          // Apply label (custom text added in Illustrator)
+          if (entry.label) {
+            const defaultLabel = getLabel(n);
+            if (entry.label !== defaultLabel) nodeLabelsRef.current.set(n.id, entry.label);
+          }
+        };
+
         // Mutable queues so duplicate labels (reaction pairs) each get their own slot
-        const queue = {};
-        Object.entries(posMap).forEach(([lbl, positions]) => {
-          queue[lbl] = [...positions];
-        });
+        const labelQueue = {};
+        if (byLabel) byLabel.forEach((entries, lbl) => { labelQueue[lbl] = [...entries]; });
 
         const placed = new Set();
 
-        // Pass 1 – matched nodes
+        // Pass 1 – match by group id (robust to text edits made in Illustrator)
         nodes.forEach(n => {
-          const lbl = getLabel(n);
-          if (queue[lbl] && queue[lbl].length > 0) {
-            const pos = queue[lbl].shift();
-            n.x = pos.x; n.y = pos.y;
-            positionCacheRef.current[n.id] = { x: pos.x, y: pos.y };
+          const entry = byId?.get(safeId(n.id));
+          if (entry) {
+            applyEntry(n, entry);
             placed.add(n.id);
           }
         });
 
-        // Pass 2 – place unmatched nodes near connected neighbours (iterative until stable)
+        // Pass 2 – fall back to label matching for anything not matched by id
+        nodes.forEach(n => {
+          if (placed.has(n.id)) return;
+          const lbl = getLabel(n);
+          if (labelQueue[lbl] && labelQueue[lbl].length > 0) {
+            const entry = labelQueue[lbl].shift();
+            applyEntry(n, entry);
+            placed.add(n.id);
+          }
+        });
+
+        // Pass 3 – place still-unmatched nodes near connected neighbours (iterative until stable)
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
         const unmatched = nodes.filter(n => !placed.has(n.id));
         let progress = true;
@@ -2077,14 +2234,65 @@ const GraphRendererCanvas = forwardRef(
         }
 
         drawRef.current?.(nodesRef.current);
+
+        // Re-fit the viewport — imported positions can easily land outside
+        // the current pan/zoom, which otherwise looks like "nothing happened".
+        const canvas = canvasRef.current;
+        if (canvas && zoomRef.current && nodes.length) {
+          const w = canvas.clientWidth || 800;
+          const h = canvas.clientHeight || 600;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          nodes.forEach((n) => {
+            minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+            maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
+          });
+          const pad = 60;
+          minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+          const graphH = maxY - minY || 1;
+          const scale = Math.min(h / graphH, 1.5);
+          const tx = w * 0.05 - minX * scale;
+          const ty = (h - graphH * scale) / 2 - minY * scale;
+          const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+          d3.select(canvas).transition().duration(400).call(zoomRef.current.transform, t);
+        }
       },
       clearEdgeColors: () => {
         edgeColorsRef.current.clear();
         drawRef.current?.(nodesRef.current);
       },
+      importAnnotations: (annotations) => {
+        annotationsRef.current = annotations;
+        drawRef.current?.(nodesRef.current);
+      },
       importEdgeColors: (colorMap) => {
+        // Build a lookup from the graph's actual edges for fuzzy matching
+        // (SVG labels may lack _in/_out suffixes on reactions)
+        const graphEdgeKeys = new Set();
+        (graph.links || []).forEach(l => {
+          const s = l.source?.id || l.source;
+          const t = l.target?.id || l.target;
+          graphEdgeKeys.add(`${s}--${t}`);
+        });
+
         Object.entries(colorMap).forEach(([key, color]) => {
-          edgeColorsRef.current.set(key, color);
+          // Direct match
+          if (graphEdgeKeys.has(key)) {
+            edgeColorsRef.current.set(key, color);
+            return;
+          }
+          // Try fuzzy: SVG label "R11098" matches graph ids "R11098_in" or "R11098_out"
+          const [srcLabel, trgLabel] = key.split('--');
+          if (!srcLabel || !trgLabel) return;
+          for (const gKey of graphEdgeKeys) {
+            const [gs, gt] = gKey.split('--');
+            const sMatch = gs === srcLabel || gs.startsWith(srcLabel + '_');
+            const tMatch = gt === trgLabel || gt.startsWith(trgLabel + '_');
+            const sMatchR = gs === trgLabel || gs.startsWith(trgLabel + '_');
+            const tMatchR = gt === srcLabel || gt.startsWith(srcLabel + '_');
+            if ((sMatch && tMatch) || (sMatchR && tMatchR)) {
+              edgeColorsRef.current.set(gKey, color);
+            }
+          }
         });
         drawRef.current?.(nodesRef.current);
       },

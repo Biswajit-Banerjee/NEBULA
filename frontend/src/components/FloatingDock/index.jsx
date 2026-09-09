@@ -200,15 +200,19 @@ const FloatingDock = ({
     : 'Search paths…';
 
   return (
-    <div ref={dockRef} className="fixed top-0 inset-x-0 z-50">
+    <div className="fixed top-0 inset-x-0 z-50 flex justify-center px-4 pt-3 pointer-events-none">
+      <div
+        ref={dockRef}
+        className={`pointer-events-auto rounded-2xl bg-surface-overlay/90 backdrop-blur-xl shadow-xl transition-[max-width] duration-150 ${(expanded || forceExpanded) ? 'w-full max-w-3xl' : 'w-full max-w-xl'}`}
+      >
 
       {/* ── Top navigation bar ── */}
       <div
         data-tour="dock-bar"
-        className="flex items-center justify-center h-14 px-4 bg-surface-overlay/95 backdrop-blur-xl border-b border-brd/40 shadow-sm"
+        className="flex items-center h-12 px-3"
       >
         {/* Centered content group */}
-        <div className="flex items-center gap-3 w-full max-w-3xl">
+        <div className="flex items-center gap-3 w-full">
 
           {/* Logo + brand name */}
           <button
@@ -281,8 +285,8 @@ const FloatingDock = ({
 
       {/* ── Expanded search panel ── */}
       {(expanded || forceExpanded) && (
-        <div data-tour="dock-expanded" className="bg-surface-overlay/95 backdrop-blur-xl border-b border-brd/40 shadow-lg">
-          <div className="px-4 py-3 space-y-2 max-w-3xl mx-auto">
+        <div data-tour="dock-expanded" className="border-t border-brd/40">
+          <div className="px-4 py-3 space-y-2">
 
             {searchPairs.map((pair, index) => {
               const pairMode = pair.mode || 'compound';
@@ -502,6 +506,7 @@ const FloatingDock = ({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

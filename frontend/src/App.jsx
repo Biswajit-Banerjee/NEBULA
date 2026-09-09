@@ -522,7 +522,7 @@ function App() {
 
       {/* ── Full-bleed results canvas ── */}
       {hasResults && (
-        <div className="absolute inset-x-0 bottom-0 top-14 z-0 isolate">
+        <div className="absolute inset-x-0 bottom-0 top-0 z-0 isolate">
           {isSplit ? (
             <div className="flex h-full w-full">
               <div className="flex-1 min-w-0 h-full border-r border-brd/60">
@@ -577,7 +577,7 @@ function App() {
 
       {/* ── Error toast ── */}
       {error && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-full animate-in">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-full animate-in">
           <div className="bg-surface-overlay/85 backdrop-blur-xl border border-err/30 rounded-2xl p-5 shadow-xl flex items-start gap-4">
             <div className="flex-shrink-0 w-10 h-10 rounded-full bg-err-subtle flex items-center justify-center">
               <Zap className="w-5 h-5 text-err" />
@@ -593,7 +593,7 @@ function App() {
 
       {/* ── Loading indicator ── */}
       {loading && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-3 bg-surface-overlay/80 backdrop-blur-xl border border-brand/20 rounded-2xl px-5 py-3 shadow-lg">
             <div className="w-5 h-5 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
             <span className="text-sm text-content-secondary font-medium">Tracing paths…</span>

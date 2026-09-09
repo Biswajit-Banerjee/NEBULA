@@ -35,6 +35,7 @@ const HelpOverlay = ({ onClose }) => (
           <li>Lock – freeze/unfreeze simulation</li>
           <li>Fullscreen (F) – immersive mode</li>
           <li>Download – export view as SVG</li>
+          <li>Import SVG layout – reposition session nodes from a saved (or Illustrator-edited) SVG; positions, custom node/edge colors and edited labels are restored, matched by node id</li>
         </ul>
 
         <h3 className="mt-6 mb-2 font-medium text-content">Keyboard shortcuts</h3>

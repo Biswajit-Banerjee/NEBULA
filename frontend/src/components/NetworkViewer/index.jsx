@@ -7,16 +7,11 @@ import styled from 'styled-components';
 import * as d3 from 'd3';
 import { ThemeContext } from '../ThemeProvider/ThemeProvider';
 import GenerationControls from '../NetworkViewer2D/GenerationControls';
+import { RAINBOW_PALETTE } from '../NetworkViewer2D/utils/colorSchemes';
 
 // =============================================================================
 // Constants
 // =============================================================================
-
-const GENERATION_COLORS = [
-  '#4a9fff', '#5654ff', '#7e51ff', '#a44eff', '#d241ff',
-  '#f838e6', '#fc3cbf', '#fe5698', '#ff7771', '#ffb14a',
-  '#ffe83c', '#c5f241', '#7ff059', '#39e978', '#00caa8'
-];
 
 // =============================================================================
 // Styled Components
@@ -602,6 +597,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   const [playSpeed, setPlaySpeed] = useState(1500);
   const fgRef = useRef();
   const containerRef = useRef();
+  const nodePositionsRef = useRef(new Map());
   // Checked once on mount — avoids ever attempting to construct a THREE.WebGLRenderer
   // (and the noisy uncaught errors that come with it) in sandboxed/GPU-disabled browsers.
   const [webglSupported] = useState(() => isWebGLAvailable());
@@ -901,16 +897,29 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     };
   }, [graphData, currentGeneration, minVisibleGeneration, hideEC]);
 
+  // Preserve simulation coordinates when the visible generation window causes
+  // ForceGraph to rebind its node data.
+  useEffect(() => {
+    filteredData.nodes.forEach((node) => {
+      const saved = nodePositionsRef.current.get(node.id);
+      if (saved) {
+        node.x = saved.x;
+        node.y = saved.y;
+        node.z = saved.z;
+      }
+    });
+  }, [filteredData]);
+
   // =============================================================================
   // Graph Rendering Callbacks
   // =============================================================================
 
   // Generate node colors based on generation (up to 100 generations)
   const getNodeColor = useCallback((node) => {
-    if (node.type === 'ec') return '#92d3ff';
-    
-    const generationIndex = node.generation % GENERATION_COLORS.length;
-    const base = GENERATION_COLORS[generationIndex];
+    const palette = RAINBOW_PALETTE[dark ? 'dark' : 'light'];
+    const generation = Math.max(0, node.generation || 0);
+    const generationIndex = generation % palette.length;
+    const base = palette[generationIndex];
 
     if (!hoverNode) return base;
     if (node.id === hoverNode.id) return base;
@@ -1002,6 +1011,12 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   // Custom node label rendering
   const nodeThreeObjectExtend = useCallback(() => true, []);
 
+  const nodePositionUpdate = useCallback((object, coordinates) => {
+    if (!coordinates) return false;
+    object.position.set(coordinates.x || 0, coordinates.y || 0, coordinates.z || 0);
+    return true;
+  }, []);
+
   // Custom node label rendering
   const nodeLabel = useCallback((node) => {
     if (hideLabels) return null;
@@ -1032,10 +1047,11 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     // Get color based on node generation
     let arrowColor;
     
-    // For solid links, generate a gradient color based on source node generation
+    // Use the same solid rainbow generation palette as the node materials.
     if (link.sourceGeneration !== undefined) {
-      const sourceIndex = link.sourceGeneration % GENERATION_COLORS.length;
-      arrowColor = GENERATION_COLORS[sourceIndex];
+      const palette = RAINBOW_PALETTE[dark ? 'dark' : 'light'];
+      const sourceIndex = link.sourceGeneration % palette.length;
+      arrowColor = palette[sourceIndex];
     } else {
       arrowColor = link.color || '#ffffff';
     }
@@ -1050,7 +1066,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     arrow.rotation.x = Math.PI / 2;
     
     return arrow;
-  }, []);
+  }, [dark]);
 
   // Position the arrow at the middle of the link
   const linkPositionAttribute = useCallback(() => 'center', []);
@@ -1084,8 +1100,9 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
     
     // For solid links, generate a gradient color based on source and target generations
     if (link.sourceGeneration !== undefined && link.targetGeneration !== undefined) {
-      const sourceIndex = link.sourceGeneration % GENERATION_COLORS.length;
-      const c = GENERATION_COLORS[sourceIndex]; // Using source node color for simplicity
+      const palette = RAINBOW_PALETTE[dark ? 'dark' : 'light'];
+      const sourceIndex = link.sourceGeneration % palette.length;
+      const c = palette[sourceIndex];
       if (!hoverNode) return c;
       const s = typeof link.source === 'object' ? link.source.id : link.source;
       const t = typeof link.target === 'object' ? link.target.id : link.target;
@@ -1699,6 +1716,11 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
   // New: keep node fixed after dragging, mimicking 2D viewer behaviour
   const handleNodeDragEnd = (node) => {
     if (!node) return;
+    nodePositionsRef.current.set(node.id, {
+      x: node.x || 0,
+      y: node.y || 0,
+      z: node.z || 0,
+    });
     node.fx = node.x;
     node.fy = node.y;
     node.fz = node.z;
@@ -2229,6 +2251,7 @@ const NetworkViewer3D = forwardRef(({ results, height }, ref) => {
           graphData={filteredData}
           nodeThreeObject={nodeThreeObject}
           nodeThreeObjectExtend={nodeThreeObjectExtend}
+          nodePositionUpdate={nodePositionUpdate}
           nodeColor={getNodeColor}
           nodeLabel={nodeLabel}
           nodeRelSize={2}

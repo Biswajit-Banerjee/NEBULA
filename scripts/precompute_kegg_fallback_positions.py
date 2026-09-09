@@ -16,8 +16,15 @@ removed — comparing raw ID strings isn't a meaningful similarity signal):
   Tier 2 - similar generation: centroid of all real-positioned compounds that
            share the closest `modified_generation` value (generations.csv —
            this is a static, global property, not per-query).
-  Tier 3 - fallback: centroid of all real positions (map center). Should
-           rarely trigger.
+  Tier 3 - fallback: NO connectivity or generation signal at all, so there is
+           nothing to anchor these to — a single shared point (e.g. the map
+           center) would just pile every one of them into one dense blob.
+           Instead, spread them across several genuinely open/sparse regions
+           of the map (found by scanning a density grid over the real KEGG
+           positions), assigning each tier-3 compound to one region
+           deterministically by hashing its id. Same anchor-based bucketing +
+           phyllotaxis spiral on the frontend then spreads each region's
+           members nicely — this only changes WHERE the anchor points are.
 
 Reads:
   backend/data/kegg_pos_svg.json - real per-compound positions {cid: [x, y]}
@@ -31,6 +38,8 @@ Writes:
 import json
 import re
 import csv
+import hashlib
+import bisect
 from pathlib import Path
 from collections import defaultdict
 
@@ -162,6 +171,65 @@ def weighted_centroid_bfs(cid, adj, real_positions, max_depth=4):
     return None
 
 
+def find_sparse_regions(real_positions, num_regions=10, grid_cells=40, min_region_sep_frac=0.12):
+    """Scan a density grid over the real KEGG positions' bounding box and return
+    `num_regions` well-separated cell centers from the sparsest areas — i.e.
+    genuinely open space on the map, not the single geometric centroid (which
+    tends to sit in/near the densest part of the diagram).
+
+    Greedy selection: sort all cells by ascending real-position density, then
+    walk down that list adding a cell only if it's at least
+    `min_region_sep_frac` * bounding-box-diagonal away from every region
+    already chosen, so the regions read as visually distinct areas instead of
+    several adjacent, effectively-identical cells.
+    """
+    xs = [p[0] for p in real_positions.values()]
+    ys = [p[1] for p in real_positions.values()]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    w, h = max_x - min_x, max_y - min_y
+    diag = (w ** 2 + h ** 2) ** 0.5
+    min_sep = diag * min_region_sep_frac
+
+    cell_w, cell_h = w / grid_cells, h / grid_cells
+    density = defaultdict(int)
+    for x, y in real_positions.values():
+        gx = min(grid_cells - 1, int((x - min_x) / cell_w)) if cell_w else 0
+        gy = min(grid_cells - 1, int((y - min_y) / cell_h)) if cell_h else 0
+        density[(gx, gy)] += 1
+
+    # Smooth with a 3x3 sum so we pick areas that are sparse in their whole
+    # neighborhood, not just a single lucky empty cell surrounded by density.
+    def smoothed(gx, gy):
+        return sum(
+            density.get((gx + dx, gy + dy), 0)
+            for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+        )
+
+    # Restrict candidates to the interior (10%-90% of the bounding box) so we
+    # don't pick blank margins/corners outside the actual pathway artwork.
+    margin_lo, margin_hi = int(grid_cells * 0.1), int(grid_cells * 0.9)
+    candidates = [
+        (gx, gy, smoothed(gx, gy))
+        for gx in range(margin_lo, margin_hi)
+        for gy in range(margin_lo, margin_hi)
+    ]
+    candidates.sort(key=lambda c: c[2])
+
+    def cell_center(gx, gy):
+        return (min_x + (gx + 0.5) * cell_w, min_y + (gy + 0.5) * cell_h)
+
+    regions = []
+    for gx, gy, _dens in candidates:
+        cx, cy = cell_center(gx, gy)
+        if all(((cx - rx) ** 2 + (cy - ry) ** 2) ** 0.5 >= min_sep for rx, ry in regions):
+            regions.append((cx, cy))
+            if len(regions) >= num_regions:
+                break
+
+    return regions
+
+
 def main():
     real_positions = load_real_positions()
     adj = build_adjacency_graph()
@@ -175,27 +243,51 @@ def main():
 
     print(f"Universe size: {len(universe)}, real positions: {len(real_positions)}, unplaced: {len(unplaced)}")
 
-    # Tier 3 fallback: centroid of all real positions (map center)
-    if real_positions:
-        cx = sum(p[0] for p in real_positions.values()) / len(real_positions)
-        cy = sum(p[1] for p in real_positions.values()) / len(real_positions)
-    else:
-        cx, cy = 0.0, 0.0
+    # Tier 3 fallback: compounds with NO connectivity or generation signal at
+    # all. Spread these across several sparse/open regions of the map instead
+    # of one shared point, so they don't pile into a single dense blob.
+    sparse_regions = find_sparse_regions(real_positions)
+    if not sparse_regions:
+        cx = sum(p[0] for p in real_positions.values()) / len(real_positions) if real_positions else 0.0
+        cy = sum(p[1] for p in real_positions.values()) / len(real_positions) if real_positions else 0.0
+        sparse_regions = [(cx, cy)]
+    print(f"Tier 3 sparse regions found: {len(sparse_regions)} -> {[(round(x), round(y)) for x, y in sparse_regions]}")
 
-    # Tier 2 setup: group positioned compounds by generation
-    gen_to_positioned = defaultdict(list)
-    for cid, pos in real_positions.items():
-        g = gen_map.get(cid)
-        if g is not None:
-            gen_to_positioned[g].append(pos)
-    sorted_gens = sorted(gen_to_positioned.keys())
+    # Tier 2 setup: individual (generation, position) entries for every
+    # real-positioned compound that has a generation value — sorted by
+    # generation so we can binary-search the nearest ones. Deliberately NOT
+    # grouped/averaged: averaging every same-generation compound into one
+    # shared centroid collapsed 2231 tier-2 compounds onto only 87 distinct
+    # points with far tighter spread than the real map (std ~630 vs ~1370),
+    # which is what actually produced the "everything piles into the middle"
+    # blob — centroids of scattered points regress toward the overall mean.
+    # Anchoring to one of the ACTUAL nearby real compound positions instead
+    # keeps the natural spread of the real map intact.
+    gen_entries = sorted(
+        ((gen_map[cid], pos) for cid, pos in real_positions.items() if cid in gen_map),
+        key=lambda e: e[0],
+    )
+    sorted_gens = [e[0] for e in gen_entries]
 
-    def nearest_gen_centroid(target_gen):
-        if target_gen is None or not sorted_gens:
+    def nearest_gen_position(cid, target_gen):
+        if target_gen is None or not gen_entries:
             return None
-        best_gen = min(sorted_gens, key=lambda g: abs(g - target_gen))
-        pts = gen_to_positioned[best_gen]
-        return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+        idx = bisect.bisect_left(sorted_gens, target_gen)
+        # Look at a small window of candidates around the insertion point —
+        # closest by generation distance — instead of collapsing every
+        # same-generation compound onto one averaged point.
+        WINDOW = 5
+        lo = max(0, idx - WINDOW)
+        hi = min(len(gen_entries), idx + WINDOW)
+        candidates = sorted(gen_entries[lo:hi], key=lambda e: abs(e[0] - target_gen))[:WINDOW]
+        if not candidates:
+            return None
+        # Deterministic hash-based pick among the closest few, so compounds
+        # sharing the exact same target generation still spread across
+        # multiple nearby real positions instead of all picking the literal
+        # single nearest one.
+        pick = int(hashlib.md5(cid.encode("utf-8")).hexdigest(), 16) % len(candidates)
+        return candidates[pick][1]
 
     result = {}
     tier_counts = {1: 0, 2: 0, 3: 0}
@@ -204,10 +296,14 @@ def main():
         pos = weighted_centroid_bfs(cid, adj, real_positions)
         tier = 1
         if pos is None:
-            pos = nearest_gen_centroid(gen_map.get(cid))
+            pos = nearest_gen_position(cid, gen_map.get(cid))
             tier = 2
         if pos is None:
-            pos = (cx, cy)
+            # Deterministic hash-based assignment across the sparse regions —
+            # same compound always lands in the same region across re-runs,
+            # and different compounds spread evenly across all regions.
+            region_idx = int(hashlib.md5(cid.encode("utf-8")).hexdigest(), 16) % len(sparse_regions)
+            pos = sparse_regions[region_idx]
             tier = 3
         tier_counts[tier] += 1
         result[cid] = {"x": pos[0], "y": pos[1], "tier": tier}

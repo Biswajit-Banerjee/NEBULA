@@ -6,51 +6,259 @@ import useGraphData from "./hooks/useGraphData";
 import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
 import HelpOverlay from "./HelpOverlay";
+import { isReservedGroupId, normalizeColor } from "./utils/svgLayout";
 
-// Parse node positions and edge colors out of an exported SVG.
-// Returns { posMap: { label: [{x,y}] }, edgeColors: { edgeKey: color } }
+const SHAPE_TAGS = new Set(['circle', 'ellipse', 'rect', 'image']);
+
+// Parse node positions, colors and labels plus edge colors out of an exported
+// (or externally re-touched, e.g. Illustrator) SVG.
+//
+// Elements are visited with querySelectorAll('*') so shapes/text nested inside
+// the exporter's <g id="Nodes"><g id="Generation_N"><g id="nodeId">...groups
+// are found regardless of nesting depth.
+//
+// Returns:
+//   byId:    Map<safeNodeId, { pos, fill, stroke, label }>  — preferred match
+//   byLabel: Map<label, entry[]>                            — fallback match
+//   edgeColors: { edgeKey: color }                          — only colors that
+//                                                              differ from the
+//                                                              type-based default
 const parseSVGLayout = (svgText) => {
   const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
   const root = doc.querySelector('svg');
-  if (!root) return { posMap: {}, edgeColors: {} };
-  const posMap = {};
+  const byId = new Map();
+  const byLabel = new Map();
   const edgeColors = {};
-  const push = (label, pos) => {
-    if (!label) return;
-    if (!posMap[label]) posMap[label] = [];
-    posMap[label].push(pos);
-  };
-  let pendingPos = null;
-  for (const el of root.children) {
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'circle') {
-      pendingPos = { x: parseFloat(el.getAttribute('cx')), y: parseFloat(el.getAttribute('cy')) };
-    } else if (tag === 'ellipse') {
-      pendingPos = { x: parseFloat(el.getAttribute('cx')), y: parseFloat(el.getAttribute('cy')) };
-    } else if (tag === 'rect') {
-      const x = parseFloat(el.getAttribute('x'));
-      const y = parseFloat(el.getAttribute('y'));
-      const w = parseFloat(el.getAttribute('width')) || 0;
-      const h = parseFloat(el.getAttribute('height')) || 0;
-      pendingPos = { x: x + w / 2, y: y + h / 2 };
-    } else if (tag === 'image') {
-      const x = parseFloat(el.getAttribute('x'));
-      const y = parseFloat(el.getAttribute('y'));
-      const w = parseFloat(el.getAttribute('width')) || 0;
-      const h = parseFloat(el.getAttribute('height')) || 0;
-      pendingPos = { x: x + w / 2, y: y + h / 2 };
-    } else if (tag === 'path') {
-      pendingPos = null; // edge — reset
-      const edgeKey = el.getAttribute('data-edge-key');
-      const customColor = el.getAttribute('data-custom-color');
-      if (edgeKey && customColor) edgeColors[edgeKey] = customColor;
-    } else if (tag === 'text' && pendingPos) {
-      const label = el.textContent.trim();
-      if (label) push(label, pendingPos);
-      pendingPos = null;
+  if (!root) return { byId, byLabel, edgeColors };
+
+  // ── Resolve CSS <style> classes to inline properties ──
+  // Illustrator moves all fills/strokes into CSS classes (.st0, .st1, ...)
+  const classStyles = {};
+  const styleEl = root.querySelector('style');
+  if (styleEl) {
+    const css = styleEl.textContent || '';
+    // Parse .className { prop: value; ... } blocks
+    const ruleRe = /\.([\w-]+)\s*\{([^}]*)\}/g;
+    let ruleMatch;
+    while ((ruleMatch = ruleRe.exec(css))) {
+      const cls = ruleMatch[1];
+      const body = ruleMatch[2];
+      const props = {};
+      const propRe = /([\w-]+)\s*:\s*([^;]+)/g;
+      let propMatch;
+      while ((propMatch = propRe.exec(body))) {
+        props[propMatch[1].trim()] = propMatch[2].trim();
+      }
+      classStyles[cls] = props;
     }
   }
-  return { posMap, edgeColors };
+
+  // Read a color from an element: check inline attr/style first, then CSS classes
+  const styleProp = (el, prop) => {
+    const style = el.getAttribute('style');
+    if (!style) return null;
+    const m = style.match(new RegExp(`${prop}\\s*:\\s*([^;]+)`));
+    return m ? m[1].trim() : null;
+  };
+  const readColor = (el, prop) => {
+    // 1. Direct attribute
+    const attr = el.getAttribute(prop);
+    if (attr && attr !== 'none') return attr;
+    // 2. Inline style
+    const inl = styleProp(el, prop);
+    if (inl && inl !== 'none') return inl;
+    // 3. CSS class
+    const classes = (el.getAttribute('class') || '').split(/\s+/);
+    for (const cls of classes) {
+      if (classStyles[cls] && classStyles[cls][prop]) return classStyles[cls][prop];
+    }
+    return null;
+  };
+
+  // Walk up from a shape to find the nearest ancestor group id that isn't one
+  // of the exporter's structural layers — that's the node's own group id.
+  const ownerNodeId = (el) => {
+    let p = el.parentElement;
+    while (p && p !== root) {
+      if (p.id && !isReservedGroupId(p.id)) return p.id;
+      p = p.parentElement;
+    }
+    return null;
+  };
+
+  let pendingEntry = null;
+  let labelConsumed = false;
+  let lineEntries = null; // Collected <line> elements for edge matching by geometry
+  const annotations = []; // Extra text/lines added by the user in Illustrator
+
+  for (const el of root.querySelectorAll('*')) {
+    const tag = el.tagName.toLowerCase();
+    if (SHAPE_TAGS.has(tag)) {
+      let pos;
+      if (tag === 'circle' || tag === 'ellipse') {
+        pos = { x: parseFloat(el.getAttribute('cx')), y: parseFloat(el.getAttribute('cy')) };
+      } else {
+        const x = parseFloat(el.getAttribute('x')) || 0;
+        const y = parseFloat(el.getAttribute('y')) || 0;
+        const w = parseFloat(el.getAttribute('width')) || 0;
+        const h = parseFloat(el.getAttribute('height')) || 0;
+        pos = { x: x + w / 2, y: y + h / 2 };
+      }
+      pendingEntry = {
+        pos,
+        fill: readColor(el, 'fill'),
+        stroke: readColor(el, 'stroke'),
+        label: null,
+      };
+      labelConsumed = false;
+      const idSafe = ownerNodeId(el);
+      if (idSafe) byId.set(idSafe, pendingEntry);
+    } else if (tag === 'path' || tag === 'line') {
+      // Don't reset pendingEntry for <line> elements that are edges —
+      // Illustrator interleaves lines and shapes, so only reset for <path>
+      if (tag === 'path') pendingEntry = null;
+      const edgeKey = el.getAttribute('data-edge-key');
+      if (edgeKey) {
+        const stroke = readColor(el, 'stroke');
+        if (stroke) {
+          const dash = el.getAttribute('stroke-dasharray') || styleProp(el, 'stroke-dasharray') || '';
+          const cls = el.getAttribute('class') || '';
+          // Check for dash from CSS class too
+          let hasDash = dash.trim().startsWith('2');
+          if (!hasDash) {
+            for (const c of cls.split(/\s+/)) {
+              const sd = classStyles[c]?.['stroke-dasharray'] || '';
+              if (sd.trim().startsWith('2')) { hasDash = true; break; }
+            }
+          }
+          const expectedDefault = normalizeColor(hasDash ? '#8B5CF6' : '#9CA3AF');
+          if (normalizeColor(stroke) !== expectedDefault) edgeColors[edgeKey] = stroke;
+        }
+      }
+      // Collect <line> geometry + stroke for later edge matching by coordinates
+      if (tag === 'line') {
+        const x1 = parseFloat(el.getAttribute('x1'));
+        const y1 = parseFloat(el.getAttribute('y1'));
+        const x2 = parseFloat(el.getAttribute('x2'));
+        const y2 = parseFloat(el.getAttribute('y2'));
+        const stroke = readColor(el, 'stroke');
+        if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2) && stroke) {
+          if (!lineEntries) lineEntries = [];
+          lineEntries.push({ x1, y1, x2, y2, stroke });
+        }
+      }
+    } else if (tag === 'text') {
+      // Illustrator wraps text in <tspan> — extract full textContent
+      const label = el.textContent.trim();
+      if (!label) continue;
+
+      // Detect annotation text: larger font size or different class than node labels.
+      // Node labels use small font (e.g. st16 = 9px). Annotations use larger font (st14/st15 = 18px).
+      const classes = (el.getAttribute('class') || '').split(/\s+/);
+      let fontSize = null;
+      let fontWeight = null;
+      let fillColor = null;
+      for (const cls of classes) {
+        const cs = classStyles[cls];
+        if (cs) {
+          if (cs['font-size']) fontSize = parseFloat(cs['font-size']);
+          if (cs['font-weight']) fontWeight = cs['font-weight'];
+          if (cs['fill']) fillColor = cs['fill'];
+        }
+      }
+
+      // Extract position from transform="translate(x y)"
+      const transformAttr = el.getAttribute('transform') || '';
+      const tMatch = transformAttr.match(/translate\(([\d.e+-]+)[,\s]+([\d.e+-]+)\)/);
+      const tx = tMatch ? parseFloat(tMatch[1]) : null;
+      const ty = tMatch ? parseFloat(tMatch[2]) : null;
+
+      // If this is a node label (small font, right after a shape), associate with pendingEntry
+      const isNodeLabel = fontSize && fontSize <= 12;
+      if (isNodeLabel && pendingEntry && !labelConsumed) {
+        pendingEntry.label = label;
+        labelConsumed = true;
+        if (!byLabel.has(label)) byLabel.set(label, []);
+        byLabel.get(label).push(pendingEntry);
+      } else if (!isNodeLabel && tx !== null && ty !== null) {
+        // This is an annotation text — collect it
+        // Handle multi-line <tspan> content
+        const lines = [];
+        const tspans = el.querySelectorAll('tspan');
+        if (tspans.length > 0) {
+          tspans.forEach(ts => {
+            const dy = parseFloat(ts.getAttribute('y')) || 0;
+            lines.push({ text: ts.textContent.trim(), dy });
+          });
+        } else {
+          lines.push({ text: label, dy: 0 });
+        }
+        annotations.push({
+          type: 'text',
+          x: tx, y: ty,
+          lines,
+          fontSize: fontSize || 14,
+          bold: fontWeight === '700' || fontWeight === 'bold',
+          fill: fillColor || '#000',
+        });
+      } else if (pendingEntry && !labelConsumed) {
+        // Fallback: associate with pending entry if no font size info
+        pendingEntry.label = label;
+        labelConsumed = true;
+        if (!byLabel.has(label)) byLabel.set(label, []);
+        byLabel.get(label).push(pendingEntry);
+      }
+    }
+  }
+  // ── Match <line> elements to node pairs by endpoint proximity ──
+  // This handles Illustrator SVGs where data-edge-key is stripped.
+  if (lineEntries && lineEntries.length > 0) {
+    // Build a spatial index of node positions from byLabel entries
+    const nodePositions = [];
+    byLabel.forEach((entries, label) => {
+      entries.forEach(e => {
+        if (e.pos) nodePositions.push({ label, x: e.pos.x, y: e.pos.y });
+      });
+    });
+    byId.forEach((e, id) => {
+      if (e.pos && !nodePositions.find(p => p.x === e.pos.x && p.y === e.pos.y)) {
+        nodePositions.push({ label: id, x: e.pos.x, y: e.pos.y });
+      }
+    });
+
+    const SNAP = 30; // max distance to snap a line endpoint to a node center
+    const findNearest = (px, py) => {
+      let best = null, bestD = SNAP * SNAP;
+      for (const n of nodePositions) {
+        const d = (n.x - px) ** 2 + (n.y - py) ** 2;
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      return best;
+    };
+
+    for (const { x1, y1, x2, y2, stroke } of lineEntries) {
+      const src = findNearest(x1, y1);
+      const trg = findNearest(x2, y2);
+      if (src && trg && src.label !== trg.label) {
+        // Build edge key using `--` separator to match renderer format
+        const key1 = `${src.label}--${trg.label}`;
+        const key2 = `${trg.label}--${src.label}`;
+        if (!edgeColors[key1] && !edgeColors[key2]) {
+          edgeColors[key1] = stroke;
+        }
+      } else if (!src || !trg) {
+        // Line not connected to any node — it's an annotation line (legend, etc.)
+        annotations.push({
+          type: 'line',
+          x1, y1, x2, y2,
+          stroke,
+          strokeWidth: 4,
+        });
+      }
+    }
+  }
+
+  return { byId, byLabel, edgeColors, annotations };
 };
 
 const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
@@ -66,8 +274,12 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   const [showOverlay, setShowOverlay] = useState(false);
 
   // User customization
-  const [edgeOpacity, setEdgeOpacity] = useState(0.5);
+  const [edgeOpacity, setEdgeOpacity] = useState(0.7);
+  const [edgeThickness, setEdgeThickness] = useState(1.0);
   const [spacingScale, setSpacingScale] = useState(1.0);
+  const [nodeScale, setNodeScale] = useState(1.0);
+  const [fontScale, setFontScale] = useState(1.0);
+  const [nodeAvoidance, setNodeAvoidance] = useState(false);
 
   // Label settings
   const [showNodeNames, setShowNodeNames] = useState(false);
@@ -168,11 +380,16 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const { posMap, edgeColors } = parseSVGLayout(ev.target.result);
+      const { byId, byLabel, edgeColors, annotations } = parseSVGLayout(ev.target.result);
       if (graphRendererRef.current) {
-        graphRendererRef.current.importLayout(posMap);
+        // Session graph stays the source of truth: only nodes present in the
+        // current session are touched, and only their position/color/label
+        // is updated from whatever the SVG contains for a matching node.
+        graphRendererRef.current.importLayout(byId, byLabel);
         if (Object.keys(edgeColors).length > 0)
           graphRendererRef.current.importEdgeColors(edgeColors);
+        if (annotations.length > 0)
+          graphRendererRef.current.importAnnotations(annotations);
       }
     };
     reader.readAsText(file);
@@ -309,7 +526,11 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             pairColorMap={pairColorMap}
             showOverlay={showOverlay}
             edgeOpacity={edgeOpacity}
+            edgeThickness={edgeThickness}
             spacingScale={spacingScale}
+            nodeScale={nodeScale}
+            fontScale={fontScale}
+            nodeAvoidance={nodeAvoidance}
             colorMode={colorMode}
             colorScheme={colorScheme}
             bgColor={bgColor}
@@ -325,12 +546,23 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
           <SettingsPanel
             edgeOpacity={edgeOpacity}
             setEdgeOpacity={setEdgeOpacity}
+            edgeThickness={edgeThickness}
+            setEdgeThickness={setEdgeThickness}
             spacingScale={spacingScale}
             setSpacingScale={setSpacingScale}
+            nodeScale={nodeScale}
+            setNodeScale={setNodeScale}
+            fontScale={fontScale}
+            setFontScale={setFontScale}
+            nodeAvoidance={nodeAvoidance}
+            setNodeAvoidance={setNodeAvoidance}
             showOverlay={showOverlay}
             toggleOverlay={toggleOverlay}
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
+            handleZoomIn={handleZoomIn}
+            handleZoomOut={handleZoomOut}
+            handleReset={handleReset}
             handleDownloadSVG={handleDownloadSVG}
             handleImportSVG={handleImportSVG}
             brushMode={brushMode}

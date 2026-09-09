@@ -352,7 +352,8 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
     positionCache = {},
     nodesLocked = false,
     links = [],
-    spacingScale = 1.0
+    spacingScale = 1.0,
+    pinnedPositions = null  // Map<safeId, {x,y}> — from SVG import, takes absolute precedence
   ) => {
     if (!nodes.length) return { nodes, genMap: [] };
 
@@ -413,39 +414,47 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
       arr.sort((a, b) => (a.id || "").localeCompare(b.id || ""));
     });
 
+    // Helper: sanitize id for pinned position lookup (mirrors svgLayout.safeId)
+    const _safeId = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // Placement priority:
+    // 1. pinnedPositions (SVG import) → use BOTH x and y (absolute precedence)
+    // 2. positionCache with both x,y → fully sticky
+    // 3. positionCache with only y → X from column structure (gaps closing), Y sticky
+    // 4. Fresh → targetX + default Y
+    const placeNode = (node, defaultY) => {
+      const pinned = pinnedPositions?.get?.(_safeId(node.id));
+      const cached = positionCache[node.id];
+      if (pinned) {
+        node.x = pinned.x;
+        node.y = pinned.y;
+      } else if (cached) {
+        node.x = (cached.x !== undefined && !isNaN(cached.x)) ? cached.x : node.targetX;
+        node.y = (cached.y !== undefined && !isNaN(cached.y)) ? cached.y : defaultY;
+      } else if (node.x === undefined || node.x === null || isNaN(node.x)) {
+        node.x = node.targetX;
+        node.y = defaultY;
+      }
+      if (nodesLocked) { node.fx = node.x; node.fy = node.y; }
+    };
+
     // ── Place backbone nodes at y = centerY ──
     backbone.forEach((id) => {
       const node = nodes.find((n) => n.id === id);
       if (!node) return;
-      if (positionCache[id]) {
-        node.x = positionCache[id].x;
-        node.y = positionCache[id].y;
-      } else if (node.x === undefined || node.x === null || isNaN(node.x)) {
-        node.x = node.targetX;
-        node.y = centerY;
-      }
+      placeNode(node, centerY);
       node._isBackbone = true;
-      if (nodesLocked) { node.fx = node.x; node.fy = node.y; }
     });
 
     // ── Place non-backbone nodes above/below the backbone ──
     Object.entries(nonBackboneBySubCol).forEach(([sc, arr]) => {
       const half = Math.ceil(arr.length / 2);
       arr.forEach((node, i) => {
-        if (positionCache[node.id]) {
-          node.x = positionCache[node.id].x;
-          node.y = positionCache[node.id].y;
-        } else if (node.x === undefined || node.x === null || isNaN(node.x)) {
-          node.x = node.targetX;
-          // Place alternating above/below backbone with increasing distance
-          if (i < half) {
-            node.y = centerY - (i + 1) * ROW_SPACING;
-          } else {
-            node.y = centerY + (i - half + 1) * ROW_SPACING;
-          }
-        }
+        const defaultY = i < half
+          ? centerY - (i + 1) * ROW_SPACING
+          : centerY + (i - half + 1) * ROW_SPACING;
+        placeNode(node, defaultY);
         node._isBackbone = false;
-        if (nodesLocked) { node.fx = node.x; node.fy = node.y; }
       });
     });
 

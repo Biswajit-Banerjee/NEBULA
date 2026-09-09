@@ -677,7 +677,9 @@ const GraphCanvas = forwardRef(
       if (gridScreenPx >= 3) {
         const effectiveGridColor = gridColor
           ? gridColor + "18"
-          : `rgba(${themeBorderSecondary},0.22)`;
+          : dark
+            ? `rgba(${themeBorderSecondary},0.42)`
+            : `rgba(${themeTextMuted},0.30)`;
         ctx.save();
         ctx.strokeStyle = effectiveGridColor;
         ctx.lineWidth = 1 / t.k;
@@ -1195,31 +1197,12 @@ const GraphCanvas = forwardRef(
       if (cacheHit && cache.colorKey === colorKey) {
         nodeColorCache = cache.nodeColorCache;
       } else {
-        const degMap = new Map();
-        if (colorMode === "degree") {
-          drawLinks.forEach(l => {
-            const sId = l.source?.id || l.source;
-            const tId = l.target?.id || l.target;
-            degMap.set(sId, (degMap.get(sId) || 0) + 1);
-            degMap.set(tId, (degMap.get(tId) || 0) + 1);
-          });
-        }
-        const maxDeg = degMap.size > 0 ? Math.max(1, ...degMap.values()) : 1;
-
         const computeColor = (n) => {
-          if (colorMode === "type") {
-            return getTypeColor(n.type, dark);
-          }
-          if (colorMode === "degree") {
-            const deg = degMap.get(n.id) || 0;
-            const bucket = Math.round((deg / maxDeg) * MAX_BUCKET);
-            return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
-          }
           const gen = n.generation || 0;
           const bucket = maxGeneration > 0
             ? Math.round((gen / maxGeneration) * MAX_BUCKET)
             : 0;
-          return getSchemeColor(colorScheme, bucket / MAX_BUCKET, dark);
+          return getSchemeColor('rainbow', bucket / MAX_BUCKET, dark);
         };
 
         nodeColorCache = new Map();
@@ -1227,7 +1210,7 @@ const GraphCanvas = forwardRef(
         cache.colorKey = colorKey;
         cache.nodeColorCache = nodeColorCache;
       }
-      const nodeColor = (n) => nodeColorCache.get(n.id) || getSchemeColor(colorScheme, 0, dark);
+      const nodeColor = (n) => nodeColorCache.get(n.id) || getSchemeColor('rainbow', 0, dark);
 
       // In KEGG layout, ensure nodes are always visible at any zoom level
       const sizeScale = nodeSizeScale;
@@ -2359,26 +2342,10 @@ const GraphCanvas = forwardRef(
         const safeId = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
         // ── Node color helper ──
-        const degMap = new Map();
-        if (colorMode === 'degree') {
-          graph.links.forEach(l => {
-            const sId = l.source?.id || l.source;
-            const tId = l.target?.id || l.target;
-            degMap.set(sId, (degMap.get(sId) || 0) + 1);
-            degMap.set(tId, (degMap.get(tId) || 0) + 1);
-          });
-        }
-        const maxDeg = degMap.size > 0 ? Math.max(1, ...degMap.values()) : 1;
         const nodeColor = (n) => {
-          if (colorMode === 'type') return getTypeColor(n.type, false);
-          if (colorMode === 'degree') {
-            const deg = degMap.get(n.id) || 0;
-            const b = Math.round((deg / maxDeg) * 100);
-            return getSchemeColor(colorScheme, b / 100, false);
-          }
           const gen = n.generation || 0;
           const b = maxGeneration > 0 ? Math.round((gen / maxGeneration) * 100) : 0;
-          return getSchemeColor(colorScheme, b / 100, false);
+          return getSchemeColor('rainbow', b / 100, false);
         };
 
         // ── Theme colors (export is always light mode, so use fixed light constants) ──

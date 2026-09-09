@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 
 function useGraphData(results) {
   const [currentGeneration, setCurrentGeneration] = useState(0);
   const [maxGeneration, setMaxGeneration] = useState(0);
   const [minGeneration, setMinGeneration] = useState(0);
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  // Track data identity to distinguish new searches from re-filters (cofactor toggle)
+  const dataIdRef = useRef(null);
 
   // Extract min/max generation and process data
   useEffect(() => {
@@ -25,9 +27,21 @@ function useGraphData(results) {
     });
 
     const effectiveMin = Math.max(0, lowestGen === Infinity ? 0 : lowestGen);
+
+    // Compute a simple identity based on unique reactions to detect genuinely new data
+    const newId = results.map(r => r.reaction || '').sort().join(',');
+    const isNewData = newId !== dataIdRef.current;
+    dataIdRef.current = newId;
+
     setMinGeneration(effectiveMin);
     setMaxGeneration(highestGen);
-    setCurrentGeneration(effectiveMin);
+    // Only reset generation for genuinely new search data, not re-filters
+    if (isNewData) {
+      setCurrentGeneration(effectiveMin);
+    } else {
+      // Clamp current generation to new bounds
+      setCurrentGeneration(prev => Math.min(Math.max(prev, effectiveMin), highestGen));
+    }
     setGraphData(results);
   }, [results]);
 
