@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -37,6 +37,27 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const isResizingRef = useRef(false);
+
+  const resize = useCallback((e) => {
+    if (!isResizingRef.current) return;
+    const newWidth = e.clientX;
+    if (newWidth > 200 && newWidth < 600) setSidebarWidth(newWidth);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingRef.current = false;
+    window.removeEventListener('mousemove', resize);
+    window.removeEventListener('mouseup', stopResizing);
+  }, [resize]);
+
+  const startResizing = useCallback((e) => {
+    isResizingRef.current = true;
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    e.preventDefault();
+  }, [resize, stopResizing]);
   const [fontSizeIdx, setFontSizeIdx] = useState(1);
 
   // Close on Escape key
@@ -157,9 +178,17 @@ const DocsViewer = ({ isOpen, onClose, initialSlug }) => {
     <div className="fixed inset-0 z-[100] flex bg-surface/95 backdrop-blur-sm">
       {/* Sidebar */}
       <aside
-        className={`${sidebarOpen ? 'w-72' : 'w-0'} flex-shrink-0 transition-all duration-200 overflow-hidden border-r border-brd bg-surface-secondary`}
+        className={`${sidebarOpen ? '' : 'w-0'} flex-shrink-0 transition-all duration-200 overflow-hidden border-r border-brd bg-surface-secondary relative`}
+        style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
       >
-        <div className="w-72 h-full flex flex-col">
+        {/* Resize Handle */}
+        {sidebarOpen && (
+          <div
+            onMouseDown={startResizing}
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-brand/30 transition-colors z-50"
+          />
+        )}
+        <div className="h-full flex flex-col" style={{ width: `${sidebarWidth}px` }}>
           {/* Sidebar header */}
           <div className="p-4 border-b border-brd">
             <div className="flex items-center gap-2 mb-3">

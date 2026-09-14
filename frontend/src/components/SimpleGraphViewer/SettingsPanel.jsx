@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ChevronRight, Settings2, Download, Image, Maximize, Minimize,
   HelpCircle, Layers, RotateCcw, Palette, Scaling,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { RAINBOW_PALETTE } from '../NetworkViewer2D/utils/colorSchemes';
 import AutocompleteInput from '../SearchPanel/AutocompleteInput';
+import EmbeddedColorPicker from '../NetworkViewer2D/utils/EmbeddedColorPicker';
 import compoundDataJson from '../SearchPanel/compound_map.json';
 
 /* ── Reusable primitives (same as NetworkViewer2D) ── */
@@ -66,31 +67,55 @@ const SectionTitle = ({ children }) => (
   </h4>
 );
 
-const ColorInput = ({ label, value, onChange, defaultColor }) => (
-  <div className="flex items-center justify-between">
-    <span className="text-[11px] font-medium text-content-secondary">{label}</span>
-    <div className="flex items-center gap-1.5">
-      {value && (
-        <button
-          onClick={() => onChange('')}
-          className="text-[9px] text-content-muted hover:text-err transition-colors"
-          title="Reset to default"
-        >
-          ✕
-        </button>
+const ColorInput = ({ label, value, onChange, defaultColor }) => {
+  const [showPicker, setShowPicker] = useState(false);
+  const [initialColor, setInitialColor] = useState(null);
+
+  const startEditing = () => {
+    setInitialColor(value || '');
+    setShowPicker(true);
+  };
+
+  const handleCancel = () => {
+    onChange(initialColor);
+    setShowPicker(false);
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium text-content-secondary">{label}</span>
+        <div className="flex items-center gap-1.5">
+          {value && (
+            <button
+              onClick={() => onChange('')}
+              className="text-[9px] text-content-muted hover:text-err transition-colors"
+              title="Reset to default"
+            >
+              ✕
+            </button>
+          )}
+          <button
+            onClick={() => showPicker ? setShowPicker(false) : startEditing()}
+            className={`w-6 h-6 rounded-md border shadow-sm hover:shadow-md transition-all relative overflow-hidden ${showPicker ? 'ring-2 ring-brand border-brand' : 'border-brd/60'}`}
+          >
+            <div className="absolute inset-0" style={{ backgroundColor: value || defaultColor }} />
+          </button>
+        </div>
+      </div>
+      {showPicker && (
+        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+          <EmbeddedColorPicker
+            color={value || defaultColor}
+            onChange={onChange}
+            onOk={() => setShowPicker(false)}
+            onCancel={handleCancel}
+          />
+        </div>
       )}
-      <label className="relative w-6 h-6 rounded-md border border-brd/60 cursor-pointer overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-        <div className="absolute inset-0" style={{ backgroundColor: value || defaultColor }} />
-        <input
-          type="color"
-          value={value || defaultColor}
-          onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-        />
-      </label>
     </div>
-  </div>
-);
+  );
+};
 
 const SchemePicker = () => (
   <div className="space-y-1">
@@ -219,6 +244,32 @@ const SettingsPanel = ({
   const [searchValue, setSearchValue] = useState('');
   const [searchStatus, setSearchStatus] = useState(null); // null | 'found' | 'not-found'
 
+  // ── Resizing logic ──
+  const [panelWidth, setPanelWidth] = useState(260);
+  const isResizingRef = useRef(false);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const resize = useCallback((e) => {
+    if (!isResizingRef.current) return;
+    const newWidth = window.innerWidth - e.clientX;
+    if (newWidth > 200 && newWidth < 600) setPanelWidth(newWidth);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingRef.current = false;
+    setIsResizing(false);
+    window.removeEventListener('mousemove', resize);
+    window.removeEventListener('mouseup', stopResizing);
+  }, [resize]);
+
+  const startResizing = useCallback((e) => {
+    isResizingRef.current = true;
+    setIsResizing(true);
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    e.preventDefault();
+  }, [resize, stopResizing]);
+
   const handleSearchSelect = (id) => {
     setSearchValue(id);
     if (!id) { setSearchStatus(null); return; }
@@ -230,16 +281,16 @@ const SettingsPanel = ({
     <>
       <button
         onClick={() => setOpen(prev => !prev)}
-        className="absolute z-30 flex items-center justify-center
+        className={`absolute z-30 flex items-center justify-center
           w-5 h-14 rounded-l-lg
           bg-surface-overlay/80 backdrop-blur-xl
           border border-r-0 border-brd/50
           shadow-lg text-content-muted hover:text-brand
-          transition-all duration-300 ease-out"
+          ${isResizing ? '' : 'transition-all duration-300 ease-out'}`}
         style={{
           top: '50%',
           transform: 'translateY(-50%)',
-          right: open ? '260px' : '0px',
+          right: open ? `${panelWidth}px` : '0px',
         }}
         title="Settings"
       >
@@ -250,13 +301,20 @@ const SettingsPanel = ({
       </button>
 
       <div
-        className={`absolute top-0 right-0 bottom-0 z-30 w-[260px]
+        className={`absolute top-0 right-0 bottom-0 z-30
           bg-surface-overlay/95 backdrop-blur-2xl
           border-l border-brd/50
           shadow-2xl overflow-y-auto overflow-x-hidden
           transition-transform duration-300 ease-out
           ${open ? 'translate-x-0' : 'translate-x-full'}`}
+        style={{ width: `${panelWidth}px` }}
       >
+        {/* Resize Handle */}
+        <div
+          onMouseDown={startResizing}
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-brand/30 transition-colors z-40"
+        />
+
         <div className="px-4 py-4 space-y-5">
           <div className="flex items-center gap-2">
             <Settings2 className="w-4 h-4 text-brand" />

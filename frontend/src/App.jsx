@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef, useContext} from "react";
 import { Zap, HelpCircle, Compass, BookOpen, Lightbulb } from "lucide-react";
 import { getApiUrl } from './config/api';
 
@@ -9,17 +9,20 @@ import ViewPane from "./components/ViewPane";
 import { filterCofactors } from "./components/utils/cofactorFilter";
 import DocsViewer from "./components/DocsViewer";
 import GuidedTour, { TOUR_SEEN_KEY } from "./components/GuidedTour";
-
-const SOLID_COLORS_PALETTE_APP = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#059669', '#D97706', '#DC2626', '#7C3AED'];
-
-function getSolidColorForPairByIndexApp(index) {
-  return SOLID_COLORS_PALETTE_APP[index % SOLID_COLORS_PALETTE_APP.length];
-}
+import { getSolidColorForPairByIndex } from './config/themes';
+import { ThemeContext } from './components/ThemeProvider/ThemeProvider';
 
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
+  
+  const { themeName } = useContext(ThemeContext);
+  const getSolidColorForPairByIndexApp = useCallback(
+    (index) => getSolidColorForPairByIndex(index, themeName),
+    [themeName]
+  );
+
 
   const initialPairId = `init-${Date.now()}`;
   const [searchPairs, setSearchPairs] = useState([
@@ -60,7 +63,7 @@ function App() {
   const [viewTourActive, setViewTourActive] = useState(false);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
   const helpMenuRef = useRef(null);
-
+  
   // Auto-show tour on first visit
   useEffect(() => {
     try {

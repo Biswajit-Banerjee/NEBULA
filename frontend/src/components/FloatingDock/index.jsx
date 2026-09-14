@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Download, Upload, Layers, Loader2,
-  Plus, X, Eye, EyeOff, Sparkles, ChevronUp, FlaskConical, Atom,
+  Plus, X, Eye, Rocket, ChevronUp, EyeClosed, Atom,
 } from 'lucide-react';
 import Logo from '../Logo';
 import ThemeSelector from '../ThemeProvider/ThemeSelector';
 import AutocompleteInput from '../SearchPanel/AutocompleteInput';
+import EmbeddedColorPicker from '../NetworkViewer2D/utils/EmbeddedColorPicker';
 import compoundDataJson from '../SearchPanel/compound_map.json';
 import reactionDataJson from '../SearchPanel/reaction_map.json';
 import ecDataJson from '../SearchPanel/ec_map.json';
@@ -39,6 +40,8 @@ const FloatingDock = ({
   onForceCollapse,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const [editingColorIndex, setEditingColorIndex] = useState(null);
+  const [initialColor, setInitialColor] = useState(null);
   const [compoundData, setCompoundData] = useState([]);
   const [reactionData, setReactionData] = useState([]);
   const [ecData, setEcData] = useState([]);
@@ -262,8 +265,8 @@ const FloatingDock = ({
             )}
 
             {hasResults && (
-              <button onClick={toggleHideCofactors} className={`p-2 rounded-xl transition-colors ${hideCofactors ? 'bg-warn/10 text-warn' : 'text-content-muted hover:text-content hover:bg-surface-inset/60'}`} title={hideCofactors ? 'Show cofactors' : 'Hide cofactors'}>
-                <FlaskConical className="w-4.5 h-4.5" />
+              <button onClick={toggleHideCofactors} className={`p-2 rounded-xl transition-colors ${hideCofactors ? 'text-content-muted hover:text-content-secondary' : 'text-content-secondary hover:text-content hover:bg-surface-inset/60'}`} title={hideCofactors ? 'Show cofactors' : 'Hide cofactors'}>
+                {hideCofactors ? <EyeClosed className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
               </button>
             )}
 
@@ -295,16 +298,36 @@ const FloatingDock = ({
 
                 {/* Color dot — click to change */}
                 <div className="relative flex-shrink-0">
-                  <div
-                    className="w-3 h-3 rounded-full cursor-pointer ring-2 ring-surface-secondary shadow-sm"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingColorIndex === index) {
+                        setEditingColorIndex(null);
+                      } else {
+                        setInitialColor(pair.color);
+                        setEditingColorIndex(index);
+                      }
+                    }}
+                    className={`w-3 h-3 rounded-full cursor-pointer ring-2 ring-surface-secondary shadow-sm relative transition-transform hover:scale-110 ${editingColorIndex === index ? 'ring-brand' : ''}`}
                     style={{ backgroundColor: pair.color || '#8B5CF6' }}
-                  />
-                  <input
-                    type="color"
-                    value={pair.color || '#8B5CF6'}
-                    onChange={(e) => updatePair(index, { color: e.target.value })}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  />
+                  >
+                    {editingColorIndex === index && (
+                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-brand rounded-full" />
+                    )}
+                  </button>
+                  {editingColorIndex === index && (
+                    <div className="absolute top-6 left-0 z-[60] w-64 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <EmbeddedColorPicker
+                        color={pair.color || '#8B5CF6'}
+                        onChange={(c) => updatePair(index, { color: c })}
+                        onOk={() => setEditingColorIndex(null)}
+                        onCancel={() => {
+                          updatePair(index, { color: initialColor });
+                          setEditingColorIndex(null);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Mode selector */}
@@ -460,9 +483,9 @@ const FloatingDock = ({
                   {pair.hasResults !== undefined && (
                     <button
                       onClick={() => onToggleVisibility(index)}
-                      className={`p-1 rounded-md transition-all ${pair.visible ? 'text-ok hover:bg-ok-subtle' : 'text-content-muted hover:bg-surface-inset'}`}
+                      className={`p-1 rounded-md transition-colors ${pair.visible ? 'text-content-secondary hover:text-content' : 'text-content-muted hover:text-content-secondary'}`}
                     >
-                      {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeClosed className="w-3.5 h-3.5" />}
                     </button>
                   )}
                   {searchPairs.length > 1 ? (
@@ -498,8 +521,8 @@ const FloatingDock = ({
                 onClick={handleSearch}
                 disabled={isSearchDisabled}
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              > 
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Rocket className="w-3.5 h-3.5" />}
                 {isLoading ? 'Searching…' : 'Explore'}
               </button>
             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import SearchPanel from '../SearchPanel';
 
@@ -15,6 +15,28 @@ const SearchDrawer = ({
   results,
   onExportSession,
 }) => {
+  const [drawerWidth, setDrawerWidth] = useState(448);
+  const isResizingRef = useRef(false);
+
+  const resize = useCallback((e) => {
+    if (!isResizingRef.current) return;
+    const newWidth = e.clientX;
+    if (newWidth > 300 && newWidth < 800) setDrawerWidth(newWidth);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingRef.current = false;
+    window.removeEventListener('mousemove', resize);
+    window.removeEventListener('mouseup', stopResizing);
+  }, [resize]);
+
+  const startResizing = useCallback((e) => {
+    isResizingRef.current = true;
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    e.preventDefault();
+  }, [resize, stopResizing]);
+
   // Close on Escape
   useEffect(() => {
     const handleKey = (e) => {
@@ -51,11 +73,18 @@ const SearchDrawer = ({
 
       {/* Drawer panel */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-full max-w-md transform transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ width: `${drawerWidth}px` }}
       >
-        <div className="h-full bg-surface/95 backdrop-blur-2xl border-r border-brd/50 shadow-2xl flex flex-col">
+        <div className="h-full bg-surface/95 backdrop-blur-2xl border-r border-brd/50 shadow-2xl flex flex-col relative">
+          {/* Resize Handle */}
+          <div
+            onMouseDown={startResizing}
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-brand/30 transition-colors z-50"
+          />
+
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-brd/50 flex-shrink-0">
             <div>

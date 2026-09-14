@@ -1,543 +1,521 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// NEBULA Theme Registry
-// ═══════════════════════════════════════════════════════════════════════════════
-// Each theme defines ~80 design tokens as space-separated RGB values.
-// Tailwind references them via  rgb(var(--token) / <alpha-value>)  so that
-// opacity modifiers (e.g.  bg-surface/85 ) keep working.
-//
-// To add a new theme: copy any preset, change the RGB values, and register
-// it in the THEMES object below. The ThemeProvider will pick it up automatically.
-// ═══════════════════════════════════════════════════════════════════════════════
+
+export const SEARCH_HIGHLIGHT_PALETTES = {
+  'nebula-light': [
+    '#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444',
+    '#3B82F6', '#059669', '#D97706', '#DC2626', '#7C3AED',
+  ],
+
+  'solar-corona': [
+    '#95502D', '#61703D', '#456E73', '#806087', '#8B652B',
+    '#975664', '#536D8B', '#726B4E', '#3C6B55', '#8D6250',
+  ],
+
+  'magnetar': [
+    '#98BCF4', '#B3DBCE', '#E1C698', '#C0B2D9', '#DDA9BA',
+    '#86CBD9', '#BCCB98', '#DEB19B', '#A3ADD9', '#A9C2C9',
+  ],
+
+  'event-horizon': [
+    '#DEB77B', '#9CBADD', '#D79A8C', '#98CBB4', '#B4A5BE',
+    '#C8CA97', '#D6A7B7', '#88BEC4', '#BDAD95', '#A7BCA2',
+  ],
+
+  'xenonite': [
+    '#1C8FB5', '#D9A441', '#2E86AB', '#C6473F', '#2E9E6B',
+    '#7C6E9F', '#0EA5C7', '#B9840F', '#7FD4E8', '#647587',
+  ],
+
+  'astrophage': [
+    '#FF6A1A', '#2FE0C4', '#FFB020', '#FF4D4D', '#4FC3E0',
+    '#FFD166', '#9B8BC4', '#4FD69C', '#FF9A44', '#FF8A4C',
+  ],
+};
+
+export function getSolidColorForPairByIndex(
+  index,
+  themeId = DEFAULT_THEME
+) {
+  const palette =
+    SEARCH_HIGHLIGHT_PALETTES[themeId] ??
+    SEARCH_HIGHLIGHT_PALETTES[DEFAULT_THEME];
+
+  const integerIndex = Number.isFinite(index) ? Math.trunc(index) : 0;
+
+  // Wrap safely, including negative indices.
+  const wrappedIndex =
+    ((integerIndex % palette.length) + palette.length) % palette.length;
+
+  return palette[wrappedIndex];
+}
+
+const rgb = (hex) => {
+  const value = hex.replace('#', '');
+  return [0, 2, 4]
+    .map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16))
+    .join(' ');
+};
+
+const makeAstroTheme = ({ label, isDark, swatch, palette }) => ({
+  label,
+  isDark,
+  swatch,
+  colors: {
+    'surface-primary': rgb(palette.surfacePrimary),
+    'surface-secondary': rgb(palette.surfaceSecondary),
+    'surface-elevated': rgb(palette.surfaceElevated),
+    'surface-overlay': rgb(palette.surfaceOverlay),
+    'surface-inset': rgb(palette.surfaceInset),
+
+    'text-primary': rgb(palette.textPrimary),
+    'text-secondary': rgb(palette.textSecondary),
+    'text-muted': rgb(palette.textMuted),
+    'text-inverse': rgb(palette.textInverse),
+
+    'border-primary': rgb(palette.borderPrimary),
+    'border-secondary': rgb(palette.borderSecondary),
+    'border-focus': rgb(palette.brandPrimary),
+
+    'brand-primary': rgb(palette.brandPrimary),
+    'brand-primary-hover': rgb(palette.brandHover),
+    'brand-secondary': rgb(palette.brandSecondary),
+    'brand-gradient-from': rgb(palette.gradientFrom),
+    'brand-gradient-via': rgb(palette.gradientVia),
+    'brand-gradient-to': rgb(palette.gradientTo),
+
+    'success': rgb(palette.success),
+    'success-subtle': rgb(palette.successSubtle),
+    'warning': rgb(palette.warning),
+    'warning-subtle': rgb(palette.warningSubtle),
+    'error': rgb(palette.error),
+    'error-subtle': rgb(palette.errorSubtle),
+    'info': rgb(palette.info),
+    'info-subtle': rgb(palette.infoSubtle),
+
+    'input-bg': rgb(palette.inputBg),
+    'input-border': rgb(palette.borderSecondary),
+    'input-focus': rgb(palette.brandPrimary),
+    'btn-primary': rgb(palette.brandPrimary),
+    'btn-text': rgb(palette.buttonText),
+
+    'tree-metabolite': rgb(palette.compoundStroke),
+    'tree-reaction': rgb(palette.reactionStroke),
+    'tree-source': rgb(palette.source),
+    'tree-seed': rgb(palette.seed),
+    'tree-cofactor': rgb(palette.cofactor),
+    'tree-solution': rgb(palette.solution),
+
+    'node-compound-fill': rgb(palette.compoundFill),
+    'node-compound-stroke': rgb(palette.compoundStroke),
+    'node-reaction-fill': rgb(palette.reactionFill),
+    'node-reaction-stroke': rgb(palette.reactionStroke),
+    'node-ec-fill': rgb(palette.ecFill),
+    'node-ec-stroke': rgb(palette.ecStroke),
+
+    'accent-teal': rgb(palette.compoundStroke),
+    'accent-indigo': rgb(palette.reactionStroke),
+    'accent-amber': rgb(palette.warning),
+    'accent-emerald': rgb(palette.success),
+    'accent-cyan': rgb(palette.info),
+    'accent-violet': rgb(palette.compatViolet),
+
+    'scrollbar-track': rgb(palette.scrollbarTrack),
+    'scrollbar-thumb': rgb(palette.scrollbarThumb),
+    'scrollbar-thumb-hover': rgb(palette.scrollbarHover),
+
+    'code-bg': rgb(palette.codeBg),
+    'code-text': rgb(palette.codeText),
+    'ring': rgb(palette.brandPrimary),
+  },
+});
+
 
 export const THEMES = {
-  /* ─────────────────────── Nebula Light (default) ─────────────────────── */
-  'nebula-light': {
-    label: 'Nebula Light',
+  // Crisp cool-white surfaces, violet→cyan brand gradient. Reads like a
+  // contemporary SaaS product — high contrast, minimal warmth, fast to scan.
+  'nebula-light': makeAstroTheme({
+    label: 'Pulsar',
     isDark: false,
-    // Preview swatch colors (hex) used in the selector UI
-    swatch: { bg: '#D6D1C7', accent: '#8b5cf6', text: '#1e293b' },
-    colors: {
-      // ── Surface ──
-      'surface-primary':   '214 209 199',   // #D6D1C7 warm stone
-      'surface-secondary': '224 220 212',   // slightly lighter stone
-      'surface-elevated':  '230 226 219',   // lifted stone
-      'surface-overlay':   '224 220 212',   // stone (use with /85 etc.)
-      'surface-inset':     '204 199 189',   // darker stone inset
-
-      // ── Text ──
-      'text-primary':   '30 41 59',          // slate-800 — high contrast
-      'text-secondary': '71 85 105',         // slate-600
-      'text-muted':     '100 116 139',       // slate-500
-      'text-inverse':   '255 255 255',       // white
-
-      // ── Border ──
-      'border-primary':   '226 232 240',    // slate-200
-      'border-secondary': '203 213 225',    // slate-300
-      'border-focus':     '139 92 246',     // violet-500
-
-      // ── Brand / Accent ──
-      'brand-primary':       '139 92 246',  // violet-500
-      'brand-primary-hover': '167 139 250', // violet-400
-      'brand-secondary':     '6 182 212',   // cyan-500
-      'brand-gradient-from': '139 92 246',  // violet-500
-      'brand-gradient-via':  '168 85 247',  // purple-500
-      'brand-gradient-to':   '99 102 241',  // indigo-500
-
-      // ── Semantic ──
-      'success':        '16 185 129',       // emerald-500
-      'success-subtle': '236 253 245',      // emerald-50
-      'warning':        '245 158 11',       // amber-500
-      'warning-subtle': '255 251 235',      // amber-50
-      'error':          '239 68 68',        // red-500
-      'error-subtle':   '254 242 242',      // red-50
-      'info':           '59 130 246',       // blue-500
-      'info-subtle':    '239 246 255',      // blue-50
-
-      // ── Interactive ──
-      'input-bg':     '224 220 212',        // matches surface-secondary
-      'input-border': '203 213 225',        // slate-300
-      'input-focus':  '139 92 246',         // violet-500
-      'btn-primary':  '139 92 246',         // violet-500
-      'btn-text':     '255 255 255',        // white
-
-      // ── Tree view ──
-      'tree-metabolite': '6 182 212',       // cyan-500
-      'tree-reaction':   '139 92 246',      // violet-500
-      'tree-source':     '34 197 94',       // green-500
-      'tree-seed':       '59 130 246',      // blue-500
-      'tree-cofactor':   '168 162 158',     // stone-400
-      'tree-solution':   '16 185 129',      // emerald-500
-
-      // ── 2D Network node type colors ──
-      'node-compound-fill':   '204 251 241',// teal-100
-      'node-compound-stroke': '13 148 136', // teal-600
-      'node-reaction-fill':   '224 231 255',// indigo-100
-      'node-reaction-stroke': '79 70 229',  // indigo-600
-      'node-ec-fill':         '254 243 199',// amber-100
-      'node-ec-stroke':       '217 119 6',  // amber-600
-
-      // ── Accent palette (UI chips, badges, pills) ──
-      'accent-teal':    '20 184 166',       // teal-500
-      'accent-indigo':  '99 102 241',       // indigo-500
-      'accent-amber':   '245 158 11',       // amber-500
-      'accent-emerald': '16 185 129',       // emerald-500
-      'accent-cyan':    '6 182 212',        // cyan-500
-      'accent-violet':  '139 92 246',       // violet-500
-
-      // ── Scrollbar ──
-      'scrollbar-track':      '204 199 189',// stone inset
-      'scrollbar-thumb':      '148 163 184',// slate-400
-      'scrollbar-thumb-hover':'100 116 139',// slate-500
-
-      // ── Misc ──
-      'code-bg':   '204 199 189',           // stone inset
-      'code-text': '30 41 59',              // slate-800
-      'ring':      '139 92 246',            // violet-500
+    swatch: {
+      bg: '#F8F9FC',
+      accent: '#7C5CFA',
+      text: '#1B1E2B',
     },
-  },
+    palette: {
+      surfacePrimary: '#F8F9FC',
+      surfaceSecondary: '#EFF1F6',
+      surfaceElevated: '#FFFFFF',
+      surfaceOverlay: '#FFFFFF',
+      surfaceInset: '#E6E9F0',
 
-  /* ─────────────────────── Nebula Dark ─────────────────────── */
-  'nebula-dark': {
-    label: 'Nebula Dark',
+      textPrimary: '#1B1E2B',
+      textSecondary: '#4B5165',
+      textMuted: '#6B7280',
+      textInverse: '#FFFFFF',
+
+      borderPrimary: '#E2E5EC',
+      borderSecondary: '#C7CCD9',
+
+      brandPrimary: '#7C5CFA',
+      brandHover: '#9478FF',
+      brandSecondary: '#06B6D4',
+      gradientFrom: '#7C5CFA',
+      gradientVia: '#A855F7',
+      gradientTo: '#6366F1',
+
+      success: '#10B981',
+      successSubtle: '#E6FBF3',
+      warning: '#F59E0B',
+      warningSubtle: '#FEF6E7',
+      error: '#EF4444',
+      errorSubtle: '#FDECEC',
+      info: '#3B82F6',
+      infoSubtle: '#EAF1FE',
+
+      compoundFill: '#CCFBF1',
+      compoundStroke: '#0D9488',
+      reactionFill: '#E4E4FF',
+      reactionStroke: '#6366F1',
+      ecFill: '#FEF3C7',
+      ecStroke: '#D97706',
+
+      source: '#22C55E',
+      seed: '#3B82F6',
+      cofactor: '#9CA3AF',
+      solution: '#10B981',
+
+      compatViolet: '#7C5CFA',
+      scrollbarTrack: '#EFF1F6',
+      scrollbarThumb: '#C7CCD9',
+      scrollbarHover: '#9AA1B5',
+      codeBg: '#EFF1F6',
+      codeText: '#2A2E3D',
+      inputBg: '#FFFFFF',
+      buttonText: '#FFFFFF',
+    },
+  }),
+
+  // Midnight cobalt with an ion-blue / teal pulse. Reads like a focused
+  // late-night workspace — energetic without being loud.
+  'magnetar': makeAstroTheme({
+    label: 'Magnetar',
     isDark: true,
-    swatch: { bg: '#1a1c2a', accent: '#a78bfa', text: '#e2e8f0' },
-    colors: {
-      'surface-primary':   '26 28 42',
-      'surface-secondary': '30 41 59',      // slate-800
-      'surface-elevated':  '30 41 59',
-      'surface-overlay':   '30 41 59',
-      'surface-inset':     '15 23 42',      // slate-900
-
-      'text-primary':   '226 232 240',      // slate-200 — boosted for readability
-      'text-secondary': '178 190 205',      // slate-350 — boosted for readability
-      'text-muted':     '148 163 184',      // slate-400 — boosted from 500→400
-      'text-inverse':   '15 23 42',         // slate-900
-
-      'border-primary':   '51 65 85',       // slate-700
-      'border-secondary': '71 85 105',      // slate-600
-      'border-focus':     '167 139 250',    // violet-400
-
-      'brand-primary':       '167 139 250', // violet-400
-      'brand-primary-hover': '196 181 253', // violet-300
-      'brand-secondary':     '34 211 238',  // cyan-400
-      'brand-gradient-from': '167 139 250', // violet-400
-      'brand-gradient-via':  '192 132 252', // purple-400
-      'brand-gradient-to':   '129 140 248', // indigo-400
-
-      'success':        '52 211 153',       // emerald-400
-      'success-subtle': '6 78 59',          // emerald-900
-      'warning':        '251 191 36',       // amber-400
-      'warning-subtle': '120 53 15',        // amber-900
-      'error':          '248 113 113',      // red-400
-      'error-subtle':   '127 29 29',        // red-900
-      'info':           '96 165 250',       // blue-400
-      'info-subtle':    '30 58 138',        // blue-900
-
-      'input-bg':     '51 65 85',           // slate-700
-      'input-border': '71 85 105',          // slate-600
-      'input-focus':  '167 139 250',        // violet-400
-      'btn-primary':  '167 139 250',        // violet-400
-      'btn-text':     '15 23 42',           // slate-900
-
-      'tree-metabolite': '34 211 238',      // cyan-400
-      'tree-reaction':   '167 139 250',     // violet-400
-      'tree-source':     '74 222 128',      // green-400
-      'tree-seed':       '96 165 250',      // blue-400
-      'tree-cofactor':   '168 162 158',     // stone-400
-      'tree-solution':   '52 211 153',      // emerald-400
-
-      'node-compound-fill':   '13 148 136', // teal-600 (used at 0.3 alpha)
-      'node-compound-stroke': '45 212 191', // teal-400
-      'node-reaction-fill':   '79 70 229',  // indigo-600 (used at 0.25 alpha)
-      'node-reaction-stroke': '129 140 248',// indigo-400
-      'node-ec-fill':         '217 119 6',  // amber-600 (used at 0.25 alpha)
-      'node-ec-stroke':       '251 191 36', // amber-400
-
-      'accent-teal':    '45 212 191',       // teal-400
-      'accent-indigo':  '129 140 248',      // indigo-400
-      'accent-amber':   '251 191 36',       // amber-400
-      'accent-emerald': '52 211 153',       // emerald-400
-      'accent-cyan':    '34 211 238',       // cyan-400
-      'accent-violet':  '167 139 250',      // violet-400
-
-      'scrollbar-track':      '30 41 59',   // slate-800
-      'scrollbar-thumb':      '100 116 139',// slate-500
-      'scrollbar-thumb-hover':'148 163 184',// slate-400
-
-      'code-bg':   '30 41 59',              // slate-800
-      'code-text': '203 213 225',           // slate-300
-      'ring':      '167 139 250',           // violet-400
+    swatch: {
+      bg: '#0E1826',
+      accent: '#6FA8F5',
+      text: '#E4ECF5',
     },
-  },
+    palette: {
+      surfacePrimary: '#0E1826',
+      surfaceSecondary: '#16243A',
+      surfaceElevated: '#1E3049',
+      surfaceOverlay: '#263A54',
+      surfaceInset: '#0A121F',
 
-  /* ─────────────────────── Dracula ─────────────────────── */
-  dracula: {
-    label: 'Dracula',
-    isDark: true,
-    swatch: { bg: '#282a36', accent: '#bd93f9', text: '#f8f8f2' },
-    colors: {
-      'surface-primary':   '40 42 54',      // dracula bg
-      'surface-secondary': '68 71 90',      // dracula current line
-      'surface-elevated':  '68 71 90',
-      'surface-overlay':   '68 71 90',
-      'surface-inset':     '33 34 44',      // slightly darker
+      textPrimary: '#E4ECF5',
+      textSecondary: '#AEC3D9',
+      textMuted: '#93AAC2',
+      textInverse: '#0E1826',
 
-      'text-primary':   '248 248 242',      // dracula fg
-      'text-secondary': '207 176 255',      // dracula purple (brightened)
-      'text-muted':     '148 160 200',      // dracula comment (brightened for readability)
-      'text-inverse':   '40 42 54',
+      borderPrimary: '#2E4560',
+      borderSecondary: '#5E7A98',
 
-      'border-primary':   '68 71 90',       // current line
-      'border-secondary': '98 114 164',     // comment
-      'border-focus':     '189 147 249',    // purple
+      brandPrimary: '#6FA8F5',
+      brandHover: '#93C0FA',
+      brandSecondary: '#7FD9C6',
+      gradientFrom: '#5C8FEC',
+      gradientVia: '#7FBEF0',
+      gradientTo: '#7FD9C6',
 
-      'brand-primary':       '189 147 249', // dracula purple
-      'brand-primary-hover': '207 176 255', // lighter purple
-      'brand-secondary':     '139 233 253', // dracula cyan
-      'brand-gradient-from': '189 147 249', // purple
-      'brand-gradient-via':  '255 121 198', // pink
-      'brand-gradient-to':   '139 233 253', // cyan
+      success: '#6FCBA8',
+      successSubtle: '#1B3A34',
+      warning: '#E0B876',
+      warningSubtle: '#3B3320',
+      error: '#E48E9B',
+      errorSubtle: '#3E2530',
+      info: '#7FBEF0',
+      infoSubtle: '#1B3350',
 
-      'success':        '80 250 123',       // dracula green
-      'success-subtle': '30 60 40',
-      'warning':        '241 250 140',      // dracula yellow
-      'warning-subtle': '60 62 40',
-      'error':          '255 85 85',        // dracula red
-      'error-subtle':   '80 30 30',
-      'info':           '139 233 253',      // dracula cyan
-      'info-subtle':    '30 60 75',
+      compoundFill: '#2E5583',
+      compoundStroke: '#8FC0F7',
+      reactionFill: '#2F5148',
+      reactionStroke: '#7FD9C6',
+      ecFill: '#5C4A28',
+      ecStroke: '#DEBB78',
 
-      'input-bg':     '68 71 90',
-      'input-border': '98 114 164',
-      'input-focus':  '189 147 249',
-      'btn-primary':  '189 147 249',
-      'btn-text':     '40 42 54',
+      source: '#7ED0A9',
+      seed: '#C7DCF0',
+      cofactor: '#9FA4CF',
+      solution: '#7FD9C6',
 
-      'tree-metabolite': '139 233 253',     // cyan
-      'tree-reaction':   '189 147 249',     // purple
-      'tree-source':     '80 250 123',      // green
-      'tree-seed':       '139 233 253',     // cyan
-      'tree-cofactor':   '98 114 164',      // comment
-      'tree-solution':   '80 250 123',      // green
-
-      'node-compound-fill':   '42 161 152',
-      'node-compound-stroke': '139 233 253',
-      'node-reaction-fill':   '108 113 196',
-      'node-reaction-stroke': '189 147 249',
-      'node-ec-fill':         '203 75 22',
-      'node-ec-stroke':       '255 184 108',
-
-      'accent-teal':    '139 233 253',
-      'accent-indigo':  '189 147 249',
-      'accent-amber':   '241 250 140',
-      'accent-emerald': '80 250 123',
-      'accent-cyan':    '139 233 253',
-      'accent-violet':  '189 147 249',
-
-      'scrollbar-track':      '40 42 54',
-      'scrollbar-thumb':      '98 114 164',
-      'scrollbar-thumb-hover':'139 147 199',
-
-      'code-bg':   '68 71 90',
-      'code-text': '248 248 242',
-      'ring':      '189 147 249',
+      compatViolet: '#A7B0EA',
+      scrollbarTrack: '#101C2C',
+      scrollbarThumb: '#3C5975',
+      scrollbarHover: '#5E7FA0',
+      codeBg: '#0C1826',
+      codeText: '#A9C6E4',
+      inputBg: '#0A121F',
+      buttonText: '#0E1826',
     },
-  },
+  }),
 
-  'willow-light': {
-    label: 'Willow Light',
+  // Warm parchment paper, burnished sienna, deep olive. Reads like an
+  // annotated manuscript — familiar, low-glare, comfortable for long reading.
+  'solar-corona': makeAstroTheme({
+    label: 'Solar Corona',
     isDark: false,
-    swatch: { bg: '#F4F2EC', accent: '#3F7567', text: '#26342F' },
-    colors: {
-      'surface-primary':   '244 242 236',
-      'surface-secondary': '232 238 232',
-      'surface-elevated':  '252 251 247',
-      'surface-overlay':   '248 249 245',
-      'surface-inset':     '220 229 223',
-
-      'text-primary':   '38 52 47',
-      'text-secondary': '70 90 82',
-      'text-muted':     '88 108 99',
-      'text-inverse':   '255 255 255',
-
-      'border-primary':   '201 214 206',
-      'border-secondary': '155 177 166',
-      'border-focus':     '63 117 103',
-
-      'brand-primary':       '63 117 103',
-      'brand-primary-hover': '49 95 84',
-      'brand-secondary':     '82 116 146',
-      'brand-gradient-from': '63 117 103',
-      'brand-gradient-via':  '76 131 116',
-      'brand-gradient-to':   '82 116 146',
-
-      'success':        '53 111 76',
-      'success-subtle': '220 239 226',
-      'warning':        '139 98 32',
-      'warning-subtle': '249 239 210',
-      'error':          '151 68 75',
-      'error-subtle':   '248 226 227',
-      'info':           '66 105 140',
-      'info-subtle':    '224 236 246',
-
-      'input-bg':     '252 251 247',
-      'input-border': '155 177 166',
-      'input-focus':  '63 117 103',
-      'btn-primary':  '63 117 103',
-      'btn-text':     '255 255 255',
-
-      'tree-metabolite': '45 112 123',
-      'tree-reaction':   '91 82 137',
-      'tree-source':     '53 111 76',
-      'tree-seed':       '66 105 140',
-      'tree-cofactor':   '101 113 107',
-      'tree-solution':   '53 111 76',
-
-      'node-compound-fill':   '209 235 226',
-      'node-compound-stroke': '42 119 96',
-      'node-reaction-fill':   '226 225 242',
-      'node-reaction-stroke': '91 82 137',
-      'node-ec-fill':         '247 232 194',
-      'node-ec-stroke':       '139 98 32',
-
-      'accent-teal':    '42 119 96',
-      'accent-indigo':  '91 82 137',
-      'accent-amber':   '139 98 32',
-      'accent-emerald': '53 111 76',
-      'accent-cyan':    '45 112 123',
-      'accent-violet':  '105 77 126',
-
-      'scrollbar-track':       '220 229 223',
-      'scrollbar-thumb':       '130 157 145',
-      'scrollbar-thumb-hover': '63 117 103',
-
-      'code-bg':   '232 238 232',
-      'code-text': '38 52 47',
-      'ring':      '63 117 103',
+    swatch: {
+      bg: '#F4EEDD',
+      accent: '#8B4A24',
+      text: '#3B3320',
     },
-  },
+    palette: {
+      surfacePrimary: '#F4EEDD',
+      surfaceSecondary: '#E8DFC5',
+      surfaceElevated: '#FBF7EC',
+      surfaceOverlay: '#FDFAF1',
+      surfaceInset: '#DED2AE',
 
-  'willow-dark': {
-    label: 'Willow Dark',
+      textPrimary: '#3B3320',
+      textSecondary: '#5E5440',
+      textMuted: '#6B6047',
+      textInverse: '#FFF9EC',
+
+      borderPrimary: '#D2C4A0',
+      borderSecondary: '#A28E63',
+
+      brandPrimary: '#8B4A24',
+      brandHover: '#713A1B',
+      brandSecondary: '#55632F',
+      gradientFrom: '#8B4A24',
+      gradientVia: '#B4823E',
+      gradientTo: '#6B7A46',
+
+      success: '#4C6B32',
+      successSubtle: '#E4E9D0',
+      warning: '#7A5410',
+      warningSubtle: '#EFE0B8',
+      error: '#953A28',
+      errorSubtle: '#F0D6CA',
+      info: '#3D6474',
+      infoSubtle: '#DCE6E6',
+
+      compoundFill: '#E9CBA0',
+      compoundStroke: '#8B5A2B',
+      reactionFill: '#D4DCB9',
+      reactionStroke: '#5C6B33',
+      ecFill: '#CFDDD8',
+      ecStroke: '#3E6E70',
+
+      source: '#5F7A3F',
+      seed: '#85602E',
+      cofactor: '#786A50',
+      solution: '#386350',
+
+      compatViolet: '#7A6684',
+      scrollbarTrack: '#E8DFC5',
+      scrollbarThumb: '#AC9868',
+      scrollbarHover: '#8A7550',
+      codeBg: '#E9DFC3',
+      codeText: '#5A4E30',
+      inputBg: '#FBF7EC',
+      buttonText: '#FFF9EC',
+    },
+  }),
+
+  // Smoked charcoal, antique gold, a distant blue rim. Reads like a
+  // book-lined study at night — quiet, weighty, distinguished.
+  'event-horizon': makeAstroTheme({
+    label: 'Event Horizon',
     isDark: true,
-    swatch: { bg: '#18231F', accent: '#8FC9B5', text: '#EAF1EC' },
-    colors: {
-      'surface-primary':   '24 35 31',
-      'surface-secondary': '33 49 43',
-      'surface-elevated':  '43 61 54',
-      'surface-overlay':   '33 49 43',
-      'surface-inset':     '17 26 23',
-
-      'text-primary':   '234 241 236',
-      'text-secondary': '194 208 200',
-      'text-muted':     '159 177 167',
-      'text-inverse':   '20 42 35',
-
-      'border-primary':   '60 81 72',
-      'border-secondary': '88 112 101',
-      'border-focus':     '143 201 181',
-
-      'brand-primary':       '143 201 181',
-      'brand-primary-hover': '169 217 200',
-      'brand-secondary':     '154 184 210',
-      'brand-gradient-from': '143 201 181',
-      'brand-gradient-via':  '119 177 158',
-      'brand-gradient-to':   '154 184 210',
-
-      'success':        '126 207 151',
-      'success-subtle': '31 70 47',
-      'warning':        '232 193 111',
-      'warning-subtle': '76 59 28',
-      'error':          '238 143 148',
-      'error-subtle':   '80 38 43',
-      'info':           '154 184 210',
-      'info-subtle':    '35 59 79',
-
-      'input-bg':     '17 26 23',
-      'input-border': '88 112 101',
-      'input-focus':  '143 201 181',
-      'btn-primary':  '143 201 181',
-      'btn-text':     '20 42 35',
-
-      'tree-metabolite': '114 202 210',
-      'tree-reaction':   '181 166 225',
-      'tree-source':     '126 207 151',
-      'tree-seed':       '154 184 210',
-      'tree-cofactor':   '159 177 167',
-      'tree-solution':   '126 207 151',
-
-      'node-compound-fill':   '67 151 125',
-      'node-compound-stroke': '126 222 190',
-      'node-reaction-fill':   '103 91 160',
-      'node-reaction-stroke': '190 178 235',
-      'node-ec-fill':         '160 119 43',
-      'node-ec-stroke':       '240 201 119',
-
-      'accent-teal':    '126 222 190',
-      'accent-indigo':  '190 178 235',
-      'accent-amber':   '240 201 119',
-      'accent-emerald': '126 207 151',
-      'accent-cyan':    '114 202 210',
-      'accent-violet':  '202 166 220',
-
-      'scrollbar-track':       '17 26 23',
-      'scrollbar-thumb':       '88 112 101',
-      'scrollbar-thumb-hover': '143 201 181',
-
-      'code-bg':   '17 26 23',
-      'code-text': '218 230 223',
-      'ring':      '143 201 181',
+    swatch: {
+      bg: '#171514',
+      accent: '#D4A85B',
+      text: '#EBE0CD',
     },
-  },
+    palette: {
+      surfacePrimary: '#171514',
+      surfaceSecondary: '#201D1B',
+      surfaceElevated: '#2A2622',
+      surfaceOverlay: '#332D28',
+      surfaceInset: '#100F0D',
 
-  /* ─────────────────────── Solarized Light ─────────────────────── */
-  'solarized-light': {
-    label: 'Solarized Light',
-    isDark: false,
-    swatch: { bg: '#fdf6e3', accent: '#268bd2', text: '#657b83' },
-    colors: {
-      'surface-primary':   '253 246 227',   // base3
-      'surface-secondary': '238 232 213',   // base2
-      'surface-elevated':  '253 246 227',   // base3
-      'surface-overlay':   '238 232 213',   // base2
-      'surface-inset':     '238 232 213',   // base2
+      textPrimary: '#EBE0CD',
+      textSecondary: '#C2B39C',
+      textMuted: '#A99C87',
+      textInverse: '#1A1613',
 
-      'text-primary':   '101 123 131',      // base00
-      'text-secondary': '88 110 117',       // base01
-      'text-muted':     '147 161 161',      // base1
-      'text-inverse':   '253 246 227',      // base3
+      borderPrimary: '#423A32',
+      borderSecondary: '#7D6E5C',
 
-      'border-primary':   '238 232 213',    // base2
-      'border-secondary': '147 161 161',    // base1
-      'border-focus':     '38 139 210',     // blue
+      brandPrimary: '#D4A85B',
+      brandHover: '#E4BE7C',
+      brandSecondary: '#8AA6BE',
+      gradientFrom: '#B8813F',
+      gradientVia: '#D4A85B',
+      gradientTo: '#8AA6BE',
 
-      'brand-primary':       '38 139 210',  // solarized blue
-      'brand-primary-hover': '108 113 196', // solarized violet
-      'brand-secondary':     '42 161 152',  // solarized cyan
-      'brand-gradient-from': '38 139 210',  // blue
-      'brand-gradient-via':  '108 113 196', // violet
-      'brand-gradient-to':   '42 161 152',  // cyan
+      success: '#9DBB8C',
+      successSubtle: '#26301F',
+      warning: '#D0AA66',
+      warningSubtle: '#382C18',
+      error: '#D3897E',
+      errorSubtle: '#3A2420',
+      info: '#93AFC7',
+      infoSubtle: '#212C36',
 
-      'success':        '133 153 0',        // solarized green
-      'success-subtle': '240 245 220',
-      'warning':        '181 137 0',        // solarized yellow
-      'warning-subtle': '250 245 225',
-      'error':          '220 50 47',        // solarized red
-      'error-subtle':   '252 235 235',
-      'info':           '38 139 210',       // solarized blue
-      'info-subtle':    '230 245 255',
+      compoundFill: '#62492F',
+      compoundStroke: '#D9B876',
+      reactionFill: '#3C4F62',
+      reactionStroke: '#93AFC7',
+      ecFill: '#5E3E38',
+      ecStroke: '#CC8E7F',
 
-      'input-bg':     '253 246 227',
-      'input-border': '147 161 161',
-      'input-focus':  '38 139 210',
-      'btn-primary':  '38 139 210',
-      'btn-text':     '253 246 227',
+      source: '#A5BC8C',
+      seed: '#E3CB8E',
+      cofactor: '#A69AAC',
+      solution: '#8CBBA0',
 
-      'tree-metabolite': '42 161 152',      // cyan
-      'tree-reaction':   '108 113 196',     // violet
-      'tree-source':     '133 153 0',       // green
-      'tree-seed':       '38 139 210',      // blue
-      'tree-cofactor':   '147 161 161',     // base1
-      'tree-solution':   '133 153 0',       // green
-
-      'node-compound-fill':   '180 222 220',
-      'node-compound-stroke': '42 161 152',
-      'node-reaction-fill':   '210 213 240',
-      'node-reaction-stroke': '108 113 196',
-      'node-ec-fill':         '245 235 200',
-      'node-ec-stroke':       '181 137 0',
-
-      'accent-teal':    '42 161 152',
-      'accent-indigo':  '108 113 196',
-      'accent-amber':   '181 137 0',
-      'accent-emerald': '133 153 0',
-      'accent-cyan':    '42 161 152',
-      'accent-violet':  '108 113 196',
-
-      'scrollbar-track':      '238 232 213',
-      'scrollbar-thumb':      '147 161 161',
-      'scrollbar-thumb-hover':'88 110 117',
-
-      'code-bg':   '238 232 213',
-      'code-text': '88 110 117',
-      'ring':      '38 139 210',
+      compatViolet: '#AC9AB6',
+      scrollbarTrack: '#191714',
+      scrollbarThumb: '#5A4F43',
+      scrollbarHover: '#86765F',
+      codeBg: '#100F0D',
+      codeText: '#C0A97F',
+      inputBg: '#100F0D',
+      buttonText: '#1A1613',
     },
-  },
-
-  /* ─────────────────────── Solarized Dark ─────────────────────── */
-  'solarized-dark': {
-    label: 'Solarized Dark',
-    isDark: true,
-    swatch: { bg: '#002b36', accent: '#268bd2', text: '#839496' },
-    colors: {
-      'surface-primary':   '0 43 54',       // base03
-      'surface-secondary': '7 54 66',       // base02
-      'surface-elevated':  '7 54 66',
-      'surface-overlay':   '7 54 66',
-      'surface-inset':     '0 43 54',
-
-      'text-primary':   '157 175 178',      // base0 brightened for readability
-      'text-secondary': '147 161 161',      // base1
-      'text-muted':     '131 148 150',      // base0 — boosted from base01 for readability
-      'text-inverse':   '0 43 54',          // base03
-
-      'border-primary':   '7 54 66',        // base02
-      'border-secondary': '88 110 117',     // base01
-      'border-focus':     '38 139 210',     // blue
-
-      'brand-primary':       '38 139 210',
-      'brand-primary-hover': '108 113 196',
-      'brand-secondary':     '42 161 152',
-      'brand-gradient-from': '38 139 210',
-      'brand-gradient-via':  '108 113 196',
-      'brand-gradient-to':   '42 161 152',
-
-      'success':        '133 153 0',
-      'success-subtle': '20 40 10',
-      'warning':        '181 137 0',
-      'warning-subtle': '50 40 10',
-      'error':          '220 50 47',
-      'error-subtle':   '60 20 20',
-      'info':           '38 139 210',
-      'info-subtle':    '10 40 60',
-
-      'input-bg':     '7 54 66',
-      'input-border': '88 110 117',
-      'input-focus':  '38 139 210',
-      'btn-primary':  '38 139 210',
-      'btn-text':     '253 246 227',
-
-      'tree-metabolite': '42 161 152',
-      'tree-reaction':   '108 113 196',
-      'tree-source':     '133 153 0',
-      'tree-seed':       '38 139 210',
-      'tree-cofactor':   '88 110 117',
-      'tree-solution':   '133 153 0',
-
-      'node-compound-fill':   '42 161 152',
-      'node-compound-stroke': '42 161 152',
-      'node-reaction-fill':   '108 113 196',
-      'node-reaction-stroke': '108 113 196',
-      'node-ec-fill':         '181 137 0',
-      'node-ec-stroke':       '181 137 0',
-
-      'accent-teal':    '42 161 152',
-      'accent-indigo':  '108 113 196',
-      'accent-amber':   '181 137 0',
-      'accent-emerald': '133 153 0',
-      'accent-cyan':    '42 161 152',
-      'accent-violet':  '108 113 196',
-
-      'scrollbar-track':      '0 43 54',
-      'scrollbar-thumb':      '88 110 117',
-      'scrollbar-thumb-hover':'131 148 150',
-
-      'code-bg':   '7 54 66',
-      'code-text': '147 161 161',
-      'ring':      '38 139 210',
-    },
-  },
+  }),
 };
+
+// Xenonite (light) = the crystalline Eridian ship hull — pale mint-teal
+// surfaces with warm gold structural accents. Astrophage (dark) = carbon-
+// black surfaces with a molten-orange stellar glow and a spectrometer-teal
+// absorption-line accent.
+Object.assign(THEMES, {
+  'xenonite': makeAstroTheme({
+    label: 'Xenonite',
+    isDark: false,
+    swatch: {
+      bg: '#F5F9FC',
+      accent: '#1C8FB5',
+      text: '#16232E',
+    },
+    palette: {
+      surfacePrimary: '#F5F9FC',
+      surfaceSecondary: '#E6EEF4',
+      surfaceElevated: '#FFFFFF',
+      surfaceOverlay: '#FBFDFF',
+      surfaceInset: '#D9E6EE',
+
+      textPrimary: '#16232E',
+      textSecondary: '#435666',
+      textMuted: '#647587',
+      textInverse: '#F5F9FC',
+
+      borderPrimary: '#CFE0EA',
+      borderSecondary: '#94B3C4',
+
+      brandPrimary: '#1C8FB5',
+      brandHover: '#187B9C',
+      brandSecondary: '#D9A441',
+      gradientFrom: '#0EA5C7',
+      gradientVia: '#7FD4E8',
+      gradientTo: '#D9A441',
+
+      success: '#2E9E6B',
+      successSubtle: '#E1F5EA',
+      warning: '#B9840F',
+      warningSubtle: '#FBEFD3',
+      error: '#C6473F',
+      errorSubtle: '#FBE2DF',
+      info: '#2E86AB',
+      infoSubtle: '#DFF0F7',
+
+      compoundFill: '#CDEAF3',
+      compoundStroke: '#1C8FB5',
+      reactionFill: '#F1E2BE',
+      reactionStroke: '#B9840F',
+      ecFill: '#FCE2DC',
+      ecStroke: '#C6473F',
+
+      source: '#2E9E6B',
+      seed: '#D9A441',
+      cofactor: '#7F8FA0',
+      solution: '#1C8FB5',
+
+      compatViolet: '#7C6E9F',
+      scrollbarTrack: '#E6EEF4',
+      scrollbarThumb: '#A9C7D6',
+      scrollbarHover: '#7FA3B8',
+      codeBg: '#E8F1F6',
+      codeText: '#175E77',
+      inputBg: '#FFFFFF',
+      buttonText: '#F5F9FC',
+    },
+  }),
+
+  'astrophage': makeAstroTheme({
+    label: 'Astrophage',
+    isDark: true,
+    swatch: {
+      bg: '#0B0B0C',
+      accent: '#FF6A1A',
+      text: '#F2EDE6',
+    },
+    palette: {
+      surfacePrimary: '#0B0B0C',
+      surfaceSecondary: '#141415',
+      surfaceElevated: '#1C1B1B',
+      surfaceOverlay: '#242322',
+      surfaceInset: '#050505',
+
+      textPrimary: '#F2EDE6',
+      textSecondary: '#B8AFA4',
+      textMuted: '#8F877D',
+      textInverse: '#0B0B0C',
+
+      borderPrimary: '#2C2A28',
+      borderSecondary: '#524C45',
+
+      brandPrimary: '#FF6A1A',
+      brandHover: '#FF8A4C',
+      brandSecondary: '#2FE0C4',
+      gradientFrom: '#FF3D00',
+      gradientVia: '#FF8A1A',
+      gradientTo: '#2FE0C4',
+
+      success: '#4FD69C',
+      successSubtle: '#123326',
+      warning: '#FFB020',
+      warningSubtle: '#3A2A0C',
+      error: '#FF4D4D',
+      errorSubtle: '#3A1414',
+      info: '#4FC3E0',
+      infoSubtle: '#0E2A33',
+
+      compoundFill: '#3A2410',
+      compoundStroke: '#FF9A44',
+      reactionFill: '#123330',
+      reactionStroke: '#2FE0C4',
+      ecFill: '#331414',
+      ecStroke: '#FF6A5C',
+
+      source: '#4FD69C',
+      seed: '#FFD166',
+      cofactor: '#8F8B99',
+      solution: '#2FE0C4',
+
+      compatViolet: '#9B8BC4',
+      scrollbarTrack: '#0F0F10',
+      scrollbarThumb: '#3A3733',
+      scrollbarHover: '#5C564E',
+      codeBg: '#0A0A0A',
+      codeText: '#FFB37A',
+      inputBg: '#050505',
+      buttonText: '#0B0B0C',
+    },
+  }),
+});
 
 export const THEME_IDS = Object.keys(THEMES);
 export const DEFAULT_THEME = 'nebula-light';

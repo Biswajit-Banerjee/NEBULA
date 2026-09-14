@@ -459,7 +459,14 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
     });
 
     // ── Static collision resolution (replaces physics) ──
-    // Group by sub-column, sort by y, push apart any that are too close
+    // Group by sub-column, sort by y, push apart any that are too close.
+    // Skip nodes that have imported (pinned) positions — they stay locked.
+    const _pinnedIds = new Set();
+    if (pinnedPositions) {
+      nodes.forEach(n => {
+        if (pinnedPositions.has?.(_safeId(n.id))) _pinnedIds.add(n.id);
+      });
+    }
     const MIN_DIST = ROW_SPACING * spacingScale;
     const byCol = {};
     nodes.forEach((n) => {
@@ -475,8 +482,13 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
           const gap = col[i].y - col[i - 1].y;
           if (gap < MIN_DIST) {
             const push = (MIN_DIST - gap) / 2;
-            col[i - 1].y -= push;
-            col[i].y += push;
+            // Don't move pinned nodes — push only the non-pinned side
+            const iPinned = _pinnedIds.has(col[i - 1].id);
+            const jPinned = _pinnedIds.has(col[i].id);
+            if (iPinned && jPinned) continue; // both pinned, skip
+            if (iPinned) { col[i].y += push * 2; }
+            else if (jPinned) { col[i - 1].y -= push * 2; }
+            else { col[i - 1].y -= push; col[i].y += push; }
           }
         }
       });
@@ -493,10 +505,21 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
             const push = (GLOBAL_MIN - dist) / 2;
             const nx = dx / dist;
             const ny = dy / dist;
-            nodes[i].x -= nx * push;
-            nodes[i].y -= ny * push;
-            nodes[j].x += nx * push;
-            nodes[j].y += ny * push;
+            const iPinned = _pinnedIds.has(nodes[i].id);
+            const jPinned = _pinnedIds.has(nodes[j].id);
+            if (iPinned && jPinned) continue;
+            if (iPinned) {
+              nodes[j].x += nx * push * 2;
+              nodes[j].y += ny * push * 2;
+            } else if (jPinned) {
+              nodes[i].x -= nx * push * 2;
+              nodes[i].y -= ny * push * 2;
+            } else {
+              nodes[i].x -= nx * push;
+              nodes[i].y -= ny * push;
+              nodes[j].x += nx * push;
+              nodes[j].y += ny * push;
+            }
           }
         }
       }

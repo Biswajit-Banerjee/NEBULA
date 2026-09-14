@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
-    Plus, X, Eye, EyeOff, Download, Upload, 
-    Loader2, Layers, FlaskConical, Target, Sparkles, ChevronLeft, Palette, X as CloseIcon,
-    Atom
+    Plus, X, Eye, EyeClosed, Download, Upload, 
+    Loader2, Layers, CircleDot, Target, Rocket, ChevronLeft, Palette,
+    Atom, FlaskConical, Hash
 } from 'lucide-react';
 
 import AutocompleteInput from './AutocompleteInput';
+import EmbeddedColorPicker from '../NetworkViewer2D/utils/EmbeddedColorPicker';
 import compoundDataJson from './compound_map.json';
 import reactionDataJson from './reaction_map.json';
 import ecDataJson from './ec_map.json';
@@ -27,18 +28,22 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
   const itemColor = pair.color || '#CBD5E1';
 
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [tempColor, setTempColor] = useState(pair.color || '#22C55E');
-  const [tempAlpha, setTempAlpha] = useState(pair.alpha !== undefined ? pair.alpha : 1);
-  const PRESET_COLORS = ['#fb7185','#fbbf24','#4ade80','#5eead4','#60a5fa','#a78bfa','#f9a8d4','#fda4af'];
+  const [initialPair, setInitialPair] = useState(null);
 
   const commitColor = (color, alpha) => {
     onChange(index, { ...pair, color, alpha });
   };
 
   const openPicker = () => {
-    setTempColor(pair.color || '#22C55E');
-    setTempAlpha(pair.alpha !== undefined ? pair.alpha : 1);
+    setInitialPair({ color: pair.color, alpha: pair.alpha });
     setShowColorPicker(true);
+  };
+
+  const handleCancel = () => {
+    if (initialPair) {
+      onChange(index, { ...pair, color: initialPair.color, alpha: initialPair.alpha });
+    }
+    setShowColorPicker(false);
   };
 
   return (
@@ -87,59 +92,15 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
               </button>
 
               {showColorPicker && (
-                <div className="absolute right-0 mt-2 z-50 bg-surface-overlay/95 border border-brd/70 rounded-xl shadow-lg p-3 w-56" onClick={(e)=>e.stopPropagation()}>
-                  <button onClick={()=>setShowColorPicker(false)} className="absolute top-2 right-2 text-content-muted hover:text-content" aria-label="Close color picker"><CloseIcon className="w-4 h-4"/></button>
-                  <div className="grid grid-cols-4 gap-2 mb-4 mt-4">
-                    {PRESET_COLORS.map(c=> (
-                      <button key={c} className="w-7 h-7 rounded-full border border-brd shadow-sm hover:scale-110 transition-transform" style={{backgroundColor:c}} onClick={()=>setTempColor(c)} aria-label={`Select ${c}`}></button>
-                    ))}
-                  </div>
-
-                  <p className="text-xs font-medium text-content-secondary mb-1">Custom Color</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={tempColor}
-                      onChange={(e) => setTempColor(e.target.value)}
-                      className="sr-only"
-                      id={`color-picker-${index}`}
-                    />
-
-                    {/* Trigger button shows current colour */}
-                    <label htmlFor={`color-picker-${index}`} className="cursor-pointer flex items-center justify-center w-9 h-9 rounded-full border border-brd shadow-sm" title="Pick custom colour">
-                      <div className="w-6 h-6 rounded-full" style={{ backgroundColor: `${tempColor}${Math.round(tempAlpha*255).toString(16).padStart(2,'0')}` }}></div>
-                    </label>
-
-                    {/* Hex textbox */}
-                    <input
-                      type="text"
-                      value={tempColor || ''}
-                      onChange={(e) => setTempColor(e.target.value)}
-                      placeholder="#f97316"
-                      className="flex-1 min-w-0 px-2 py-1.5 text-sm rounded-lg border border-brd/70 bg-surface/80 text-content"
-                    />
-                    <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand hover:bg-brand-hover text-content-inverse" onClick={()=>{commitColor(tempColor, tempAlpha); setShowColorPicker(false);}}>OK</button>
-                  </div>
-
-                  {/* Transparency slider */}
-                  <div className="mb-4 w-full space-y-1">
-                    <div className="flex items-center justify-between text-xs text-content-secondary">
-                      <span>Transparency</span>
-                      <span>{Math.round(tempAlpha*100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={Math.round(tempAlpha*100)}
-                      onChange={e=>setTempAlpha(parseInt(e.target.value)/100)}
-                      className="w-full h-2 rounded-lg appearance-none accent-brand"
-                      style={{
-                        backgroundImage: `linear-gradient(to right, ${tempColor}00 0%, ${tempColor}${Math.round(tempAlpha*255).toString(16).padStart(2,'0')} 100%)`,
-                        backgroundColor: 'rgb(var(--border-primary))'
-                      }}
-                    />
-                  </div>
+                <div className="absolute right-0 mt-2 z-50 w-64 animate-in fade-in slide-in-from-top-1 duration-200" onClick={(e)=>e.stopPropagation()}>
+                  <EmbeddedColorPicker
+                    color={pair.color}
+                    alpha={pair.alpha}
+                    showAlpha={true}
+                    onChange={(c, a) => commitColor(c, a)}
+                    onOk={() => setShowColorPicker(false)}
+                    onCancel={handleCancel}
+                  />
                 </div>
               )}
             </div>
@@ -147,16 +108,16 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
             {pair.hasResults !== undefined ? (
                <button
                 onClick={() => onToggleVisibility(index)}
-                className={`p-1.5 rounded-lg text-xs transition-all duration-200 ${ 
-                  pair.visible 
-                    ? 'bg-ok-subtle text-ok hover:bg-ok-subtle/80' 
-                    : 'bg-surface-inset/70 text-content-secondary hover:bg-surface-inset'
+                className={`p-1.5 rounded-lg text-xs transition-colors duration-200 ${
+                  pair.visible
+                    ? 'text-content-secondary hover:text-content'
+                    : 'text-content-muted hover:text-content-secondary'
                 }`}
                 title={pair.visible ? 'Hide results for this query' : 'Show results for this query'}
                 disabled={disabled}
                 aria-pressed={pair.visible}
               >
-                {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                {pair.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeClosed className="w-3.5 h-3.5" />}
               </button>
             ) : null}
 
@@ -181,7 +142,7 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
               {/* Source Input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-content flex items-center gap-2">
-                  <FlaskConical className="w-3.5 h-3.5 text-brand" />
+                  <CircleDot className="w-3.5 h-3.5 text-brand" />
                   Source <span className="text-content-muted text-xs">(Optional)</span>
                 </label>
                 <AutocompleteInput
@@ -235,7 +196,7 @@ const SearchPairItem = memo(({ index, pair, onChange, onRemove, onToggleVisibili
           {pair.mode === 'ec' && (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-content flex items-center gap-2">
-                <FlaskConical className="w-3.5 h-3.5 text-ok" />
+                <Hash className="w-3.5 h-3.5 text-ok" />
                 EC Number <span className="text-err">*</span>
               </label>
               <AutocompleteInput
@@ -572,7 +533,7 @@ const SearchPanel = ({
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-5 h-5" />
+                  <Rocket className="w-5 h-5" />
                   Explore
                 </>
               )}

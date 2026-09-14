@@ -20,10 +20,22 @@ const HelpOverlay = ({ onClose }) => (
             <span className="font-medium">Drag</span> nodes to reposition them.
           </li>
           <li>
-            <span className="font-medium">Scroll</span> to zoom in and out.
+            <span className="font-medium">Scroll / two-finger swipe</span> to zoom in and out.
           </li>
           <li>
-            <span className="font-medium">Ctrl + Click</span> on a reaction side-node to collapse / expand paths.
+            <span className="font-medium">Ctrl + Click (Cmd + Click on Mac)</span> on a reaction side-node to collapse / expand paths.
+          </li>
+          <li>
+            <span className="font-medium">Right-click (Ctrl + Click on Mac)</span> on any node for a context menu to hide/show species and transform groups.
+          </li>
+          <li>
+            <span className="font-medium">Shift + Click</span> to select multiple nodes (multi-select).
+          </li>
+          <li>
+            <span className="font-medium">Ctrl/Cmd + Drag</span> on empty space to draw a selection box.
+          </li>
+          <li>
+            <span className="font-medium">Middle-click</span> on a node to lock/unlock its position.
           </li>
         </ul>
 

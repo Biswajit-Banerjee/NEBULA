@@ -7,6 +7,7 @@ import useAnimation from "./hooks/useAnimation";
 import useFullscreen from "./hooks/useFullscreen";
 import HelpOverlay from "./HelpOverlay";
 import { isReservedGroupId, normalizeColor } from "./utils/svgLayout";
+import { RAINBOW_PALETTE } from "./utils/colorSchemes";
 
 const SHAPE_TAGS = new Set(['circle', 'ellipse', 'rect', 'image']);
 
@@ -290,6 +291,9 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   const [brushMode, setBrushMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#e11d48');
 
+  // Layout import options
+  const [importPositionsOnly, setImportPositionsOnly] = useState(true);
+
   const handleClearEdgeColors = () => {
     if (graphRendererRef.current) graphRendererRef.current.clearEdgeColors();
   };
@@ -297,8 +301,14 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   // Color settings
   const [colorMode, setColorMode] = useState('generation'); // 'generation' | 'type' | 'degree'
   const [colorScheme, setColorScheme] = useState('rainbow');
+  const [customRainbow, setCustomRainbow] = useState(RAINBOW_PALETTE);
   const [bgColor, setBgColor] = useState(''); // empty = default theme bg
   const [gridColor, setGridColor] = useState(''); // empty = default theme grid
+
+  // HSV global color adjustment
+  const [hueShift, setHueShift] = useState(0);      // -180 to 180 degrees
+  const [satScale, setSatScale] = useState(1.0);     // 0 to 2 (1 = no change)
+  const [valScale, setValScale] = useState(1.0);     // 0 to 2 (1 = no change)
 
   // Mask slider: lower bound of visible generation range
   const [minVisibleGeneration, setMinVisibleGeneration] = useState(0);
@@ -382,10 +392,28 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     reader.onload = (ev) => {
       const { byId, byLabel, edgeColors, annotations } = parseSVGLayout(ev.target.result);
       if (graphRendererRef.current) {
-        // Session graph stays the source of truth: only nodes present in the
-        // current session are touched, and only their position/color/label
-        // is updated from whatever the SVG contains for a matching node.
-        graphRendererRef.current.importLayout(byId, byLabel);
+        if (importPositionsOnly) {
+          // Strip colors and labels — keep only positions
+          const stripColors = (map) => {
+            const stripped = new Map();
+            map.forEach((entry, key) => {
+              stripped.set(key, { pos: entry.pos, fill: null, stroke: null, label: null });
+            });
+            return stripped;
+          };
+          const strippedById = stripColors(byId);
+          const strippedByLabel = new Map();
+          byLabel.forEach((entries, key) => {
+            strippedByLabel.set(key, entries.map(e => ({ pos: e.pos, fill: null, stroke: null, label: null })));
+          });
+          // Clear any previously imported node colors so current scheme applies
+          graphRendererRef.current.clearNodeColors?.();
+          graphRendererRef.current.importLayout(strippedById, strippedByLabel);
+        } else {
+          // Full import: positions + colors + labels
+          graphRendererRef.current.importLayout(byId, byLabel);
+        }
+        // Edge colors and annotations are always imported (user-added decorations)
         if (Object.keys(edgeColors).length > 0)
           graphRendererRef.current.importEdgeColors(edgeColors);
         if (annotations.length > 0)
@@ -533,6 +561,10 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             nodeAvoidance={nodeAvoidance}
             colorMode={colorMode}
             colorScheme={colorScheme}
+            customPalette={customRainbow}
+            hueShift={hueShift}
+            satScale={satScale}
+            valScale={valScale}
             bgColor={bgColor}
             gridColor={gridColor}
             showNodeNames={showNodeNames}
@@ -570,6 +602,8 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             brushColor={brushColor}
             setBrushColor={setBrushColor}
             clearEdgeColors={handleClearEdgeColors}
+            importPositionsOnly={importPositionsOnly}
+            setImportPositionsOnly={setImportPositionsOnly}
             resetSpiral={resetSpiral}
             tightenEdges={tightenEdges}
             toggleHelp={() => setShowHelp(prev => !prev)}
@@ -577,6 +611,14 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             setColorMode={setColorMode}
             colorScheme={colorScheme}
             setColorScheme={setColorScheme}
+            customPalette={customRainbow}
+            setCustomPalette={setCustomRainbow}
+            hueShift={hueShift}
+            setHueShift={setHueShift}
+            satScale={satScale}
+            setSatScale={setSatScale}
+            valScale={valScale}
+            setValScale={setValScale}
             bgColor={bgColor}
             setBgColor={setBgColor}
             gridColor={gridColor}

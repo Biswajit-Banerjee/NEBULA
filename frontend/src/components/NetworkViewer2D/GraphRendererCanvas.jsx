@@ -15,6 +15,7 @@ import { getSchemeColor, getTypeColor } from "./utils/colorSchemes";
 import { safeId, normalizeColor } from "./utils/svgLayout";
 import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 import NodeInfoPanel from "./NodeInfoPanel";
+import ProteinDialog from "../ProteinDialog";
 import compoundMapJson from "../SearchPanel/compound_map.json";
 
 const _compoundNameMap = new Map();
@@ -100,6 +101,21 @@ const _renderNameTex = (name, size, isDark) => {
   canvas._aspect=1; return canvas;
 };
 
+// Compute a stable search identity from C compounds (immune to Z/cofactor filtering).
+// Only changes when a genuinely new search produces different compound results.
+const _computeSearchId = (data) => {
+  if (!data || !data.length) return '';
+  const compounds = new Set();
+  for (const r of data) {
+    if (r.compound_generation) {
+      for (const c of Object.keys(r.compound_generation)) {
+        if (c[0] === 'C') compounds.add(c);
+      }
+    }
+  }
+  return [...compounds].sort().join(',');
+};
+
 const GraphRendererCanvas = forwardRef(
   (
     {
@@ -120,6 +136,10 @@ const GraphRendererCanvas = forwardRef(
       nodeAvoidance = false,
       colorMode = 'generation',
       colorScheme = 'viridis',
+      customPalette = null,
+      hueShift = 0,
+      satScale = 1.0,
+      valScale = 1.0,
       bgColor = '',
       gridColor = '',
       showNodeNames = false,
@@ -153,10 +173,12 @@ const GraphRendererCanvas = forwardRef(
     const selBoxRef = useRef(null);           // ctrl+drag selection rect {x1,y1,x2,y2}
     const multiDragRef = useRef(null);        // [{node,offX,offY}] for group drag
     const [selectedNodes, setSelectedNodes] = useState([]);
+    const [proteinDialogEc, setProteinDialogEc] = useState(null); // EC number for protein viewer
     const drawRef = useRef(null);        // always points to latest draw fn
     const syncSelectionRef = useRef(null); // always points to latest syncSelection
     const needsFitRef = useRef(true);    // auto-fit view on first layout / new data
     const prevDataRef = useRef(null);    // track data identity for auto-fit
+    const prevSearchIdRef = useRef('');  // content-based search identity (C compounds)
     const prevSpacingRef = useRef(spacingScale); // track spacing for bidirectional spread
     const prevGenKeyRef = useRef('');  // track visible generation set for gap detection
     const annotationsRef = useRef([]);     // Imported SVG annotations (text, lines)
@@ -774,15 +796,26 @@ const GraphRendererCanvas = forwardRef(
       }
       const maxDeg = degreeMap.size > 0 ? Math.max(1, ...degreeMap.values()) : 1;
 
-      // Use the single discrete rainbow palette for generation coloring.
+      // Node coloring — respects colorMode setting + HSV global adjustments
       const MAX_BUCKET = 100;
+      const _hsvAdj = (hueShift !== 0 || satScale !== 1 || valScale !== 1)
+        ? { hueShift, satScale, valScale } : null;
       const nodeColor = (n) => {
+        if (colorMode === 'type') {
+          return getTypeColor(n.type, dark);
+        }
+        if (colorMode === 'degree') {
+          const deg = degreeMap.get(n.id) || 0;
+          const t = maxDeg > 0 ? Math.min(1, deg / maxDeg) : 0;
+          return getSchemeColor('rainbow', t, dark, _hsvAdj, customPalette);
+        }
+        // Default: generation
         const gen = n.generation || 0;
         const bucket = maxGeneration > 0
           ? Math.round((gen / maxGeneration) * MAX_BUCKET)
           : 0;
         const t = bucket / MAX_BUCKET;
-        return getSchemeColor('rainbow', t, dark);
+        return getSchemeColor('rainbow', t, dark, _hsvAdj, customPalette);
       };
 
       // (Node sizes defined above before edge drawing)
@@ -1015,7 +1048,7 @@ const GraphRendererCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, edgeThickness, spacingScale, nodeScale, fontScale, colorMode, colorScheme, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
+    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, edgeThickness, spacingScale, nodeScale, fontScale, colorMode, colorScheme, customPalette, hueShift, satScale, valScale, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
 
     // Keep refs always pointing to the latest functions (fixes stale closure in event handlers)
     drawRef.current = draw;
@@ -1057,10 +1090,29 @@ const GraphRendererCanvas = forwardRef(
         return visibleNodeIds.has(sId) && visibleNodeIds.has(tId);
       });
 
+      // ── Detect genuinely new search vs re-filter (cofactor toggle) ──
+      // Uses C-compound identity which is immune to Z/cofactor filtering.
+      const currentSearchId = _computeSearchId(data);
+      const isNewSearch = prevSearchIdRef.current !== '' && currentSearchId !== prevSearchIdRef.current;
+      if (currentSearchId) prevSearchIdRef.current = currentSearchId;
+
+      // On new search: clear everything for a fresh start
+      if (isNewSearch) {
+        positionCacheRef.current = {};
+        importedPositionsRef.current.clear();
+        annotationsRef.current = [];
+        needsFitRef.current = true;
+      }
+      prevDataRef.current = data;
+
       // Snapshot current positions into the persistent cache
       nodesRef.current.forEach((n) => {
         positionCacheRef.current[n.id] = { x: n.x, y: n.y };
       });
+
+      // Save pre-layout positions so we can restore them for re-filters
+      // (prevents collision resolution from pushing existing nodes around)
+      const preLayoutPositions = isNewSearch ? null : { ...positionCacheRef.current };
 
       // Track spacing changes — new spacing applies to freshly placed nodes only.
       prevSpacingRef.current = spacingScale;
@@ -1068,9 +1120,12 @@ const GraphRendererCanvas = forwardRef(
       // Detect generation set changes — when generations are added/removed,
       // clear cached X so nodes reposition to close gaps (Y stays sticky).
       // Cofactor toggles within the same generation set won't trigger this.
+      // BUT: if imported positions are active (SVG import), keep both X and Y
+      // so the uploaded layout is respected across generation toggles.
       const currentGenSet = new Set(visibleNodes.map(n => n.generation ?? 0));
       const currentGenKey = [...currentGenSet].sort((a, b) => a - b).join(',');
-      if (prevGenKeyRef.current && prevGenKeyRef.current !== currentGenKey) {
+      const hasImportedPositions = importedPositionsRef.current.size > 0;
+      if (prevGenKeyRef.current && prevGenKeyRef.current !== currentGenKey && !hasImportedPositions) {
         // Generation structure changed — clear X from cache, keep Y
         Object.keys(positionCacheRef.current).forEach(id => {
           const cached = positionCacheRef.current[id];
@@ -1091,6 +1146,19 @@ const GraphRendererCanvas = forwardRef(
       );
       genMapRef.current = layoutResult.genMap || [];
 
+      // For re-filters (cofactor toggle, visibility change): restore pre-layout
+      // positions for existing nodes so collision resolution doesn't push them around.
+      // Only newly appearing nodes keep their layout-computed positions.
+      if (preLayoutPositions) {
+        visibleNodes.forEach(n => {
+          const pre = preLayoutPositions[n.id];
+          if (pre && pre.x !== undefined && !isNaN(pre.x) && pre.y !== undefined && !isNaN(pre.y)) {
+            n.x = pre.x;
+            n.y = pre.y;
+          }
+        });
+      }
+
       // Update cache with final positions
       visibleNodes.forEach((n) => {
         positionCacheRef.current[n.id] = { x: n.x, y: n.y };
@@ -1098,16 +1166,6 @@ const GraphRendererCanvas = forwardRef(
 
       // Store nodes for drawing and interaction
       nodesRef.current = visibleNodes;
-
-      // Auto-fit view when data changes (new search) or first layout
-      if (data !== prevDataRef.current) {
-        prevDataRef.current = data;
-        needsFitRef.current = true;
-        // Clear stale position cache from previous search
-        positionCacheRef.current = {};
-        importedPositionsRef.current.clear();
-        annotationsRef.current = [];
-      }
 
       if (needsFitRef.current && visibleNodes.length > 0 && canvasRef.current && zoomRef.current) {
         needsFitRef.current = false;
@@ -1173,7 +1231,7 @@ const GraphRendererCanvas = forwardRef(
         .zoom()
         .scaleExtent([0.01, 20])
         .filter((ev) => {
-          if (ev.ctrlKey) return false; // ctrl reserved for selection box
+          if (ev.ctrlKey || ev.metaKey) return false; // ctrl/cmd reserved for selection box
           if (ev.type !== 'mousedown') return true;
           // Disable zoom if pointer is on a node (so we can drag it)
           const rect = canvas.getBoundingClientRect();
@@ -1205,14 +1263,31 @@ const GraphRendererCanvas = forwardRef(
       };
     }, [containerRef, height, isFullscreen]);
 
-    /* ── Right-click: group transform menu ── */
+    /* ── Right-click / Ctrl+click (Mac): context menu ── */
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const handler = (e) => {
         e.preventDefault();
-        if (pinnedNodesRef.current.size > 0) {
-          setCtxMenu({ x: e.clientX, y: e.clientY });
+        // Detect which node (if any) was right-clicked
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+        const my = (e.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+        const ns = nodeScaleRef.current;
+        const hitR = 300 * ns * ns;
+        let hitNode = null;
+        for (let i = nodesRef.current.length - 1; i >= 0; i--) {
+          const n = nodesRef.current[i];
+          if (nodeDisplayRef.current && n.type === 'compound' && structTexRef.current.has(n.id)) {
+            const tex = structTexRef.current.get(n.id);
+            const hh = STRUCT_WORLD_H / 2;
+            const hw = hh * (tex._aspect || 1);
+            if (Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh) { hitNode = n; break; }
+          } else if ((mx - n.x) ** 2 + (my - n.y) ** 2 < hitR) { hitNode = n; break; }
+        }
+        // Show context menu if nodes are selected OR if a node was right-clicked
+        if (pinnedNodesRef.current.size > 0 || hitNode) {
+          setCtxMenu({ x: e.clientX, y: e.clientY, hitNode });
         }
       };
       canvas.addEventListener('contextmenu', handler);
@@ -1233,10 +1308,10 @@ const GraphRendererCanvas = forwardRef(
 
     useEffect(() => {
       const down = (e) => {
-        if (e.key === 'Control') setCtrlHeld(true);
+        if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(true);
       };
       const up = (e) => {
-        if (e.key === 'Control') setCtrlHeld(false);
+        if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(false);
       };
       window.addEventListener('keydown', down);
       window.addEventListener('keyup', up);
@@ -1301,8 +1376,8 @@ const GraphRendererCanvas = forwardRef(
         const { mx, my } = worldCoords(e);
         const node = hitTest(mx, my);
 
-        // Ctrl+drag on empty space = start selection box
-        if (e.ctrlKey && !node) {
+        // Ctrl+drag (or Cmd+drag on Mac) on empty space = start selection box
+        if ((e.ctrlKey || e.metaKey) && !node) {
           selBoxRef.current = { x1: mx, y1: my, x2: mx, y2: my };
           canvas.style.cursor = 'crosshair';
           return;
@@ -1502,7 +1577,7 @@ const GraphRendererCanvas = forwardRef(
 
         const hit = hitTest(mx, my);
 
-        if (evt.ctrlKey && hit && /reaction-/.test(hit.type)) {
+        if ((evt.ctrlKey || evt.metaKey) && hit && /reaction-/.test(hit.type)) {
           setCollapsedRoots((prev) => {
             const newSet = new Set(prev);
             if (newSet.has(hit.id)) newSet.delete(hit.id);
@@ -1635,29 +1710,6 @@ const GraphRendererCanvas = forwardRef(
           return { x: n.x + ux * r, y: n.y + uy * r };
         };
 
-        // ── Print-quality export constants ──
-        const EXPORT_SCALE = 3;   // physical pixel multiplier (3× = ~300 DPI usable)
-        const EXPORT_PAD   = 12;  // tight whitespace around graph (world units)
-
-        // Determine tight bounds accounting for structure images and labels
-        const nameExtra = showNodeNames ? 14 : 0;
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        visibleNodes.forEach((n) => {
-          const hasTex = showStructures && n.type === 'compound' && structTexRef.current.has(n.id);
-          const hw = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 20 : 17);
-          const hh = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 12 : 11);
-          minX = Math.min(minX, n.x - hw);
-          minY = Math.min(minY, n.y - hh);
-          maxX = Math.max(maxX, n.x + hw);
-          maxY = Math.max(maxY, n.y + hh + nameExtra);
-        });
-        // Add space for generation labels at top
-        if (genMapRef.current.length > 0) minY -= 18;
-        minX -= EXPORT_PAD; minY -= EXPORT_PAD;
-        maxX += EXPORT_PAD; maxY += EXPORT_PAD;
-        const svgWidth = maxX - minX;
-        const svgHeight = maxY - minY;
-
         // ── Colors: ALWAYS use light-mode for SVG export ──
         // Illustrator does not support rgba() CSS colors — they render as
         // black. Force isDark=false so getSchemeColor/getTypeColor produce
@@ -1668,13 +1720,35 @@ const GraphRendererCanvas = forwardRef(
         const svgMutedHex  = '#6B7280';
 
         // Node style — always light-mode for Illustrator compatibility
+        // Respects colorMode setting (generation / type / degree)
         const SVG_MAX_BUCKET = 100;
+        const svgDegreeMap = new Map();
+        if (colorMode === 'degree') {
+          visibleLinks.forEach(l => {
+            const s = l.source?.id || l.source;
+            const t = l.target?.id || l.target;
+            svgDegreeMap.set(s, (svgDegreeMap.get(s) || 0) + 1);
+            svgDegreeMap.set(t, (svgDegreeMap.get(t) || 0) + 1);
+          });
+        }
+        const svgMaxDeg = svgDegreeMap.size > 0 ? Math.max(1, ...svgDegreeMap.values()) : 1;
+        const _svgHsvAdj = (hueShift !== 0 || satScale !== 1 || valScale !== 1)
+          ? { hueShift, satScale, valScale } : null;
         const getNodeStyle = (n) => {
-          const gen = n.generation || 0;
-          const t = maxGeneration > 0
-            ? Math.round((gen / maxGeneration) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET
-            : 0;
-          const base = getSchemeColor('rainbow', t, false);
+          let base;
+          if (colorMode === 'type') {
+            base = getTypeColor(n.type, false);
+          } else if (colorMode === 'degree') {
+            const deg = svgDegreeMap.get(n.id) || 0;
+            const t = svgMaxDeg > 0 ? Math.min(1, deg / svgMaxDeg) : 0;
+            base = getSchemeColor('rainbow', t, false, _svgHsvAdj);
+          } else {
+            const gen = n.generation || 0;
+            const t = maxGeneration > 0
+              ? Math.round((gen / maxGeneration) * SVG_MAX_BUCKET) / SVG_MAX_BUCKET
+              : 0;
+            base = getSchemeColor('rainbow', t, false, _svgHsvAdj);
+          }
           const override = nodeColorsRef.current.get(n.id);
           return override ? { fill: override.fill || base.fill, stroke: override.stroke || base.stroke } : base;
         };
@@ -1687,6 +1761,40 @@ const GraphRendererCanvas = forwardRef(
           if (/reaction-/.test(n.type)) label = label.split('_')[0];
           return label;
         };
+
+        // ── Print-quality export constants ──
+        const EXPORT_SCALE = 3;   // physical pixel multiplier (3× = ~300 DPI usable)
+        const EXPORT_PAD   = 12;  // tight whitespace around graph (world units)
+
+        // Determine tight bounds accounting for structure images, labels, and text width.
+        // Each node's bounding box includes its shape + label text so nothing clips.
+        const nameExtra = showNodeNames ? 14 : 0;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        visibleNodes.forEach((n) => {
+          const hasTex = showStructures && n.type === 'compound' && structTexRef.current.has(n.id);
+          const hw = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 20 : 17);
+          const hh = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 12 : 11);
+          // Estimate label text width (7px font * ~0.55 avg char width)
+          const label = getNodeLabel(n);
+          const labelHalfW = Math.max(hw, label.length * 7 * 0.55 / 2 + 2);
+          // If compound names are shown, add the name width too
+          let nameHalfW = 0;
+          if (showNodeNames && n.type === 'compound') {
+            const name = _compoundNameMap.get(n.id);
+            if (name) nameHalfW = name.length * 8 * 0.55 / 2 + 2;
+          }
+          const effectiveHw = Math.max(hw, labelHalfW, nameHalfW);
+          minX = Math.min(minX, n.x - effectiveHw);
+          minY = Math.min(minY, n.y - hh);
+          maxX = Math.max(maxX, n.x + effectiveHw);
+          maxY = Math.max(maxY, n.y + hh + nameExtra);
+        });
+        // Add space for generation labels at top
+        if (genMapRef.current.length > 0) minY -= 18;
+        minX -= EXPORT_PAD; minY -= EXPORT_PAD;
+        maxX += EXPORT_PAD; maxY += EXPORT_PAD;
+        const svgWidth = maxX - minX;
+        const svgHeight = maxY - minY;
 
         // Edge opacity — mirrors canvas baseAlpha formula
         const svgEdgeCount = visibleLinks.length;
@@ -1761,8 +1869,22 @@ const GraphRendererCanvas = forwardRef(
             lx = ((s0.x + s1.x) / 2).toFixed(2);
             ly = ((s0.y + s1.y) / 2).toFixed(2);
           }
+          // Bake opacity into the stroke color as an rgba() value for
+          // maximum compatibility with Illustrator / Preview / MSWord.
+          // Also provide stroke-opacity as a fallback for simpler parsers.
+          const effectiveStroke = customStroke || stroke;
+          // Convert hex (#RRGGBB) → rgba with baked-in alpha for Illustrator
+          let strokeWithAlpha = effectiveStroke;
+          if (!customStroke && effectiveStroke.startsWith('#') && effectiveStroke.length === 7) {
+            const rr = parseInt(effectiveStroke.slice(1, 3), 16);
+            const gg = parseInt(effectiveStroke.slice(3, 5), 16);
+            const bb = parseInt(effectiveStroke.slice(5, 7), 16);
+            // Blend with white background to get a solid color (Illustrator-safe)
+            const blend = (c) => Math.round(c * svgBaseAlpha + 255 * (1 - svgBaseAlpha));
+            strokeWithAlpha = `rgb(${blend(rr)},${blend(gg)},${blend(bb)})`;
+          }
           const customColorAttr = customStroke ? ` data-custom-color="${customStroke}"` : '';
-          svgParts.push(`<path d="${pathD}" stroke="${stroke}" stroke-width="1.5" stroke-opacity="${svgBaseAlpha.toFixed(3)}" data-edge-key="${edgeSvgKey}"${customColorAttr}${dashAttr}/>`);
+          svgParts.push(`<path d="${pathD}" stroke="${strokeWithAlpha}" stroke-width="1.5" data-edge-key="${edgeSvgKey}"${customColorAttr}${dashAttr}/>`);
 
           // Stoichiometry label — offset perpendicularly so it doesn't sit on the stroke
           if (l.stoichiometry && l.stoichiometry > 1 && (l.type === 'substrate' || l.type === 'product')) {
@@ -2260,6 +2382,11 @@ const GraphRendererCanvas = forwardRef(
         edgeColorsRef.current.clear();
         drawRef.current?.(nodesRef.current);
       },
+      clearNodeColors: () => {
+        nodeColorsRef.current.clear();
+        nodeLabelsRef.current.clear();
+        drawRef.current?.(nodesRef.current);
+      },
       importAnnotations: (annotations) => {
         annotationsRef.current = annotations;
         drawRef.current?.(nodesRef.current);
@@ -2320,6 +2447,38 @@ const GraphRendererCanvas = forwardRef(
       { type: 'rot180',   label: 'Rotate 180°',     icon: '⟳' },
     ];
 
+    // Toggle collapse for a reaction node (hide/show subtree)
+    const handleCollapseNode = useCallback((nodeId) => {
+      setCollapsedRoots(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(nodeId)) newSet.delete(nodeId);
+        else newSet.add(nodeId);
+        return newSet;
+      });
+      setCtxMenu(null);
+    }, []);
+
+    // Hide a specific node
+    const handleHideNode = useCallback((nodeId) => {
+      setHiddenIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(nodeId);
+        return newSet;
+      });
+      pinnedNodesRef.current.delete(nodeId);
+      syncSelection();
+      drawRef.current?.(nodesRef.current);
+      setCtxMenu(null);
+    }, [syncSelection]);
+
+    // Show all hidden nodes
+    const handleShowAll = useCallback(() => {
+      setHiddenIds(new Set());
+      setCollapsedRoots(new Set());
+      drawRef.current?.(nodesRef.current);
+      setCtxMenu(null);
+    }, []);
+
     return (
       <div className="relative w-full h-full">
         <canvas
@@ -2333,25 +2492,92 @@ const GraphRendererCanvas = forwardRef(
         />
         {ctxMenu && (
           <div
-            className="fixed z-50 min-w-[170px] rounded-xl border border-brd/50 bg-surface-overlay/95 backdrop-blur-xl shadow-2xl py-1 text-xs"
+            className="fixed z-50 min-w-[180px] rounded-xl border border-brd/50 bg-surface-overlay/95 backdrop-blur-xl shadow-2xl py-1 text-xs"
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
             onPointerDown={e => e.stopPropagation()}
           >
+            {/* Context header */}
             <div className="px-3 py-1.5 text-[10px] font-semibold text-content-muted uppercase tracking-wide border-b border-brd/40">
-              {selectedNodes.length} node{selectedNodes.length !== 1 ? 's' : ''} selected
+              {selectedNodes.length > 0
+                ? `${selectedNodes.length} node${selectedNodes.length !== 1 ? 's' : ''} selected`
+                : ctxMenu.hitNode
+                  ? (ctxMenu.hitNode.label || ctxMenu.hitNode.id)
+                  : 'Context Menu'}
             </div>
-            {GROUP_ACTIONS.map(a => (
+
+            {/* Node-specific actions (right-click on a node) */}
+            {ctxMenu.hitNode && (
+              <>
+                <button
+                  onClick={() => handleHideNode(ctxMenu.hitNode.id)}
+                  className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                >
+                  {/* <span className="text-base leading-none text-content-muted select-none">-</span> */}
+                  Hide this node
+                </button>
+                {ctxMenu.hitNode.type === 'ec' && (
+                  <button
+                    onClick={() => {
+                      const ecLabel = ctxMenu.hitNode.label || ctxMenu.hitNode.id.replace(/^EC_/, '');
+                      setProteinDialogEc(ecLabel);
+                      setCtxMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                  >
+                    {/* <span className="text-base leading-none text-content-muted select-none">P</span> */}
+                    Protein Viewer
+                  </button>
+                )}
+                {/reaction-/.test(ctxMenu.hitNode.type) && (
+                  <button
+                    onClick={() => handleCollapseNode(ctxMenu.hitNode.id)}
+                    className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                  >
+                    {/* <span className="text-base leading-none text-content-muted select-none">
+                      // {collapsedRoots.has(ctxMenu.hitNode.id) ? '+' : '-'}
+                    </span> */}
+                    {collapsedRoots.has(ctxMenu.hitNode.id) ? 'Expand subtree' : 'Collapse subtree'}
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Show all hidden (always available) */}
+            {(hiddenIds.size > 0 || collapsedRoots.size > 0) && (
               <button
-                key={a.type}
-                onClick={() => applyGroupTransform(a.type)}
+                onClick={handleShowAll}
                 className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
               >
-                <span className="text-base leading-none text-content-muted select-none">{a.icon}</span>
-                {a.label}
+                {/* <span className="text-base leading-none text-content-muted select-none">+</span> */}
+                Show all hidden ({hiddenIds.size + collapsedRoots.size})
               </button>
-            ))}
+            )}
+
+            {/* Group transform actions (only when multiple nodes selected) */}
+            {selectedNodes.length > 0 && (
+              <>
+                <div className="h-px bg-brd/40 my-0.5" />
+                {GROUP_ACTIONS.map(a => (
+                  <button
+                    key={a.type}
+                    onClick={() => applyGroupTransform(a.type)}
+                    className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                  >
+                    <span className="text-base leading-none text-content-muted select-none">{a.icon}</span>
+                    {a.label}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
+
+        {/* Protein Domain Viewer Dialog (triggered from EC node context menu) */}
+        <ProteinDialog
+          isOpen={!!proteinDialogEc}
+          onClose={() => setProteinDialogEc(null)}
+          ecNumber={proteinDialogEc}
+        />
       </div>
     );
   }
