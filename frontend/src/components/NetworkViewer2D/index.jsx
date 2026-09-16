@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import React, { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import GraphRenderer from "./GraphRendererCanvas";
 import GenerationControls from "./GenerationControls";
 import SettingsPanel from "./SettingsPanel";
@@ -8,6 +8,7 @@ import useFullscreen from "./hooks/useFullscreen";
 import HelpOverlay from "./HelpOverlay";
 import { isReservedGroupId, normalizeColor } from "./utils/svgLayout";
 import { RAINBOW_PALETTE } from "./utils/colorSchemes";
+import { createTextBox } from "../CanvasText/textSystem";
 
 const SHAPE_TAGS = new Set(['circle', 'ellipse', 'rect', 'image']);
 
@@ -30,7 +31,8 @@ const parseSVGLayout = (svgText) => {
   const byId = new Map();
   const byLabel = new Map();
   const edgeColors = {};
-  if (!root) return { byId, byLabel, edgeColors };
+  const textItems = [];
+  if (!root) return { byId, byLabel, edgeColors, annotations: [], textItems };
 
   // ── Resolve CSS <style> classes to inline properties ──
   // Illustrator moves all fills/strokes into CSS classes (.st0, .st1, ...)
@@ -153,6 +155,43 @@ const parseSVGLayout = (svgText) => {
       const label = el.textContent.trim();
       if (!label) continue;
 
+      // First, restore text exported by NEBULA's canonical canvas text layer.
+      const nebulaKind = el.getAttribute('data-nebula-text-kind');
+      if (nebulaKind) {
+        const attrOrStyle = (prop, fallback = null) => el.getAttribute(prop) || styleProp(el, prop) || (() => {
+          const classes = (el.getAttribute('class') || '').split(/\s+/);
+          for (const cls of classes) if (classStyles[cls]?.[prop]) return classStyles[cls][prop];
+          return fallback;
+        })();
+        const tspans = el.querySelectorAll('tspan');
+        const content = tspans.length ? Array.from(tspans).map(span => span.textContent).join('\n') : label;
+        const anchor = el.getAttribute('data-nebula-anchor-node');
+        const anchorText = attrOrStyle('text-anchor', 'start');
+        textItems.push({
+          id: el.getAttribute('data-nebula-text-id') || `imported-text:${textItems.length}`,
+          kind: nebulaKind,
+          content,
+          position: { x: parseFloat(el.getAttribute('x')) || 0, y: parseFloat(el.getAttribute('y')) || 0 },
+          anchor: anchor ? { nodeId: anchor } : null,
+          offset: anchor ? {
+            x: parseFloat(el.getAttribute('data-nebula-offset-x')) || 0,
+            y: parseFloat(el.getAttribute('data-nebula-offset-y')) || 0,
+          } : null,
+          autoPosition: false,
+          contentEdited: true,
+          visible: true,
+          fontSize: parseFloat(attrOrStyle('font-size', '14')) || 14,
+          fontFamily: attrOrStyle('font-family', 'Inter, Arial, sans-serif'),
+          fontWeight: attrOrStyle('font-weight', '400'),
+          fontStyle: attrOrStyle('font-style', 'normal'),
+          fill: attrOrStyle('fill', '#374151'),
+          opacity: parseFloat(attrOrStyle('opacity', '1')) || 1,
+          underline: (attrOrStyle('text-decoration', '') || '').includes('underline'),
+          textAlign: anchorText === 'middle' ? 'center' : anchorText === 'end' ? 'right' : 'left',
+        });
+        continue;
+      }
+
       // Detect annotation text: larger font size or different class than node labels.
       // Node labels use small font (e.g. st16 = 9px). Annotations use larger font (st14/st15 = 18px).
       const classes = (el.getAttribute('class') || '').split(/\s+/);
@@ -259,7 +298,7 @@ const parseSVGLayout = (svgText) => {
     }
   }
 
-  return { byId, byLabel, edgeColors, annotations };
+  return { byId, byLabel, edgeColors, annotations, textItems };
 };
 
 const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
@@ -290,6 +329,75 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
   // Edge brush tool
   const [brushMode, setBrushMode] = useState(false);
   const [brushColor, setBrushColor] = useState('#e11d48');
+
+  // Text tools and the current canvas selection.
+  const [textMode, setTextMode] = useState(false);
+  const [showNodeLabels, setShowNodeLabels] = useState(true);
+  const [selectedText, setSelectedText] = useState(null);
+  // Snapshot of the text item at the moment it was selected (for Cancel revert)
+  const textEditOriginalRef = useRef(null);
+
+  const handleTextSelectionChange = useCallback((item) => {
+    setSelectedText(item);
+    if (item) {
+      textEditOriginalRef.current = {
+        ...item,
+        position: item.position ? { ...item.position } : null,
+        offset: item.offset ? { ...item.offset } : null,
+        anchor: item.anchor ? { ...item.anchor } : null,
+      };
+    } else {
+      textEditOriginalRef.current = null;
+    }
+  }, []);
+
+  // Live-preview: update canvas item without touching undo stack
+  const handlePreviewText = useCallback((id, patch) => {
+    graphRendererRef.current?.previewTextItem?.(id, patch);
+  }, []);
+
+  // Save: commit to undo stack; update the "original" so Cancel now reverts to post-save state
+  const handleSaveText = useCallback((id) => {
+    graphRendererRef.current?.commitTextItem?.();
+    const current = graphRendererRef.current?.getTextItem?.(id);
+    if (current) {
+      textEditOriginalRef.current = current;
+      setSelectedText({ ...current });
+    }
+  }, []);
+
+  // Cancel: revert canvas item to state captured at selection time
+  const handleCancelText = useCallback((id) => {
+    const original = textEditOriginalRef.current;
+    if (original && original.id === id) {
+      graphRendererRef.current?.revertTextItem?.(id, original);
+      setSelectedText({ ...original });
+    }
+  }, []);
+
+  const handleUpdateText = useCallback((id, patch) => {
+    graphRendererRef.current?.updateTextItem?.(id, patch);
+  }, []);
+
+  const handleDeleteText = useCallback((id) => {
+    graphRendererRef.current?.deleteTextItem?.(id);
+    setSelectedText(null);
+    textEditOriginalRef.current = null;
+  }, []);
+
+  const handleAddText = useCallback(() => {
+    setBrushMode(false);
+    setTextMode(true);
+    graphRendererRef.current?.addTextBox?.();
+  }, []);
+
+  // Grid controls
+  const [showGrid, setShowGrid] = useState(true);
+  const [gridSize, setGridSize] = useState(48);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+
+  // Global node opacity
+  const [nodeOpacity, setNodeOpacity] = useState(1.0);
 
   // Layout import options
   const [importPositionsOnly, setImportPositionsOnly] = useState(true);
@@ -381,6 +489,12 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     }
   };
 
+  const handleDownloadPNG = () => {
+    if (graphRendererRef.current) {
+      graphRendererRef.current.downloadPNG();
+    }
+  };
+
   const handleImportSVG = () => {
     importFileRef.current?.click();
   };
@@ -390,7 +504,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const { byId, byLabel, edgeColors, annotations } = parseSVGLayout(ev.target.result);
+      const { byId, byLabel, edgeColors, annotations, textItems } = parseSVGLayout(ev.target.result);
       if (graphRendererRef.current) {
         if (importPositionsOnly) {
           // Strip colors and labels — keep only positions
@@ -416,8 +530,24 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
         // Edge colors and annotations are always imported (user-added decorations)
         if (Object.keys(edgeColors).length > 0)
           graphRendererRef.current.importEdgeColors(edgeColors);
-        if (annotations.length > 0)
-          graphRendererRef.current.importAnnotations(annotations);
+        const legacyText = annotations.filter(annotation => annotation.type === 'text').map(annotation =>
+          createTextBox(annotation.x, annotation.y, {
+            content: (annotation.lines || []).map(line => line.text).join('\n'),
+            fontSize: annotation.fontSize || 14,
+            fontWeight: annotation.bold ? '700' : '400',
+            fontStyle: annotation.italic ? 'italic' : 'normal',
+            fill: annotation.fill || '#374151',
+            opacity: annotation.opacity ?? 1,
+            textAlign: 'left',
+          })
+        );
+        if (textItems.length || legacyText.length) {
+          graphRendererRef.current.importTextItems([...textItems, ...legacyText]);
+        }
+        const lineAnnotations = annotations.filter(annotation => annotation.type === 'line');
+        if (lineAnnotations.length > 0) {
+          graphRendererRef.current.importAnnotations(lineAnnotations);
+        }
       }
     };
     reader.readAsText(file);
@@ -502,6 +632,9 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
         case 'H':
           setShowHelp((prev) => !prev);
           break;
+        case 'g':
+          setShowGrid(prev => !prev);
+          break;
         case 'r':
         case 'R':
           resetSpiral();
@@ -572,6 +705,14 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             curvedEdges={curvedEdges}
             brushMode={brushMode}
             brushColor={brushColor}
+            textMode={textMode}
+            setTextMode={setTextMode}
+            showNodeLabels={showNodeLabels}
+            onTextSelectionChange={handleTextSelectionChange}
+            showGrid={showGrid}
+            gridSize={gridSize}
+            snapToGrid={snapToGrid}
+            nodeOpacity={nodeOpacity}
           />
 
           {/* Right-side settings panel (arrow toggle) */}
@@ -596,6 +737,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             handleZoomOut={handleZoomOut}
             handleReset={handleReset}
             handleDownloadSVG={handleDownloadSVG}
+            handleDownloadPNG={handleDownloadPNG}
             handleImportSVG={handleImportSVG}
             brushMode={brushMode}
             setBrushMode={setBrushMode}
@@ -629,6 +771,25 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             setShowStructures={setShowStructures}
             curvedEdges={curvedEdges}
             setCurvedEdges={setCurvedEdges}
+            showGrid={showGrid}
+            setShowGrid={setShowGrid}
+            gridSize={gridSize}
+            setGridSize={setGridSize}
+            snapToGrid={snapToGrid}
+            setSnapToGrid={setSnapToGrid}
+            nodeOpacity={nodeOpacity}
+            setNodeOpacity={setNodeOpacity}
+            textMode={textMode}
+            setTextMode={setTextMode}
+            showNodeLabels={showNodeLabels}
+            setShowNodeLabels={setShowNodeLabels}
+            selectedText={selectedText}
+            onUpdateText={handleUpdateText}
+            onPreviewText={handlePreviewText}
+            onSaveText={handleSaveText}
+            onCancelText={handleCancelText}
+            onDeleteText={handleDeleteText}
+            onAddText={handleAddText}
           />
           {/* Hidden file input for SVG layout import */}
           <input

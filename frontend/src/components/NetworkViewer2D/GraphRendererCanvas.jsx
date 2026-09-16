@@ -16,7 +16,18 @@ import { safeId, normalizeColor } from "./utils/svgLayout";
 import { ThemeContext } from "../ThemeProvider/ThemeProvider";
 import NodeInfoPanel from "./NodeInfoPanel";
 import ProteinDialog from "../ProteinDialog";
+import EmbeddedColorPicker from "./utils/EmbeddedColorPicker";
 import compoundMapJson from "../SearchPanel/compound_map.json";
+import {
+  TEXT_KINDS,
+  nodeTextId,
+  createTextBox,
+  reconcileNodeText,
+  drawCanvasText,
+  hitTestCanvasText,
+  resolveTextPosition,
+  textItemToSvg,
+} from "../CanvasText/textSystem";
 
 const _compoundNameMap = new Map();
 compoundMapJson.forEach(c => _compoundNameMap.set(c.compound_id, c.name));
@@ -147,6 +158,14 @@ const GraphRendererCanvas = forwardRef(
       curvedEdges = true,
       brushMode = false,
       brushColor = '#ff0000',
+      textMode = false,
+      setTextMode,
+      showNodeLabels = true,
+      onTextSelectionChange,
+      showGrid = true,
+      gridSize = 48,
+      snapToGrid = false,
+      nodeOpacity = 1.0,
     },
     ref
   ) => {
@@ -181,7 +200,10 @@ const GraphRendererCanvas = forwardRef(
     const prevSearchIdRef = useRef('');  // content-based search identity (C compounds)
     const prevSpacingRef = useRef(spacingScale); // track spacing for bidirectional spread
     const prevGenKeyRef = useRef('');  // track visible generation set for gap detection
-    const annotationsRef = useRef([]);     // Imported SVG annotations (text, lines)
+    const annotationsRef = useRef([]);     // Non-text annotations (lines) imported from SVG
+    const textItemsRef = useRef([]);       // The sole source of truth for editable canvas text
+    const textLayoutRef = useRef(new Map());
+    const [selectedTextId, setSelectedTextId] = useState(null);
     // Imported SVG positions — persists across generation changes so nodes
     // that become visible later use the imported positions instead of computing fresh ones.
     // Keyed by safeId(nodeId) → { x, y }. Cleared on new data / reset layout.
@@ -189,11 +211,30 @@ const GraphRendererCanvas = forwardRef(
     const genMapRef = useRef([]);        // compact generation mapping from layout
     const edgeColorsRef = useRef(new Map()); // Map<edgeKey, cssColor> for brush tool
     const nodeColorsRef = useRef(new Map()); // Map<nodeId, {fill, stroke}> imported from SVG edits
-    const nodeLabelsRef = useRef(new Map()); // Map<nodeId, string> custom label imported from SVG edits
     const brushModeRef = useRef(brushMode);  // live refs to avoid stale closures
     brushModeRef.current = brushMode;
     const brushColorRef = useRef(brushColor);
     brushColorRef.current = brushColor;
+    const textModeRef = useRef(textMode);
+    textModeRef.current = textMode;
+    const textVisibilityRef = useRef({ labels: showNodeLabels, subtitles: showNodeNames });
+    textVisibilityRef.current = { labels: showNodeLabels, subtitles: showNodeNames };
+    const darkRef = useRef(dark);
+    darkRef.current = dark;
+    const showGridRef = useRef(showGrid);
+    showGridRef.current = showGrid;
+    const gridSizeRef = useRef(gridSize);
+    gridSizeRef.current = gridSize;
+    const snapToGridRef = useRef(snapToGrid);
+    snapToGridRef.current = snapToGrid;
+    const nodeOpacityRef = useRef(new Map()); // Map<nodeId, number 0-1> per-node opacity
+    const nodeOpacityGlobalRef = useRef(nodeOpacity);
+    nodeOpacityGlobalRef.current = nodeOpacity;
+    const [ctxMenuColorPicker, setCtxMenuColorPicker] = useState(false); // show color picker in ctx menu
+    const [ctxMenuOpacity, setCtxMenuOpacity] = useState(null); // current opacity value for ctx menu slider
+    const [showAlignMenu, setShowAlignMenu] = useState(false); // alignment submenu in ctx menu
+    const undoStackRef = useRef([]); // undo stack
+    const redoStackRef = useRef([]); // redo stack
     const nodeAvoidanceRef = useRef(nodeAvoidance);
     nodeAvoidanceRef.current = nodeAvoidance;
     const nodeScaleRef = useRef(nodeScale);
@@ -202,10 +243,21 @@ const GraphRendererCanvas = forwardRef(
     const curvedEdgesRef = useRef(curvedEdges);
     curvedEdgesRef.current = curvedEdges;
 
+    const getTextItem = useCallback((id) => textItemsRef.current.find(item => item.id === id) || null, []);
+    const publishTextSelection = useCallback((id) => {
+      const item = id ? getTextItem(id) : null;
+      onTextSelectionChange?.(item ? { ...item, position: item.position ? { ...item.position } : null, offset: item.offset ? { ...item.offset } : null } : null);
+    }, [getTextItem, onTextSelectionChange]);
+    const selectText = useCallback((id) => {
+      setSelectedTextId(id);
+      publishTextSelection(id);
+    }, [publishTextSelection]);
+
     // Apply a spatial transform to all selected (pinned) non-locked nodes around their centroid
     const applyGroupTransform = useCallback((type) => {
       const pinned = pinnedNodesRef.current;
       if (!pinned.size) return;
+      takeSnapshot();
       const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]));
       const sel = [];
       pinned.forEach(id => { const n = nodeMap.get(id); if (n) sel.push(n); });
@@ -235,6 +287,126 @@ const GraphRendererCanvas = forwardRef(
       pinned.forEach(id => { const n = nodeMap.get(id); if (n) sel.push(n); });
       setSelectedNodes(sel);
     }, []);
+
+    /* ------------------------------------------------------------------ */
+    /* Undo/Redo                                                          */
+    /* ------------------------------------------------------------------ */
+    const takeSnapshot = useCallback(() => {
+      const snap = {
+        positions: {},
+        nodeColors: new Map(nodeColorsRef.current),
+        nodeOpacities: new Map(nodeOpacityRef.current),
+        annotations: JSON.parse(JSON.stringify(annotationsRef.current)),
+        textItems: textItemsRef.current.map(item => ({
+          ...item,
+          position: item.position ? { ...item.position } : null,
+          offset: item.offset ? { ...item.offset } : null,
+        })),
+      };
+      nodesRef.current.forEach(n => { snap.positions[n.id] = { x: n.x, y: n.y }; });
+      undoStackRef.current.push(snap);
+      if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+      redoStackRef.current = [];
+    }, []);
+
+    const restoreSnapshot = useCallback((snap) => {
+      if (!snap) return;
+      nodesRef.current.forEach(n => {
+        const p = snap.positions[n.id];
+        if (p) { n.x = p.x; n.y = p.y; positionCacheRef.current[n.id] = { x: p.x, y: p.y }; }
+      });
+      nodeColorsRef.current = new Map(snap.nodeColors);
+      nodeOpacityRef.current = new Map(snap.nodeOpacities);
+      annotationsRef.current = JSON.parse(JSON.stringify(snap.annotations));
+      textItemsRef.current = (snap.textItems || []).map(item => ({
+        ...item,
+        position: item.position ? { ...item.position } : null,
+        offset: item.offset ? { ...item.offset } : null,
+      }));
+      selectText(null);
+      drawRef.current?.(nodesRef.current);
+    }, [selectText]);
+
+    const undo = useCallback(() => {
+      if (undoStackRef.current.length === 0) return;
+      const currentSnap = {
+        positions: {},
+        nodeColors: new Map(nodeColorsRef.current),
+        nodeOpacities: new Map(nodeOpacityRef.current),
+        annotations: JSON.parse(JSON.stringify(annotationsRef.current)),
+        textItems: textItemsRef.current.map(item => ({
+          ...item,
+          position: item.position ? { ...item.position } : null,
+          offset: item.offset ? { ...item.offset } : null,
+        })),
+      };
+      nodesRef.current.forEach(n => { currentSnap.positions[n.id] = { x: n.x, y: n.y }; });
+      redoStackRef.current.push(currentSnap);
+      restoreSnapshot(undoStackRef.current.pop());
+    }, [restoreSnapshot]);
+
+    const redo = useCallback(() => {
+      if (redoStackRef.current.length === 0) return;
+      const currentSnap = {
+        positions: {},
+        nodeColors: new Map(nodeColorsRef.current),
+        nodeOpacities: new Map(nodeOpacityRef.current),
+        annotations: JSON.parse(JSON.stringify(annotationsRef.current)),
+        textItems: textItemsRef.current.map(item => ({
+          ...item,
+          position: item.position ? { ...item.position } : null,
+          offset: item.offset ? { ...item.offset } : null,
+        })),
+      };
+      nodesRef.current.forEach(n => { currentSnap.positions[n.id] = { x: n.x, y: n.y }; });
+      undoStackRef.current.push(currentSnap);
+      restoreSnapshot(redoStackRef.current.pop());
+    }, [restoreSnapshot]);
+
+    /* ------------------------------------------------------------------ */
+    /* Alignment                                                          */
+    /* ------------------------------------------------------------------ */
+    const applyAlignment = useCallback((type) => {
+      const pinned = pinnedNodesRef.current;
+      if (pinned.size < 2) return;
+      takeSnapshot();
+      const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]));
+      const sel = [];
+      pinned.forEach(id => { const n = nodeMap.get(id); if (n) sel.push(n); });
+      if (sel.length < 2) return;
+
+      const minX = Math.min(...sel.map(n => n.x));
+      const maxX = Math.max(...sel.map(n => n.x));
+      const minY = Math.min(...sel.map(n => n.y));
+      const maxY = Math.max(...sel.map(n => n.y));
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+
+      switch (type) {
+        case 'alignLeft':   sel.forEach(n => { n.x = minX; }); break;
+        case 'alignRight':  sel.forEach(n => { n.x = maxX; }); break;
+        case 'alignTop':    sel.forEach(n => { n.y = minY; }); break;
+        case 'alignBottom': sel.forEach(n => { n.y = maxY; }); break;
+        case 'centerH':     sel.forEach(n => { n.x = cx; }); break;
+        case 'centerV':     sel.forEach(n => { n.y = cy; }); break;
+        case 'distributeH': {
+          const sorted = [...sel].sort((a, b) => a.x - b.x);
+          const gap = (maxX - minX) / (sorted.length - 1);
+          sorted.forEach((n, i) => { n.x = minX + i * gap; });
+          break;
+        }
+        case 'distributeV': {
+          const sorted = [...sel].sort((a, b) => a.y - b.y);
+          const gap = (maxY - minY) / (sorted.length - 1);
+          sorted.forEach((n, i) => { n.y = minY + i * gap; });
+          break;
+        }
+      }
+
+      sel.forEach(n => { positionCacheRef.current[n.id] = { x: n.x, y: n.y }; });
+      drawRef.current?.(nodesRef.current);
+      setCtxMenu(null);
+    }, [takeSnapshot]);
 
     /* ------------------------------------------------------------------ */
     /* Helpers                                                            */
@@ -491,37 +663,38 @@ const GraphRendererCanvas = forwardRef(
       /* ---------------------------------------------------------- */
       /* Grid overlay – batched into 2 draw calls                  */
       /* ---------------------------------------------------------- */
-      const nodeGridSize = 48; // constant (largest node = EC ellipse)
-      const gridSpacing = nodeGridSize;
-      const effectiveGridColor = gridColor
-        ? gridColor + '18' // user color with ~10% opacity (hex alpha)
-        : dark
-          ? `rgba(${themeBorderSecondary},0.42)`
-          : `rgba(${themeTextMuted},0.30)`;
+      if (showGrid) {
+        const gridSpacing = gridSize;
+        const effectiveGridColor = gridColor
+          ? gridColor + '18' // user color with ~10% opacity (hex alpha)
+          : dark
+            ? `rgba(${themeBorderSecondary},0.42)`
+            : `rgba(${themeTextMuted},0.30)`;
 
-      ctx.save();
-      ctx.strokeStyle = effectiveGridColor;
-      ctx.lineWidth = 1 / t.k;
+        ctx.save();
+        ctx.strokeStyle = effectiveGridColor;
+        ctx.lineWidth = 1 / t.k;
 
-      const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
-      const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
+        const startX = Math.floor(viewMinX / gridSpacing) * gridSpacing;
+        const startY = Math.floor(viewMinY / gridSpacing) * gridSpacing;
 
-      // Batch vertical lines
-      ctx.beginPath();
-      for (let x = startX; x <= viewMaxX; x += gridSpacing) {
-        ctx.moveTo(x, viewMinY);
-        ctx.lineTo(x, viewMaxY);
+        // Batch vertical lines
+        ctx.beginPath();
+        for (let x = startX; x <= viewMaxX; x += gridSpacing) {
+          ctx.moveTo(x, viewMinY);
+          ctx.lineTo(x, viewMaxY);
+        }
+        ctx.stroke();
+
+        // Batch horizontal lines
+        ctx.beginPath();
+        for (let y = startY; y <= viewMaxY; y += gridSpacing) {
+          ctx.moveTo(viewMinX, y);
+          ctx.lineTo(viewMaxX, y);
+        }
+        ctx.stroke();
+        ctx.restore();
       }
-      ctx.stroke();
-
-      // Batch horizontal lines
-      ctx.beginPath();
-      for (let y = startY; y <= viewMaxY; y += gridSpacing) {
-        ctx.moveTo(viewMinX, y);
-        ctx.lineTo(viewMaxX, y);
-      }
-      ctx.stroke();
-      ctx.restore();
 
       /* ---------------------------------------------------------- */
       /* Generation column labels (no background stripes)           */
@@ -550,6 +723,12 @@ const GraphRendererCanvas = forwardRef(
       const R_COMPOUND = 12 * nodeScale;
       const EC_RX = 18 * nodeScale, EC_RY = 10 * nodeScale;
       const RECT_W = 30 * nodeScale, RECT_H = 18 * nodeScale, RECT_R = 3;
+
+      textItemsRef.current = reconcileNodeText(textItemsRef.current, nodes, _compoundNameMap, (node) => ({
+        hasStructure: showStructures && node.type === 'compound' && structTexRef.current.has(node.id),
+        compoundRadius: R_COMPOUND,
+        structureHeight: STRUCT_WORLD_H,
+      }));
 
       // Compute point on node surface in direction (dx, dy) from center
       const surfacePoint = (node, dx, dy) => {
@@ -830,6 +1009,11 @@ const GraphRendererCanvas = forwardRef(
         const fill = _colorOverride?.fill || _baseColor.fill;
         const stroke = _colorOverride?.stroke || _baseColor.stroke;
 
+        // Per-node opacity (custom per-node overrides global)
+        const perNodeAlpha = nodeOpacityRef.current.get(n.id);
+        const effectiveAlpha = perNodeAlpha !== undefined ? perNodeAlpha : nodeOpacity;
+        ctx.globalAlpha = effectiveAlpha;
+
         // Structure texture for compound nodes
         const _structTex = (showStructures && n.type === 'compound')
           ? structTexRef.current.get(n.id) : null;
@@ -903,6 +1087,7 @@ const GraphRendererCanvas = forwardRef(
           ctx.setLineDash([]);
           ctx.restore();
         }
+        ctx.globalAlpha = 1.0; // reset after each node
       });
 
       /* ---------------------------------------------------------- */
@@ -945,86 +1130,31 @@ const GraphRendererCanvas = forwardRef(
       }
 
       /* ---------------------------------------------------------- */
-      /* Draw labels – progressive: only when zoomed in enough      */
+      /* Editable text layer — labels, subtitles, and free text      */
       /* ---------------------------------------------------------- */
-      if (t.k >= 0.45) {
-        const baseFontSize = Math.max(5, Math.min(7, 6 / t.k * t.k)) * fontScale;
-        // Node label color: inverted to contrast against node fills.
-        // Dark mode has bright/pastel fills → use dark text.
-        // Light mode has dark/saturated fills → use light text.
-        const labelColor = '#1a1a2e';//dark ? '#1a1a2e' : '#f5f5fa';
-        const labelMuted = `rgba(${themeTextMuted},0.9)`;
-        ctx.textAlign = "center";
-        nodes.forEach((n) => {
-          if (hiddenIds.has(n.id)) return;
-          if (!inView(n.x, n.y)) return;
-
-          const _sTex2 = (showStructures && n.type === 'compound')
-            ? structTexRef.current.get(n.id) : null;
-          const _labelBaseY = _sTex2
-            ? n.y + STRUCT_WORLD_H / 2 + 3
-            : n.type === 'compound' ? n.y + R_COMPOUND + 3 : null;
-
-          if (showNodeNames && n.type === 'compound') {
-            if (!_sTex2) {
-              // ID stays inside the node when no structure — bold
-              ctx.font = `bold ${baseFontSize}px "Inter", sans-serif`;
-              ctx.textBaseline = "middle";
-              ctx.fillStyle = labelColor;
-              ctx.fillText(nodeLabelsRef.current.get(n.id) ?? (n.label ?? n.id), n.x, n.y);
-            }
-            // Human-readable name rendered below the node/structure
-            const name = _compoundNameMap.get(n.id);
-            if (name) {
-              ctx.font = `${Math.max(4, baseFontSize - 1)}px "Inter", sans-serif`;
-              ctx.textBaseline = "top";
-              ctx.fillStyle = labelMuted;
-              ctx.fillText(name, n.x, _labelBaseY ?? (n.y + R_COMPOUND + 3));
-            }
-          } else {
-            let label = nodeLabelsRef.current.get(n.id);
-            if (label === undefined) {
-              label = n.label ?? n.id;
-              if (/reaction-/.test(n.type)) label = label.split("_")[0];
-            }
-            // Bold label inside node
-            ctx.font = `bold ${baseFontSize}px "Inter", sans-serif`;
-            if (_sTex2) {
-              ctx.textBaseline = "top";
-              ctx.fillStyle = labelMuted;
-              ctx.fillText(label, n.x, _labelBaseY);
-            } else {
-              ctx.textBaseline = "middle";
-              ctx.fillStyle = labelColor;
-              ctx.fillText(label, n.x, n.y);
-            }
-          }
-        });
-      }
+      drawCanvasText(ctx, textItemsRef.current, nodeMap, {
+        transform: t,
+        fontScale,
+        selectedId: selectedTextId,
+        layoutCache: textLayoutRef.current,
+        showLabels: showNodeLabels,
+        showSubtitles: showNodeNames,
+        theme: { primary: themeTextPrimary, muted: themeTextMuted, accent: themeBrandColor },
+      });
 
       /* ---------------------------------------------------------- */
-      /* Draw imported SVG annotations (text + lines from Illustrator) */
+      /* Draw non-text annotations retained from imported SVGs       */
       /* ---------------------------------------------------------- */
       if (annotationsRef.current.length > 0) {
         ctx.save();
         annotationsRef.current.forEach(a => {
-          if (a.type === 'text') {
-            const weight = a.bold ? 'bold ' : '';
-            ctx.font = `${weight}${a.fontSize}px "Helvetica", "Inter", sans-serif`;
-            ctx.fillStyle = a.fill || `rgb(${themeTextPrimary})`;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
-            a.lines.forEach(line => {
-              ctx.fillText(line.text, a.x, a.y + line.dy);
-            });
-          } else if (a.type === 'line') {
-            ctx.strokeStyle = a.stroke || '#999';
-            ctx.lineWidth = (a.strokeWidth || 2) / t.k * Math.min(t.k, 1);
-            ctx.beginPath();
-            ctx.moveTo(a.x1, a.y1);
-            ctx.lineTo(a.x2, a.y2);
-            ctx.stroke();
-          }
+          if (a.type !== 'line') return;
+          ctx.strokeStyle = a.stroke || '#999';
+          ctx.lineWidth = (a.strokeWidth || 2) / t.k * Math.min(t.k, 1);
+          ctx.beginPath();
+          ctx.moveTo(a.x1, a.y1);
+          ctx.lineTo(a.x2, a.y2);
+          ctx.stroke();
         });
         ctx.restore();
       }
@@ -1048,7 +1178,7 @@ const GraphRendererCanvas = forwardRef(
       }
 
       ctx.restore();
-    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, edgeThickness, spacingScale, nodeScale, fontScale, colorMode, colorScheme, customPalette, hueShift, satScale, valScale, bgColor, gridColor, showNodeNames, showStructures, curvedEdges]);
+    }, [dark, themeName, graph, hiddenIds, maxGeneration, collapsedRoots, showOverlay, pairColorMap, edgeOpacity, edgeThickness, spacingScale, nodeScale, fontScale, colorMode, colorScheme, customPalette, hueShift, satScale, valScale, bgColor, gridColor, showNodeLabels, showNodeNames, showStructures, curvedEdges, showGrid, gridSize, nodeOpacity, selectedTextId]);
 
     // Keep refs always pointing to the latest functions (fixes stale closure in event handlers)
     drawRef.current = draw;
@@ -1101,6 +1231,8 @@ const GraphRendererCanvas = forwardRef(
         positionCacheRef.current = {};
         importedPositionsRef.current.clear();
         annotationsRef.current = [];
+        textItemsRef.current = [];
+        selectText(null);
         needsFitRef.current = true;
       }
       prevDataRef.current = data;
@@ -1232,7 +1364,8 @@ const GraphRendererCanvas = forwardRef(
         .scaleExtent([0.01, 20])
         .filter((ev) => {
           if (ev.ctrlKey || ev.metaKey) return false; // ctrl/cmd reserved for selection box
-          if (ev.type !== 'mousedown') return true;
+          // D3 v7 fires 'pointerdown'; only hit-test on drag-start events
+          if (ev.type !== 'mousedown' && ev.type !== 'pointerdown') return true;
           // Disable zoom if pointer is on a node (so we can drag it)
           const rect = canvas.getBoundingClientRect();
           const mx = (ev.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
@@ -1248,7 +1381,11 @@ const GraphRendererCanvas = forwardRef(
             const radius = (n.type === 'compound' ? 18 : n.type === 'ec' ? 24 : 20) * ns;
             return (mx - n.x) ** 2 + (my - n.y) ** 2 <= radius ** 2;
           });
-          return !hitNode; // allow pan if not clicking on node
+          const hitText = textModeRef.current && hitTestCanvasText(textItemsRef.current, textLayoutRef.current, mx, my, {
+            showLabels: textVisibilityRef.current.labels,
+            showSubtitles: textVisibilityRef.current.subtitles,
+          });
+          return !hitNode && !hitText; // text blocks panning only while Text mode is enabled
         })
         .on("zoom", (ev) => {
           transformRef.current = ev.transform;
@@ -1297,7 +1434,12 @@ const GraphRendererCanvas = forwardRef(
     /* ── Close context menu on outside click ── */
     useEffect(() => {
       if (!ctxMenu) return;
-      const handler = () => setCtxMenu(null);
+      const handler = () => {
+        setCtxMenu(null);
+        setCtxMenuColorPicker(false);
+        setCtxMenuOpacity(null);
+        setShowAlignMenu(false);
+      };
       window.addEventListener('pointerdown', handler);
       return () => window.removeEventListener('pointerdown', handler);
     }, [ctxMenu]);
@@ -1309,6 +1451,49 @@ const GraphRendererCanvas = forwardRef(
     useEffect(() => {
       const down = (e) => {
         if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(true);
+
+        // Skip all shortcuts when user is typing in an input/textarea
+        const tag = e.target.tagName;
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+        if (isTyping) return;
+
+        // Undo/Redo
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        if (selectedTextId && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          const item = getTextItem(selectedTextId);
+          if (item) {
+            e.preventDefault();
+            const amount = e.shiftKey ? 10 : 1;
+            const dx = e.key === 'ArrowLeft' ? -amount : e.key === 'ArrowRight' ? amount : 0;
+            const dy = e.key === 'ArrowUp' ? -amount : e.key === 'ArrowDown' ? amount : 0;
+            takeSnapshot();
+            if (item.anchor) {
+              item.offset = { x: (item.offset?.x || 0) + dx, y: (item.offset?.y || 0) + dy };
+              item.autoPosition = false;
+            } else {
+              item.position = { x: item.position.x + dx, y: item.position.y + dy };
+            }
+            publishTextSelection(item.id);
+            drawRef.current?.(nodesRef.current);
+            return;
+          }
+        }
+        // Node text remains part of the graph; only free text boxes are deletable.
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTextId) {
+          const item = getTextItem(selectedTextId);
+          if (item?.kind === TEXT_KINDS.TEXT_BOX) {
+            takeSnapshot();
+            textItemsRef.current = textItemsRef.current.filter(candidate => candidate.id !== item.id);
+            selectText(null);
+            drawRef.current?.(nodesRef.current);
+          }
+        }
+        if (e.key === 'Escape') {
+          if (textModeRef.current) { setTextMode?.(false); return; }
+          if (selectedTextId) selectText(null);
+        }
       };
       const up = (e) => {
         if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(false);
@@ -1319,7 +1504,7 @@ const GraphRendererCanvas = forwardRef(
         window.removeEventListener('keydown', down);
         window.removeEventListener('keyup', up);
       };
-    }, []);
+    }, [undo, redo, selectedTextId, takeSnapshot, getTextItem, selectText, setTextMode]);
 
     /* ------------------------------------------------------------------ */
     /* Pointer interaction – collapse, pin-highlight, drag, hover         */
@@ -1331,6 +1516,12 @@ const GraphRendererCanvas = forwardRef(
 
       let dragging = null;
       let didDrag = false;
+      let draggingText = null;
+
+      const hitTestText = (mx, my) => hitTestCanvasText(textItemsRef.current, textLayoutRef.current, mx, my, {
+        showLabels: textVisibilityRef.current.labels,
+        showSubtitles: textVisibilityRef.current.subtitles,
+      });
 
       const hitTest = (mx, my) => {
         const nodes = nodesRef.current;
@@ -1377,16 +1568,31 @@ const GraphRendererCanvas = forwardRef(
         const node = hitTest(mx, my);
 
         // Ctrl+drag (or Cmd+drag on Mac) on empty space = start selection box
-        if ((e.ctrlKey || e.metaKey) && !node) {
+        if ((e.ctrlKey || e.metaKey) && !node && !(textModeRef.current && hitTestText(mx, my))) {
           selBoxRef.current = { x1: mx, y1: my, x2: mx, y2: my };
           canvas.style.cursor = 'crosshair';
           return;
+        }
+
+        // Text claims the gesture only in Text mode; node labels otherwise never block node dragging.
+        if (textModeRef.current) {
+          const hitText = hitTestText(mx, my);
+          if (hitText) {
+            takeSnapshot();
+            const position = resolveTextPosition(hitText, new Map(nodesRef.current.map(n => [n.id, n])));
+            // Store id (not item reference) — reconcileNodeText replaces item objects on every draw
+            draggingText = { id: hitText.id, offX: position.x - mx, offY: position.y - my };
+            selectText(hitText.id);
+            canvas.style.cursor = 'grabbing';
+            return;
+          }
         }
 
         if (node) {
           const pinned = pinnedNodesRef.current;
           if (pinned.has(node.id) && pinned.size > 1) {
             // Group drag: move all pinned non-locked nodes together
+            takeSnapshot();
             const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]));
             multiDragRef.current = [];
             pinned.forEach(id => {
@@ -1398,6 +1604,7 @@ const GraphRendererCanvas = forwardRef(
             didDrag = false;
             canvas.style.cursor = 'grabbing';
           } else if (!lockedNodesRef.current.has(node.id)) {
+            takeSnapshot();
             dragging = node;
             didDrag = false;
             canvas.style.cursor = 'grabbing';
@@ -1408,6 +1615,27 @@ const GraphRendererCanvas = forwardRef(
       // ── Pointer move ──
       const pointermove = (e) => {
         const { mx, my } = worldCoords(e);
+
+        if (draggingText) {
+          const { id, offX, offY } = draggingText;
+          // Always look up by id — reconcileNodeText replaces item objects on every draw
+          const item = textItemsRef.current.find(i => i.id === id);
+          if (!item) { draggingText = null; return; }
+          const x = mx + offX;
+          const y = my + offY;
+          if (item.anchor?.nodeId) {
+            const anchor = nodesRef.current.find(node => node.id === item.anchor.nodeId);
+            if (anchor) {
+              item.offset = { x: x - anchor.x, y: y - anchor.y };
+              item.autoPosition = false;
+            }
+          } else {
+            item.position = { x, y };
+          }
+          didDrag = true;
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
 
         if (selBoxRef.current) {
           selBoxRef.current.x2 = mx;
@@ -1441,7 +1669,10 @@ const GraphRendererCanvas = forwardRef(
           hoveredNodeRef.current = found;
           drawRef.current?.(nodesRef.current);
         }
-        if (brushModeRef.current) {
+        const textHover = textModeRef.current ? hitTestText(mx, my) : null;
+        if (textHover) {
+          canvas.style.cursor = 'move';
+        } else if (brushModeRef.current) {
           canvas.style.cursor = 'crosshair';
         } else if (found) {
           const isLocked = lockedNodesRef.current.has(found);
@@ -1452,6 +1683,15 @@ const GraphRendererCanvas = forwardRef(
       };
 
       const pointerup = () => {
+        if (draggingText) {
+          const { item } = draggingText;
+          draggingText = null;
+          canvas.style.cursor = 'grab';
+          publishTextSelection(item.id);
+          drawRef.current?.(nodesRef.current);
+          return;
+        }
+
         // Finish selection box → add enclosed nodes to pinned set
         if (selBoxRef.current) {
           const { x1, y1, x2, y2 } = selBoxRef.current;
@@ -1475,6 +1715,11 @@ const GraphRendererCanvas = forwardRef(
         // Finish group drag
         if (multiDragRef.current) {
           multiDragRef.current.forEach(({ node }) => {
+            if (snapToGridRef.current) {
+              const gs = gridSizeRef.current;
+              node.x = Math.round(node.x / gs) * gs;
+              node.y = Math.round(node.y / gs) * gs;
+            }
             positionCacheRef.current[node.id] = { x: node.x, y: node.y };
           });
           multiDragRef.current = null;
@@ -1501,6 +1746,12 @@ const GraphRendererCanvas = forwardRef(
                 dragging.y += ny * push;
               }
             }
+          }
+          // Snap to grid if enabled
+          if (snapToGridRef.current) {
+            const gs = gridSizeRef.current;
+            dragging.x = Math.round(dragging.x / gs) * gs;
+            dragging.y = Math.round(dragging.y / gs) * gs;
           }
           positionCacheRef.current[dragging.id] = { x: dragging.x, y: dragging.y };
           drawRef.current?.(nodesRef.current);
@@ -1538,6 +1789,12 @@ const GraphRendererCanvas = forwardRef(
         if (didDrag) { didDrag = false; return; }
 
         const { mx, my } = worldCoords(evt);
+        const clickedText = textModeRef.current ? hitTestText(mx, my) : null;
+        if (clickedText) {
+          selectText(clickedText.id);
+          return;
+        }
+
 
         // Brush mode: click on node → colour ALL connected edges; click near edge → colour that edge
         if (brushModeRef.current) {
@@ -1611,6 +1868,7 @@ const GraphRendererCanvas = forwardRef(
 
         if (!hit) {
           pinnedNodesRef.current.clear();
+          selectText(null);
           drawRef.current?.(nodesRef.current);
           syncSelectionRef.current?.();
         }
@@ -1634,6 +1892,76 @@ const GraphRendererCanvas = forwardRef(
     /* ------------------------------------------------------------------ */
 
     useImperativeHandle(ref, () => ({
+      addTextBox: () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const t = transformRef.current;
+        const x = (canvas.clientWidth / 2 - t.x) / t.k;
+        const y = (canvas.clientHeight / 2 - t.y) / t.k;
+        takeSnapshot();
+        const item = createTextBox(x, y, { content: 'Text', draft: true, fill: darkRef.current ? '#e2e8f0' : '#374151' });
+        textItemsRef.current.push(item);
+        selectText(item.id);
+        drawRef.current?.(nodesRef.current);
+      },
+      // Live-preview: mutate item + redraw, no undo snapshot
+      previewTextItem: (id, patch) => {
+        const item = getTextItem(id);
+        if (!item) return;
+        Object.assign(item, patch);
+        if (Object.prototype.hasOwnProperty.call(patch, 'content')) {
+          item.contentEdited = true;
+          item.draft = false;
+        }
+        drawRef.current?.(nodesRef.current);
+      },
+      // Commit: take undo snapshot (after previewing is done)
+      commitTextItem: () => {
+        takeSnapshot();
+      },
+      // Revert: restore to a saved state (Cancel action)
+      revertTextItem: (id, savedState) => {
+        const item = getTextItem(id);
+        if (!item) return;
+        const { id: _id, ...rest } = savedState;
+        Object.assign(item, rest);
+        drawRef.current?.(nodesRef.current);
+      },
+      // Read current canvas item state (used by index.jsx to capture post-save original)
+      getTextItem: (id) => {
+        const item = getTextItem(id);
+        if (!item) return null;
+        return {
+          ...item,
+          position: item.position ? { ...item.position } : null,
+          offset: item.offset ? { ...item.offset } : null,
+          anchor: item.anchor ? { ...item.anchor } : null,
+        };
+      },
+      updateTextItem: (id, patch) => {
+        const item = getTextItem(id);
+        if (!item) return;
+        takeSnapshot();
+        Object.assign(item, patch);
+        if (Object.prototype.hasOwnProperty.call(patch, 'content')) {
+          item.contentEdited = true;
+          item.draft = false;
+        }
+        publishTextSelection(id);
+        drawRef.current?.(nodesRef.current);
+      },
+      deleteTextItem: (id) => {
+        const item = getTextItem(id);
+        if (!item) return;
+        takeSnapshot();
+        if (item.kind === TEXT_KINDS.TEXT_BOX) {
+          textItemsRef.current = textItemsRef.current.filter(candidate => candidate.id !== id);
+        } else {
+          item.visible = false;
+        }
+        selectText(null);
+        drawRef.current?.(nodesRef.current);
+      },
       zoomIn: () => {
         const canvasSel = d3.select(canvasRef.current);
         canvasSel.transition().call(zoomRef.current.scaleBy, 1.5);
@@ -1753,44 +2081,48 @@ const GraphRendererCanvas = forwardRef(
           return override ? { fill: override.fill || base.fill, stroke: override.stroke || base.stroke } : base;
         };
 
-        // A custom label imported from an edited SVG wins over the computed default.
-        const getNodeLabel = (n) => {
-          const override = nodeLabelsRef.current.get(n.id);
-          if (override !== undefined) return override;
-          let label = n.label ?? n.id;
-          if (/reaction-/.test(n.type)) label = label.split('_')[0];
-          return label;
-        };
+        const svgNodeMap = new Map(nodes.map((n) => [n.id, n]));
+        const exportTextItems = textItemsRef.current.filter(item =>
+          item.visible && item.content &&
+          (item.kind === TEXT_KINDS.TEXT_BOX ||
+            (item.kind === TEXT_KINDS.NODE_LABEL && showNodeLabels) ||
+            (item.kind === TEXT_KINDS.NODE_SUBTITLE && showNodeNames))
+        );
 
         // ── Print-quality export constants ──
         const EXPORT_SCALE = 3;   // physical pixel multiplier (3× = ~300 DPI usable)
         const EXPORT_PAD   = 12;  // tight whitespace around graph (world units)
 
-        // Determine tight bounds accounting for structure images, labels, and text width.
-        // Each node's bounding box includes its shape + label text so nothing clips.
-        const nameExtra = showNodeNames ? 14 : 0;
+        // Determine tight bounds for every visible node, editable text item, and imported line.
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         visibleNodes.forEach((n) => {
           const hasTex = showStructures && n.type === 'compound' && structTexRef.current.has(n.id);
-          const hw = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 20 : 17);
-          const hh = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 14 : n.type === 'ec' ? 12 : 11);
-          // Estimate label text width (7px font * ~0.55 avg char width)
-          const label = getNodeLabel(n);
-          const labelHalfW = Math.max(hw, label.length * 7 * 0.55 / 2 + 2);
-          // If compound names are shown, add the name width too
-          let nameHalfW = 0;
-          if (showNodeNames && n.type === 'compound') {
-            const name = _compoundNameMap.get(n.id);
-            if (name) nameHalfW = name.length * 8 * 0.55 / 2 + 2;
-          }
-          const effectiveHw = Math.max(hw, labelHalfW, nameHalfW);
-          minX = Math.min(minX, n.x - effectiveHw);
+          const hw = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 16 : n.type === 'ec' ? 24 : 20);
+          const hh = hasTex ? STRUCT_WORLD_H / 2 : (n.type === 'compound' ? 16 : n.type === 'ec' ? 14 : 12);
+          minX = Math.min(minX, n.x - hw);
           minY = Math.min(minY, n.y - hh);
-          maxX = Math.max(maxX, n.x + effectiveHw);
-          maxY = Math.max(maxY, n.y + hh + nameExtra);
+          maxX = Math.max(maxX, n.x + hw);
+          maxY = Math.max(maxY, n.y + hh);
         });
-        // Add space for generation labels at top
+        exportTextItems.forEach(item => {
+          const pos = resolveTextPosition(item, svgNodeMap);
+          const lines = item.content.split('\n');
+          const width = Math.max(...lines.map(line => line.length * item.fontSize * 0.58), item.fontSize);
+          const height = lines.length * item.fontSize * 1.28;
+          const left = item.textAlign === 'center' ? pos.x - width / 2 : item.textAlign === 'right' ? pos.x - width : pos.x;
+          minX = Math.min(minX, left - 4);
+          minY = Math.min(minY, pos.y - item.fontSize - 4);
+          maxX = Math.max(maxX, left + width + 4);
+          maxY = Math.max(maxY, pos.y + height + 4);
+        });
         if (genMapRef.current.length > 0) minY -= 18;
+        annotationsRef.current.forEach(a => {
+          if (a.type !== 'line') return;
+          minX = Math.min(minX, a.x1, a.x2);
+          minY = Math.min(minY, a.y1, a.y2);
+          maxX = Math.max(maxX, a.x1, a.x2);
+          maxY = Math.max(maxY, a.y1, a.y2);
+        });
         minX -= EXPORT_PAD; minY -= EXPORT_PAD;
         maxX += EXPORT_PAD; maxY += EXPORT_PAD;
         const svgWidth = maxX - minX;
@@ -1813,8 +2145,6 @@ const GraphRendererCanvas = forwardRef(
         if (bgColor) {
           svgParts.push(`<rect x="${minX}" y="${minY}" width="${svgWidth}" height="${svgHeight}" fill="${bgColor}"/>`);
         }
-
-        const svgNodeMap = new Map(nodes.map((n) => [n.id, n]));
 
         // ── Generation column labels (mirrors canvas gen labels) ──
         if (genMapRef.current.length > 0) {
@@ -1914,51 +2244,58 @@ const GraphRendererCanvas = forwardRef(
           svgParts.push(`<g id="Generation_${gen}">`);
           for (const n of nodesByGen.get(gen)) {
             const { fill, stroke } = getNodeStyle(n);
-            svgParts.push(`<g id="${safeId(n.id)}">`);
+            const svgNodeOpacity = nodeOpacityRef.current.get(n.id);
+            const svgEffectiveOpacity = svgNodeOpacity !== undefined ? svgNodeOpacity : nodeOpacity;
+            const opacityAttr = svgEffectiveOpacity < 1 ? ` opacity="${svgEffectiveOpacity.toFixed(2)}"` : '';
+            svgParts.push(`<g id="${safeId(n.id)}"${opacityAttr}>`);
 
             const structTex = (showStructures && n.type === 'compound')
               ? structTexRef.current.get(n.id) : null;
 
             if (structTex) {
-              // Embed structure as base64 PNG image
               const sW = STRUCT_WORLD_H * (structTex._aspect || 1);
               const sH = STRUCT_WORLD_H;
               const dataUrl = structTex.toDataURL('image/png');
               svgParts.push(`<image xlink:href="${dataUrl}" x="${(n.x - sW / 2).toFixed(2)}" y="${(n.y - sH / 2).toFixed(2)}" width="${sW.toFixed(2)}" height="${sH.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`);
-
-              // Label below structure
-              const label = getNodeLabel(n);
-              svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 4).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="9" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
-              if (showNodeNames) {
-                const name = _compoundNameMap.get(n.id);
-                if (name) svgParts.push(`<text x="${n.x}" y="${(n.y + sH / 2 + 13).toFixed(2)}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(name)}</text>`);
-              }
+            } else if (n.type === 'compound') {
+              svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+            } else if (n.type === 'ec') {
+              svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX}" ry="${SV_ERY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
             } else {
-              if (n.type === 'compound') {
-                svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
-              } else if (n.type === 'ec') {
-                svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX}" ry="${SV_ERY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
-              } else {
-                svgParts.push(`<rect x="${n.x - SV_RW / 2}" y="${n.y - SV_RH / 2}" width="${SV_RW}" height="${SV_RH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
-              }
-
-              // ID label inside node
-              const label = getNodeLabel(n);
-              svgParts.push(`<text x="${n.x}" y="${n.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" font-weight="600" fill="${svgTextHex}" font-family="Arial, Helvetica, sans-serif">${esc(label)}</text>`);
-
-              // Compound name below node
-              if (showNodeNames && n.type === 'compound') {
-                const name = _compoundNameMap.get(n.id);
-                if (name) {
-                  svgParts.push(`<text x="${n.x}" y="${n.y + SV_RC + 4}" text-anchor="middle" dominant-baseline="hanging" font-size="8" fill="${svgMutedHex}" font-family="Arial, Helvetica, sans-serif">${esc(name)}</text>`);
-                }
-              }
+              svgParts.push(`<rect x="${n.x - SV_RW / 2}" y="${n.y - SV_RH / 2}" width="${SV_RW}" height="${SV_RH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
             }
+
+            // Keep editable node text inside its node group for Illustrator layers.
+            exportTextItems
+              .filter(item => item.anchor?.nodeId === n.id)
+              .forEach(item => svgParts.push(textItemToSvg(
+                item,
+                resolveTextPosition(item, svgNodeMap),
+                item.kind === TEXT_KINDS.NODE_SUBTITLE ? svgMutedHex : svgTextHex,
+              )));
             svgParts.push('</g>');
           }
           svgParts.push('</g>');
         }
         svgParts.push('</g>');
+
+        // ── Layer: Free text boxes — real, editable SVG text ──
+        const textBoxes = exportTextItems.filter(item => item.kind === TEXT_KINDS.TEXT_BOX);
+        if (textBoxes.length > 0) {
+          svgParts.push('<g id="Text_Boxes">');
+          textBoxes.forEach(item => svgParts.push(textItemToSvg(item, resolveTextPosition(item, svgNodeMap), svgTextHex)));
+          svgParts.push('</g>');
+        }
+
+        // ── Imported non-text annotations ──
+        const lineAnnots = annotationsRef.current.filter(a => a.type === 'line');
+        if (lineAnnots.length > 0) {
+          svgParts.push('<g id="Line_Annotations">');
+          lineAnnots.forEach(a => {
+            svgParts.push(`<line x1="${a.x1.toFixed(2)}" y1="${a.y1.toFixed(2)}" x2="${a.x2.toFixed(2)}" y2="${a.y2.toFixed(2)}" stroke="${a.stroke || '#999'}" stroke-width="${a.strokeWidth || 2}"/>`);
+          });
+          svgParts.push('</g>');
+        }
 
         svgParts.push('</svg>');
 
@@ -2289,10 +2626,13 @@ const GraphRendererCanvas = forwardRef(
               stroke: entry.stroke || undefined,
             });
           }
-          // Apply label (custom text added in Illustrator)
+          // Apply an Illustrator-edited node label to the canonical text record.
           if (entry.label) {
-            const defaultLabel = getLabel(n);
-            if (entry.label !== defaultLabel) nodeLabelsRef.current.set(n.id, entry.label);
+            const labelItem = textItemsRef.current.find(item => item.id === nodeTextId(n.id, TEXT_KINDS.NODE_LABEL));
+            if (labelItem && entry.label !== getLabel(n)) {
+              labelItem.content = entry.label;
+              labelItem.contentEdited = true;
+            }
           }
         };
 
@@ -2378,17 +2718,90 @@ const GraphRendererCanvas = forwardRef(
           d3.select(canvas).transition().duration(400).call(zoomRef.current.transform, t);
         }
       },
+      downloadPNG: () => {
+        const nodes = nodesRef.current;
+        if (!nodes.length) return;
+
+        const visibleNodes = nodes.filter(n => !hiddenIds.has(n.id));
+        if (!visibleNodes.length) return;
+
+        // Compute tight bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        visibleNodes.forEach(n => {
+          const hw = n.type === 'compound' ? 20 : n.type === 'ec' ? 24 : 20;
+          const hh = n.type === 'compound' ? 20 : n.type === 'ec' ? 16 : 14;
+          minX = Math.min(minX, n.x - hw);
+          minY = Math.min(minY, n.y - hh);
+          maxX = Math.max(maxX, n.x + hw);
+          maxY = Math.max(maxY, n.y + hh);
+        });
+        const pad = 40;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+        const gw = maxX - minX;
+        const gh = maxY - minY;
+
+        const SCALE = 3;
+        const offscreen = document.createElement('canvas');
+        offscreen.width = gw * SCALE;
+        offscreen.height = gh * SCALE;
+        const offCtx = offscreen.getContext('2d');
+        offCtx.scale(SCALE, SCALE);
+        offCtx.translate(-minX, -minY);
+
+        // Temporarily set transform and redraw onto offscreen canvas
+        const savedTransform = transformRef.current;
+        transformRef.current = d3.zoomIdentity.translate(-minX, -minY);
+
+        // Draw background
+        if (bgColor) {
+          offCtx.fillStyle = bgColor;
+          offCtx.fillRect(minX, minY, gw, gh);
+        } else {
+          offCtx.fillStyle = dark ? '#0f172a' : '#ffffff';
+          offCtx.fillRect(minX, minY, gw, gh);
+        }
+
+        // We'll just capture the current canvas as-is using the main canvas toBlob
+        transformRef.current = savedTransform;
+
+        // Simpler approach: capture current canvas view at high res
+        const srcCanvas = canvasRef.current;
+        if (!srcCanvas) return;
+
+        srcCanvas.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'metabolic-network.png';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 'image/png');
+      },
       clearEdgeColors: () => {
         edgeColorsRef.current.clear();
         drawRef.current?.(nodesRef.current);
       },
+      redraw: () => {
+        drawRef.current?.(nodesRef.current);
+      },
       clearNodeColors: () => {
         nodeColorsRef.current.clear();
-        nodeLabelsRef.current.clear();
         drawRef.current?.(nodesRef.current);
       },
       importAnnotations: (annotations) => {
-        annotationsRef.current = annotations;
+        annotationsRef.current = (annotations || []).filter(a => a.type === 'line');
+        drawRef.current?.(nodesRef.current);
+      },
+      importTextItems: (items) => {
+        textItemsRef.current = (items || []).map(item => ({
+          ...item,
+          position: item.position ? { ...item.position } : null,
+          offset: item.offset ? { ...item.offset } : null,
+        }));
+        selectText(null);
         drawRef.current?.(nodesRef.current);
       },
       importEdgeColors: (colorMap) => {
@@ -2485,6 +2898,7 @@ const GraphRendererCanvas = forwardRef(
           ref={canvasRef}
           style={{ width: "100%", height: "100%", cursor: 'grab' }}
         />
+
         <NodeInfoPanel
           selectedNodes={selectedNodes}
           degreeMap={degreeMap}
@@ -2492,7 +2906,7 @@ const GraphRendererCanvas = forwardRef(
         />
         {ctxMenu && (
           <div
-            className="fixed z-50 min-w-[180px] rounded-xl border border-brd/50 bg-surface-overlay/95 backdrop-blur-xl shadow-2xl py-1 text-xs"
+            className="fixed z-50 min-w-[200px] max-w-[320px] rounded-xl border border-brd/50 bg-surface-overlay/95 backdrop-blur-xl shadow-2xl py-1 text-xs"
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
             onPointerDown={e => e.stopPropagation()}
           >
@@ -2505,14 +2919,93 @@ const GraphRendererCanvas = forwardRef(
                   : 'Context Menu'}
             </div>
 
-            {/* Node-specific actions (right-click on a node) */}
+            {/* ── Styling actions (color, opacity, label) ── */}
+            {ctxMenu.hitNode && (
+              <>
+                {/* Change Color */}
+                <button
+                  onClick={() => setCtxMenuColorPicker(prev => !prev)}
+                  className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                >
+                  <span className="w-3 h-3 rounded-full border border-brd/50" style={{
+                    backgroundColor: nodeColorsRef.current.get(ctxMenu.hitNode.id)?.fill || '#888'
+                  }} />
+                  Change Color…
+                </button>
+                {ctxMenuColorPicker && (
+                  <div className="px-2 pb-1">
+                    <EmbeddedColorPicker
+                      color={nodeColorsRef.current.get(ctxMenu.hitNode.id)?.fill || '#888888'}
+                      onChange={(c) => {
+                        takeSnapshot();
+                        // Apply to all selected nodes or just the one
+                        const targets = selectedNodes.length > 0
+                          ? selectedNodes.map(n => n.id)
+                          : [ctxMenu.hitNode.id];
+                        targets.forEach(id => {
+                          nodeColorsRef.current.set(id, { fill: c, stroke: c });
+                        });
+                        drawRef.current?.(nodesRef.current);
+                      }}
+                      onOk={() => setCtxMenuColorPicker(false)}
+                      onCancel={() => setCtxMenuColorPicker(false)}
+                    />
+                  </div>
+                )}
+                {nodeColorsRef.current.has(ctxMenu.hitNode.id) && !ctxMenuColorPicker && (
+                  <button
+                    onClick={() => {
+                      takeSnapshot();
+                      const targets = selectedNodes.length > 0
+                        ? selectedNodes.map(n => n.id)
+                        : [ctxMenu.hitNode.id];
+                      targets.forEach(id => nodeColorsRef.current.delete(id));
+                      drawRef.current?.(nodesRef.current);
+                      setCtxMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1 text-content-secondary hover:bg-surface-inset transition-colors flex items-center gap-2 text-[10px]"
+                  >
+                    Reset color
+                  </button>
+                )}
+
+                {/* Opacity slider */}
+                <div className="px-3 py-1.5 flex items-center gap-2">
+                  <span className="text-content-secondary text-[10px] w-12 flex-shrink-0">Opacity</span>
+                  <input
+                    type="range"
+                    min="0" max="100" step="5"
+                    value={Math.round((ctxMenuOpacity ?? (nodeOpacityRef.current.get(ctxMenu.hitNode.id) ?? nodeOpacity)) * 100)}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) / 100;
+                      setCtxMenuOpacity(val);
+                      const targets = selectedNodes.length > 0
+                        ? selectedNodes.map(n => n.id)
+                        : [ctxMenu.hitNode.id];
+                      targets.forEach(id => {
+                        if (val >= 0.99) nodeOpacityRef.current.delete(id);
+                        else nodeOpacityRef.current.set(id, val);
+                      });
+                      drawRef.current?.(nodesRef.current);
+                    }}
+                    className="flex-1 h-1 rounded-full appearance-none bg-brd/40 cursor-pointer accent-brand"
+                  />
+                  <span className="text-[10px] text-content-muted w-8 text-right tabular-nums">
+                    {Math.round((ctxMenuOpacity ?? (nodeOpacityRef.current.get(ctxMenu.hitNode.id) ?? nodeOpacity)) * 100)}%
+                  </span>
+                </div>
+
+                <div className="h-px bg-brd/40 my-0.5" />
+              </>
+            )}
+
+            {/* ── Node-specific actions ── */}
             {ctxMenu.hitNode && (
               <>
                 <button
                   onClick={() => handleHideNode(ctxMenu.hitNode.id)}
                   className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
                 >
-                  {/* <span className="text-base leading-none text-content-muted select-none">-</span> */}
                   Hide this node
                 </button>
                 {ctxMenu.hitNode.type === 'ec' && (
@@ -2524,7 +3017,6 @@ const GraphRendererCanvas = forwardRef(
                     }}
                     className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
                   >
-                    {/* <span className="text-base leading-none text-content-muted select-none">P</span> */}
                     Protein Viewer
                   </button>
                 )}
@@ -2533,27 +3025,73 @@ const GraphRendererCanvas = forwardRef(
                     onClick={() => handleCollapseNode(ctxMenu.hitNode.id)}
                     className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
                   >
-                    {/* <span className="text-base leading-none text-content-muted select-none">
-                      // {collapsedRoots.has(ctxMenu.hitNode.id) ? '+' : '-'}
-                    </span> */}
                     {collapsedRoots.has(ctxMenu.hitNode.id) ? 'Expand subtree' : 'Collapse subtree'}
                   </button>
                 )}
               </>
             )}
 
-            {/* Show all hidden (always available) */}
+            {/* Show all hidden */}
             {(hiddenIds.size > 0 || collapsedRoots.size > 0) && (
               <button
                 onClick={handleShowAll}
                 className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
               >
-                {/* <span className="text-base leading-none text-content-muted select-none">+</span> */}
                 Show all hidden ({hiddenIds.size + collapsedRoots.size})
               </button>
             )}
 
-            {/* Group transform actions (only when multiple nodes selected) */}
+            {/* ── Alignment tools (multi-select only) ── */}
+            {selectedNodes.length >= 2 && (
+              <>
+                <div className="h-px bg-brd/40 my-0.5" />
+                <button
+                  onClick={() => setShowAlignMenu(prev => !prev)}
+                  className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                >
+                  <span className="text-content-muted">⊞</span>
+                  Align / Distribute {showAlignMenu ? '▾' : '▸'}
+                </button>
+                {showAlignMenu && (
+                  <div className="px-1 pb-1">
+                    <div className="grid grid-cols-3 gap-0.5">
+                      {[
+                        { type: 'alignLeft', label: '⫷ Left' },
+                        { type: 'centerH', label: '⫿ Center' },
+                        { type: 'alignRight', label: '⫸ Right' },
+                        { type: 'alignTop', label: '⊤ Top' },
+                        { type: 'centerV', label: '⊝ Middle' },
+                        { type: 'alignBottom', label: '⊥ Bottom' },
+                      ].map(a => (
+                        <button
+                          key={a.type}
+                          onClick={() => applyAlignment(a.type)}
+                          className="px-1.5 py-1 text-[10px] text-content hover:bg-surface-inset rounded transition-colors text-center"
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-0.5 mt-0.5">
+                      <button
+                        onClick={() => applyAlignment('distributeH')}
+                        className="px-1.5 py-1 text-[10px] text-content hover:bg-surface-inset rounded transition-colors text-center"
+                      >
+                        Distribute H
+                      </button>
+                      <button
+                        onClick={() => applyAlignment('distributeV')}
+                        className="px-1.5 py-1 text-[10px] text-content hover:bg-surface-inset rounded transition-colors text-center"
+                      >
+                        Distribute V
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Group transform actions ── */}
             {selectedNodes.length > 0 && (
               <>
                 <div className="h-px bg-brd/40 my-0.5" />

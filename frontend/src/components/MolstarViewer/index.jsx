@@ -226,7 +226,17 @@ const MolstarViewer = forwardRef(({ accession, domains, features }, ref) => {
     try {
       inst.canvas.setBgColor(molstarBg);
     } catch (_) {}
-  }, [dark, molstarBg, status]);
+    
+    try {
+      const root = containerRef.current;
+      if (root) {
+        root.querySelectorAll('.msp-plugin, .msp-viewport, .msp-layout-main, .msp-canvas').forEach((el) => {
+          el.style.backgroundColor = bgColor;
+        });
+      }
+    } catch (_) {}
+  }, [dark, molstarBg, bgColor, status]);
+
 
   // Re-apply coloring when domains or features change
   useEffect(() => {

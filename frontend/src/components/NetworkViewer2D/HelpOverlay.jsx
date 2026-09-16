@@ -17,7 +17,7 @@ const HelpOverlay = ({ onClose }) => (
 
         <ul className="list-inside list-disc space-y-2 text-sm text-content">
           <li>
-            <span className="font-medium">Drag</span> nodes to reposition them.
+            <span className="font-medium">Drag</span> nodes to reposition them. Enable <em>Snap to Grid</em> in settings for precise alignment.
           </li>
           <li>
             <span className="font-medium">Scroll / two-finger swipe</span> to zoom in and out.
@@ -26,7 +26,10 @@ const HelpOverlay = ({ onClose }) => (
             <span className="font-medium">Ctrl + Click (Cmd + Click on Mac)</span> on a reaction side-node to collapse / expand paths.
           </li>
           <li>
-            <span className="font-medium">Right-click (Ctrl + Click on Mac)</span> on any node for a context menu to hide/show species and transform groups.
+            <span className="font-medium">Right-click</span> on any node for a context menu with options to change color, set opacity, edit label, hide/show, align groups, and transform selections.
+          </li>
+          <li>
+            <span className="font-medium">Double-click</span> on a node to edit its label inline. Double-click an annotation to edit its text.
           </li>
           <li>
             <span className="font-medium">Shift + Click</span> to select multiple nodes (multi-select).
@@ -37,17 +40,21 @@ const HelpOverlay = ({ onClose }) => (
           <li>
             <span className="font-medium">Middle-click</span> on a node to lock/unlock its position.
           </li>
+          <li>
+            <span className="font-medium">Text tool</span> (in Settings &gt; Colors) &ndash; click to activate, then click on the canvas to place text annotations. Edit, move, and delete them freely.
+          </li>
         </ul>
 
         <h3 className="mt-6 mb-2 font-medium text-content">Toolbar actions</h3>
         <ul className="list-inside list-disc space-y-1 text-sm text-content">
-          <li>Zoom ± – change zoom</li>
-          <li>Rotate (R) – re-run layout or hold to spin</li>
-          <li>Physics (P) – open physics panel</li>
-          <li>Lock – freeze/unfreeze simulation</li>
-          <li>Fullscreen (F) – immersive mode</li>
-          <li>Download – export view as SVG</li>
-          <li>Import SVG layout – reposition session nodes from a saved (or Illustrator-edited) SVG; positions, custom node/edge colors and edited labels are restored, matched by node id</li>
+          <li>Zoom &plusmn; &ndash; change zoom</li>
+          <li>Reset (R) &ndash; re-run layout</li>
+          <li>Fullscreen (F) &ndash; immersive mode</li>
+          <li>SVG &darr; &ndash; export as SVG (with opacity, colors, annotations)</li>
+          <li>PNG &darr; &ndash; export as high-res PNG</li>
+          <li>SVG &uarr; &ndash; import layout from an SVG file</li>
+          <li>Paint &ndash; brush tool for coloring edges</li>
+          <li>Text mode &ndash; select and reposition labels, subtitles, and text boxes</li>
         </ul>
 
         <h3 className="mt-6 mb-2 font-medium text-content">Keyboard shortcuts</h3>
@@ -56,15 +63,19 @@ const HelpOverlay = ({ onClose }) => (
           <span className="font-medium">-</span><span>Zoom out</span>
           <span className="font-medium">0</span><span>Reset view</span>
           <span className="font-medium">Space</span><span>Play/Pause</span>
-          <span className="font-medium">← / →</span><span>Step generation</span>
-          <span className="font-medium">R</span><span>Rotate layout</span>
-          <span className="font-medium">P</span><span>Physics panel</span>
+          <span className="font-medium">&larr; / &rarr;</span><span>Step generation</span>
+          <span className="font-medium">R</span><span>Reset layout</span>
+          <span className="font-medium">G</span><span>Toggle grid</span>
           <span className="font-medium">F</span><span>Fullscreen</span>
           <span className="font-medium">H</span><span>Help</span>
+          <span className="font-medium">Ctrl+Z</span><span>Undo</span>
+          <span className="font-medium">Ctrl+Shift+Z</span><span>Redo</span>
+          <span className="font-medium">Delete</span><span>Delete selected text box</span>
+          <span className="font-medium">Escape</span><span>Cancel / deselect</span>
         </div>
 
         <p className="mt-8 text-center text-xs text-content-muted">
-          Made with ❤️ – enjoy exploring!
+          Made with &#10084;&#65039; &ndash; enjoy exploring!
         </p>
       </div>
     </div>

@@ -59,14 +59,18 @@ const DomainBadge = ({ type }) => {
   );
 };
 
-const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
+const DomainCell = ({ domain, proteinData, selectedRange, onSelectRange }) => {
   if (!domain || !proteinData) return null;
 
-  const bindingSites = proteinData.features?.filter(
+  const ranges = (domain.ranges || []).filter(r => r && typeof r.start === 'number')
+    .sort((a, b) => a.start - b.start);
+  if (ranges.length === 0) return null;
+
+  const bindingSites = ranges.reduce((count, range) => count + (proteinData.features?.filter(
     (feature) =>
       feature.location.start >= range.start &&
       feature.location.end <= range.end
-  ).length || 0;
+  ).length || 0), 0);
 
   const hierarchy = domain.f_id?.split(".") || [];
   const levels = [
@@ -78,33 +82,65 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
   ];
 
   const domainColor = getDomainColor(domain.domain_id);
+  const isRangeSelected = (range) => selectedRange?.start === range.start && selectedRange?.end === range.end;
+  const isDomainSelected = ranges.some(isRangeSelected);
+
+  // Clicking anywhere on the card selects the domain, keeping whichever range
+  // segment was last chosen (or the first one if none is active yet).
+  const handleCardClick = () => {
+    if (!onSelectRange) return;
+    onSelectRange(ranges.find(isRangeSelected) || ranges[0]);
+  };
 
   return (
-    <div 
-      id={`domain-cell-${domain.domain_id}-${range.start}-${range.end}`}
+    <div
+      id={`domain-cell-${domain.domain_id}`}
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCardClick(); } }}
       className={`p-3 border rounded-lg transition-all duration-200 hover:shadow-md cursor-pointer
-        ${isSelected ? "ring-2 ring-brand bg-brand/10 border-brand/40" : "border-brd/60 hover:bg-surface-inset/50 hover:border-brd"}`}
-      onClick={() => onClick && onClick(domain, range)}
+        ${isDomainSelected ? "ring-2 ring-inset ring-brand bg-brand/10 border-brand/40" : "border-brd/60 hover:bg-surface-inset/50 hover:border-brd"}`}
     >
       {/* Header row */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: domainColor }} />
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: domainColor }} />
           <span className="font-semibold text-sm text-content">{domain.domain_id}</span>
-          <span className="text-xs text-content-secondary">
-            {range.start}-{range.end}
-          </span>
+          {ranges.length > 1 && (
+            <span className="text-[10px] text-content-muted bg-surface-inset/70 px-1.5 py-0.5 rounded-full flex-shrink-0" title="Disconnected segments">
+              {ranges.length} segments
+            </span>
+          )}
         </div>
         <a
           href={`http://prodata.swmed.edu/ecod/af2_pdb/domain/${proteinData.primary_accession}_F1_${domain.domain_id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-info hover:text-info p-1 rounded-full hover:bg-info-subtle"
+          className="text-info hover:text-info p-1 rounded-full hover:bg-info-subtle flex-shrink-0"
           title="View in ECOD"
           onClick={(e) => e.stopPropagation()}
         >
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
+      </div>
+
+      {/* Range chips – disconnected segments of the same domain, kept together */}
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        {ranges.map((range, i) => (
+          <button
+            key={`${domain.domain_id}-range-${i}`}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSelectRange && onSelectRange(range); }}
+            className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors
+              ${isRangeSelected(range)
+                ? "bg-brand text-white"
+                : "bg-surface-inset/70 text-content-secondary hover:bg-surface-inset"}`}
+            title={`Residues ${range.start}-${range.end}`}
+          >
+            {range.start}–{range.end}
+          </button>
+        ))}
       </div>
 
       {/* Tags row */}
@@ -124,7 +160,7 @@ const DomainCell = ({ domain, range, proteinData, isSelected, onClick }) => {
         {levels.map((lv) => (
           <React.Fragment key={lv.badge}>
             <DomainBadge type={lv.badge} />
-            <div className="truncate text-content-secondary leading-5" title={lv.label}>{lv.label}</div>
+            <div className="break-words text-content-secondary leading-5">{lv.label}</div>
           </React.Fragment>
         ))}
       </div>
@@ -148,37 +184,24 @@ const DomainGrid = ({
     );
   }
 
-  // Create a flat array of all ranges with their domain info
-  const ranges = [];
-  domains.forEach(domain => {
-    if (domain.ranges && Array.isArray(domain.ranges)) {
-      domain.ranges.forEach(range => {
-        if (range && typeof range.start === 'number') {
-          ranges.push({ domain, range });
-        }
-      });
-    }
-  });
-
-  // Sort ranges by start position
-  const sortedRanges = ranges.sort((a, b) => a.range.start - b.range.start);
-
-  const isSelected = (domain, range) => {
-    return selectedDomain?.domain_id === domain.domain_id && 
-           selectedRange?.start === range.start && 
-           selectedRange?.end === range.end;
-  };
+  // One card per unique domain id (a domain may have several disconnected ranges)
+  const sortedDomains = [...domains]
+    .filter(d => d.ranges?.some(r => r && typeof r.start === 'number'))
+    .sort((a, b) => {
+      const aStart = Math.min(...a.ranges.map(r => r.start));
+      const bStart = Math.min(...b.ranges.map(r => r.start));
+      return aStart - bStart;
+    });
 
   return (
-    <div className="flex flex-col gap-2 pr-1">
-      {sortedRanges.map((item, index) => (
+    <div className="flex flex-col gap-2 p-1">
+      {sortedDomains.map((domain, index) => (
         <DomainCell
-          key={`domain-${item.domain.domain_id}-${item.range.start}-${index}`}
-          domain={item.domain}
-          range={item.range}
+          key={`domain-${domain.domain_id}-${index}`}
+          domain={domain}
           proteinData={proteinData}
-          isSelected={isSelected(item.domain, item.range)}
-          onClick={() => onSelectDomain(item.domain, item.range)}
+          selectedRange={selectedDomain?.domain_id === domain.domain_id ? selectedRange : null}
+          onSelectRange={(range) => onSelectDomain(domain, range)}
         />
       ))}
     </div>
@@ -271,21 +294,49 @@ const ProteinSelector = ({ data, selectedId, onChange }) => {
   );
 };
 
-const LoadingCard = () => (
-  <Card className="w-full animate-pulse">
-    <CardContent className="flex items-center justify-center h-64">
-      <div className="flex items-center gap-3">
-        <div className="w-2 h-2 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-        <div className="w-2 h-2 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-        <div className="w-2 h-2 bg-brand rounded-full animate-bounce"></div>
-        <span className="text-brand font-medium ml-2">Loading protein data...</span>
+const SkeletonBlock = ({ className = '' }) => (
+  <div className={`bg-surface-inset/70 rounded-md animate-pulse ${className}`} />
+);
+
+// Mirrors the real layout (header / sequence bar / cards + 3D viewer) so the
+// page doesn't jump when the actual data arrives.
+const ProteinViewerSkeleton = () => (
+  <div className="w-full h-full flex flex-col overflow-hidden">
+    <div className="bg-surface-inset/60 px-4 py-3 border border-brd/50 rounded-t-lg flex-shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="space-y-2 min-w-0">
+          <SkeletonBlock className="h-5 w-40" />
+          <div className="flex gap-3">
+            <SkeletonBlock className="h-3 w-20" />
+            <SkeletonBlock className="h-3 w-24" />
+            <SkeletonBlock className="h-3 w-16" />
+          </div>
+        </div>
+        <SkeletonBlock className="h-8 w-60" />
       </div>
-    </CardContent>
-  </Card>
+    </div>
+
+    <div className="border-x border-brd/50 px-4 py-2 flex-shrink-0">
+      <SkeletonBlock className="h-16 w-full" />
+    </div>
+
+    <div className="border border-brd/50 border-t-0 rounded-b-lg flex-1 min-h-0 flex flex-row overflow-hidden">
+      <div className="p-4 flex flex-col gap-2 border-r border-brd/40" style={{ width: '420px', flexShrink: 0 }}>
+        <SkeletonBlock className="h-4 w-32 mb-1" />
+        {[...Array(4)].map((_, i) => (
+          <SkeletonBlock key={i} className="h-28 w-full" />
+        ))}
+      </div>
+      <div className="p-4 flex-1 min-w-0 flex flex-col">
+        <SkeletonBlock className="h-4 w-24 mb-3" />
+        <SkeletonBlock className="flex-1 w-full" />
+      </div>
+    </div>
+  </div>
 );
 
 const ErrorCard = ({ message, ecNumber }) => (
-  <Card className="w-full">
+  <Card className="w-full max-w-md">
     <CardContent className="p-6">
       <div className="flex flex-col items-center gap-3 text-center">
         <AlertCircle className="w-8 h-8 text-err" />
@@ -673,17 +724,21 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
   };
 
   if (loading) {
-    return <LoadingCard />;
+    return <ProteinViewerSkeleton />;
   }
 
   if (error || !data || data.length === 0) {
-    return <ErrorCard message={error} ecNumber={ecNumber} />;
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <ErrorCard message={error} ecNumber={ecNumber} />
+      </div>
+    );
   }
 
   return (
-    <div className="w-full mx-auto overflow-hidden" ref={viewerRef}>
+    <div className="w-full h-full mx-auto overflow-hidden flex flex-col" ref={viewerRef}>
       {/* ─── Row 1: Header ─── */}
-      <div className="bg-surface-inset/60 px-4 py-3 border border-brd/50 rounded-t-lg">
+      <div className="bg-surface-inset/60 px-4 py-3 border border-brd/50 rounded-t-lg flex-shrink-0">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           {/* Left: EC info + stats */}
           <div className="space-y-1.5 min-w-0">
@@ -735,7 +790,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
 
       {/* ─── Sequence bar ─── */}
       {proteinData && (
-        <div className="border-x border-brd/50 px-4 py-2">
+        <div className="border-x border-brd/50 px-4 py-2 flex-shrink-0">
           <DomainVisualization
             proteinData={proteinData}
             selectedDomain={selectedDomain}
@@ -760,11 +815,11 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
       {/* ─── Body: domain cards + 3D viewer ─── */}
       {proteinData && (
         <div
-          className={`border border-brd/50 border-t-0 rounded-b-lg ${isSmallScreen ? 'flex flex-col' : 'flex flex-row'}`}
+          className={`border border-brd/50 border-t-0 rounded-b-lg flex-1 min-h-0 ${isSmallScreen ? 'flex flex-col overflow-y-auto' : 'flex flex-row'}`}
         >
           {/* Domain cards - scrollable, fixed width on desktop */}
-          <div className={`p-4 flex flex-col overflow-hidden ${isSmallScreen ? 'border-b border-brd/40' : 'border-r border-brd/40'}`}
-               style={isSmallScreen ? { maxHeight: '50vh' } : { width: '420px', flexShrink: 0, maxHeight: '65vh' }}>
+          <div className={`p-4 flex flex-col overflow-hidden ${isSmallScreen ? 'border-b border-brd/40 flex-shrink-0' : 'border-r border-brd/40 min-h-0'}`}
+               style={isSmallScreen ? { maxHeight: '45vh' } : { width: '420px', flexShrink: 0 }}>
             <div className="flex justify-between items-center mb-3 flex-shrink-0">
               <h3 className="font-medium text-content text-sm">Domain Information</h3>
               <span className="text-[11px] text-content-secondary bg-surface-inset/60 px-2 py-0.5 rounded">
@@ -783,7 +838,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
           </div>
 
           {/* 3D viewer - takes all remaining width */}
-          <div className="p-4 flex flex-col flex-1 min-w-0" style={{ minHeight: '400px' }}>
+          <div className={`p-4 flex flex-col flex-1 min-w-0 ${isSmallScreen ? 'min-h-[400px]' : 'min-h-0'}`}>
             <div className="flex justify-between items-center mb-3 flex-shrink-0">
               <h3 className="font-medium text-content text-sm">3D Structure</h3>
               <span className="text-[11px] text-content-muted">AlphaFold DB</span>
