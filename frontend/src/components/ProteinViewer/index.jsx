@@ -12,6 +12,7 @@ import {
 import DomainVisualization from "../DomainVisualization";
 import MolstarViewer, { getDomainColor } from "../MolstarViewer";
 import { useMediaQuery } from 'react-responsive';
+import KeyButton from '../Key/KeyButton';
 
 // Download the referenced element as a high-resolution PNG using html2canvas.
 // Dynamically imports the library so the initial bundle stays lean.
@@ -765,6 +766,7 @@ const ProteinViewer = ({ ecNumber, onClose }) => {
             )}
             
             <div className="flex items-center gap-1">
+              <KeyButton view="protein" variant="icon" className="!h-8 !w-8 rounded-full" />
               <button
                 onClick={handleExportSVG}
                 disabled={!proteinData}

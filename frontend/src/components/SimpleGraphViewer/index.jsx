@@ -5,8 +5,9 @@ import GraphCanvas from "./GraphCanvas";
 import SettingsPanel from "./SettingsPanel";
 import useFullscreen from "../NetworkViewer2D/hooks/useFullscreen";
 import HelpOverlay from "../NetworkViewer2D/HelpOverlay";
+import DeletedReactionsBadge from "../DeletedReactionsBadge";
 
-const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
+const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600px", deletedRows = [], onRestoreRows }, ref) => {
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const graphCanvasRef = useRef(null);
@@ -166,7 +167,13 @@ const SimpleGraphViewer = forwardRef(({ results, searchPairs = [], height = "600
         }`}
         style={{ height: isFullscreen ? '100vh' : height }}
       >
-        {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+        {showHelp && <HelpOverlay view="metabolic-map" onClose={() => setShowHelp(false)} />}
+
+        {deletedRows.length > 0 && (
+          <div className="absolute top-3 right-3 z-40">
+            <DeletedReactionsBadge deletedRows={deletedRows} onRestoreRows={onRestoreRows} />
+          </div>
+        )}
 
         {/* ── Backbone SMILES search bar ── */}
         <div className={`absolute top-3 left-3 z-40 transition-all duration-200 ${

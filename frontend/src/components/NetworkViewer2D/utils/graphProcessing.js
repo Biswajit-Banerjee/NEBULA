@@ -15,6 +15,17 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
     const nodes = [];
     const links = [];
     const uniqueNodes = new Map();
+    // Track already-added edges to prevent duplicates when the same reaction
+    // appears in `data` more than once (different pairIndex / generation)
+    const linkSet = new Set();
+    const addLink = (link) => {
+      const src = link.source?.id ?? link.source;
+      const tgt = link.target?.id ?? link.target;
+      const key = `${src}|${tgt}|${link.type}`;
+      if (linkSet.has(key)) return;
+      linkSet.add(key);
+      links.push(link);
+    };
   
     // Helper function to add node if it doesn't exist yet
     const addUniqueNode = (id, type, generation, props = {}, pairIndex = null) => {
@@ -126,7 +137,7 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
           );
   
           // Add link between reaction nodes
-          links.push({
+          addLink({
             source: reactantNodeId,
             target: productNodeId,
             type: "reaction",
@@ -142,52 +153,40 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
           ) {
             reaction.ec_list.forEach((ec) => {
               if (ec && ec !== "N/A") {
-                // Create consistent node ID using EC number and target generation
-                const ecNodeId = `ec_${ec}_${targetGen}`;
-  
-                // Add EC node if it doesn't exist yet
-                const ecNode = addUniqueNode(ecNodeId, "ec", targetGen, {
+                // EC nodes are unique by enzyme number only — one node per enzyme
+                // regardless of which generation or reaction uses it.
+                const ecNodeId = `ec_${ec}`;
+
+                addUniqueNode(ecNodeId, "ec", targetGen, {
                   label: ec,
                   ec: ec,
                   generation: targetGen,
                 }, reaction.pairIndex ?? null);
-  
-                // Create connections only if they don't already exist
-                const existingInLink = links.find(
-                  (l) => l.source === reactantNodeId && l.target === ecNodeId
-                );
-                const existingOutLink = links.find(
-                  (l) => l.source === ecNodeId && l.target === productNodeId
-                );
-  
-                if (!existingInLink) {
-                  links.push({
-                    source: reactantNodeId,
-                    target: ecNodeId,
-                    type: "ec-in",
-                    generation: targetGen,
-                    pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
-                  });
-                }
-  
-                if (!existingOutLink) {
-                  links.push({
-                    source: ecNodeId,
-                    target: productNodeId,
-                    type: "ec-out",
-                    generation: targetGen,
-                    pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
-                  });
-                }
+
+                // addLink deduplicates by (source, target, type) — safe to call repeatedly
+                addLink({
+                  source: reactantNodeId,
+                  target: ecNodeId,
+                  type: "ec-in",
+                  generation: targetGen,
+                  pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
+                });
+
+                addLink({
+                  source: ecNodeId,
+                  target: productNodeId,
+                  type: "ec-out",
+                  generation: targetGen,
+                  pairIndices: reaction.pairIndex !== undefined ? [reaction.pairIndex] : [],
+                });
               }
             });
           }
   
           // Connect products to reaction product node
           products.forEach((product) => {
-            const productCompound = uniqueNodes.get(product.id);
-            if (productCompound) {
-              links.push({
+            if (uniqueNodes.get(product.id)) {
+              addLink({
                 source: productNodeId,
                 target: product.id,
                 type: "product",
@@ -198,12 +197,11 @@ export const processData = (data, currentGen, minVisibleGen = 0) => {
             }
           });
         }
-  
+
         // Always connect reactants to reaction reactant node if the compound is visible
         reactants.forEach((reactant) => {
-          const reactantCompound = uniqueNodes.get(reactant.id);
-          if (reactantCompound) {
-            links.push({
+          if (uniqueNodes.get(reactant.id)) {
+            addLink({
               source: reactant.id,
               target: reactantNodeId,
               type: "substrate",

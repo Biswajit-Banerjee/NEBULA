@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useContext} from "react";
-import { Zap, HelpCircle, Compass, BookOpen, Lightbulb } from "lucide-react";
+import { Zap, HelpCircle, Compass, BookOpen, Lightbulb, Route, X } from "lucide-react";
 import { getApiUrl } from './config/api';
 
 import Logo from "./components/Logo";
@@ -11,6 +11,8 @@ import DocsViewer from "./components/DocsViewer";
 import GuidedTour, { TOUR_SEEN_KEY } from "./components/GuidedTour";
 import { getSolidColorForPairByIndex } from './config/themes';
 import { ThemeContext } from './components/ThemeProvider/ThemeProvider';
+import TextSizeControl from './components/TextSize/TextSizeControl';
+import { DOCS_EVENT } from './lib/docsBus';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -46,16 +48,36 @@ function App() {
   const [pendingPositions2D, setPendingPositions2D] = useState(null);
   const [pendingPositions3D, setPendingPositions3D] = useState(null);
 
-  // AND-OR hypergraph tree data
-  const [treeData, setTreeData] = useState(null);
-  const [treeStats, setTreeStats] = useState(null);
-  const [treeSolutions, setTreeSolutions] = useState([]);
+  // Pathway data — one entry per compound-mode search pair, so multi-target
+  // searches can all be inspected (and overlaid) in Path Finder.
+  const [treeTargets, setTreeTargets] = useState([]);
+  // 'parallel' = all routes incl. parallel/lateral reactions (default),
+  // 'earliest' = strictly generation-increasing routes only
+  const [pathMode, setPathMode] = useState('parallel');
+  const [pathMaxPaths, setPathMaxPaths] = useState(6000);
+  const [treeLoading, setTreeLoading] = useState(false);
 
   // Focused path — when set, filters all viewers to only show reactions in this path
   const [focusedPath, setFocusedPath] = useState(null);
 
+  // Reactions removed from the Table view. Tracked (rather than just
+  // discarded) so other viewers can flag the paths/edges they broke.
+  const [deletedRows, setDeletedRows] = useState([]);
+
   // Documentation viewer
   const [docsOpen, setDocsOpen] = useState(false);
+  const [docsSlug, setDocsSlug] = useState(null);
+  const [docsNavKey, setDocsNavKey] = useState(0);
+  const openDocsAt = useCallback((slug) => {
+    setDocsSlug(slug || null);
+    setDocsNavKey((k) => k + 1);
+    setDocsOpen(true);
+  }, []);
+  useEffect(() => {
+    const h = (e) => openDocsAt(e.detail?.slug);
+    window.addEventListener(DOCS_EVENT, h);
+    return () => window.removeEventListener(DOCS_EVENT, h);
+  }, [openDocsAt]);
 
   // Guided tour
   const [tourActive, setTourActive] = useState(false);
@@ -130,6 +152,7 @@ function App() {
     setError(null);
     setSelectedRows(new Set());
     setFocusedPath(null);
+    setPathMaxPaths(6000);
 
     const processedPairsInput = pairsFromPanel.map((p, idx) => ensureIdAndColorForPair(p, idx));
 
@@ -160,6 +183,13 @@ function App() {
         setResults(importedResults);
         setPendingPositions2D(importedSessionData.positions2D || null);
         setPendingPositions3D(importedSessionData.positions3D || null);
+        // Sessions don't carry Path Finder tree/solutions or deletion state —
+        // reset them so a stale tree from a previous search isn't shown
+        // against mismatched, newly-imported results (this was causing the
+        // Path Finder tab to crash/freeze after importing on top of an
+        // existing session instead of a fresh page load).
+        setTreeTargets([]);
+        setDeletedRows([]);
       } catch (e) {
         setError(e.message || "Error processing imported data");
       } finally {
@@ -189,7 +219,7 @@ function App() {
     try {
       let allResults = [];
       let workingPairs = [...processedPairsInput];
-      let treeDataSet = false;
+      let newTreeTargets = [];
 
       for (let i = 0; i < workingPairs.length; i++) {
         const pair = workingPairs[i];
@@ -206,6 +236,7 @@ function App() {
             const qp = new URLSearchParams();
             qp.append('target', pair.target.trim());
             if (pair.source && pair.source.trim()) qp.append('source', pair.source.trim());
+            qp.append('mode', pathMode);
             fetchUrl = getApiUrl(`backtrace/tree?${qp.toString()}`);
             pairLabel = pair.target.trim();
           }
@@ -258,14 +289,20 @@ function App() {
           const solCount = data.solutions?.length ?? 0;
           console.log(`[NEBULA] "${pairLabel}": ${flatCount} reactions, ${data.stats?.total_compounds ?? 0} compounds, ${solCount} solutions in ${elapsed}s`);
 
-          // Set tree/solutions from first compound pair
-          if (i === 0 || !treeDataSet) {
-            if (data.tree) {
-              setTreeData(data.tree);
-              setTreeStats(data.stats || null);
-              setTreeSolutions(data.solutions || []);
-              treeDataSet = true;
-            }
+          // Collect pathway graph/solutions for every compound pair so
+          // multi-target searches can all be inspected in the Paths view.
+          if (data.graph) {
+            newTreeTargets.push({
+              pairIndex: i,
+              pairId: pair.id,
+              color: pair.color,
+              source: pair.source?.trim() || '',
+              target: pair.target.trim(),
+              graph: data.graph,
+              stats: data.stats || null,
+              solutions: data.solutions || [],
+              clusters: data.clusters || [],
+            });
           }
         } else {
           console.log(`[NEBULA] ${mode} search "${pairLabel}": ${data.data?.length ?? 0} results in ${elapsed}s`);
@@ -286,19 +323,13 @@ function App() {
       }
       handleSetSearchPairs(workingPairs);
       setResults(allResults.length > 0 ? allResults : []);
+      setDeletedRows([]);
 
-      // Clear tree data if no compound search produced tree results
-      if (!treeDataSet) {
-        setTreeData(null);
-        setTreeStats(null);
-        setTreeSolutions([]);
-      }
+      setTreeTargets(newTreeTargets);
     } catch (errorMsg) {
       setError(errorMsg.message || "An error occurred during search");
       setResults(null);
-      setTreeData(null);
-      setTreeStats(null);
-      setTreeSolutions([]);
+      setTreeTargets([]);
       handleSetSearchPairs(prev => prev.map(p => ({ ...p, hasResults: false, resultCount: 0 })));
     } finally {
       setLoading(false);
@@ -319,10 +350,9 @@ function App() {
 
   const handleClearResults = useCallback(() => {
     setResults(null);
-    setTreeData(null);
-    setTreeStats(null);
-    setTreeSolutions([]);
+    setTreeTargets([]);
     setFocusedPath(null);
+    setDeletedRows([]);
     setSelectedRows(new Set());
     setError(null);
     // Reset search pairs to initial state
@@ -340,14 +370,82 @@ function App() {
     return results.filter(result => result.pairIndex !== undefined && visiblePairIndices.includes(result.pairIndex));
   }, [results, searchPairs]);
 
-  // Focused-path filter: restrict to reactions in the selected path
-  const handleFocusPath = useCallback((solution) => {
-    setFocusedPath(prev => {
-      // Toggle off if same path
-      if (prev && solution && prev.id === solution.id) return null;
-      return solution || null;
+  // Focused-path filter: restrict all other viewers to the reactions of the
+  // path (or set of paths) selected in the Paths view.
+  const handleFocusPath = useCallback((selection) => {
+    setFocusedPath(selection || null);
+  }, []);
+
+  // Changing the route mode (or asking for a deeper search) re-runs the
+  // pathway search for every compound pair and refreshes that pair's rows,
+  // so every reaction of every listed path is also present in other viewers.
+  const handlePathModeChange = useCallback(async (mode, maxPaths = pathMaxPaths) => {
+    if (mode === pathMode && maxPaths === pathMaxPaths) return;
+    setPathMode(mode);
+    setPathMaxPaths(maxPaths);
+    if (treeTargets.length === 0) return;
+    setTreeLoading(true);
+    setFocusedPath(null);
+    try {
+      const updated = await Promise.all(treeTargets.map(async (t) => {
+        const qp = new URLSearchParams({ target: t.target, mode, max_paths: String(maxPaths) });
+        if (t.source) qp.append('source', t.source);
+        const resp = await fetch(getApiUrl(`backtrace/tree?${qp.toString()}`));
+        if (!resp.ok) throw new Error(`Pathway search failed for ${t.target}`);
+        const data = await resp.json();
+        return { t, data };
+      }));
+      setTreeTargets(updated.map(({ t, data }) => ({
+        ...t, graph: data.graph, stats: data.stats || null, solutions: data.solutions || [], clusters: data.clusters || [],
+      })));
+      setResults(prev => {
+        if (!prev) return prev;
+        let next = prev;
+        updated.forEach(({ t, data }) => {
+          const existing = new Set(next.filter(r => r.pairIndex === t.pairIndex).map(r => r.reaction));
+          const additions = (data.data || [])
+            .filter(r => !existing.has(r.reaction))
+            .map(r => ({ ...r, pairIndex: t.pairIndex, pairSource: t.source || 'any', pairTarget: t.target }));
+          if (additions.length) next = [...next, ...additions];
+        });
+        return next;
+      });
+    } catch (e) {
+      setError(e.message || 'Pathway search failed');
+    } finally {
+      setTreeLoading(false);
+    }
+  }, [pathMode, pathMaxPaths, treeTargets]);
+
+  // Reaction deletion — tracked (not just discarded) so other viewers can
+  // flag which paths/edges the deletion broke.
+  const rowDeleteKey = (row) => `${row.reaction}::${row.source || ''}::${row.target || ''}::${row.equation || ''}`;
+
+  const handleRemoveRows = useCallback((removedRows) => {
+    if (!removedRows || removedRows.length === 0) return;
+    setDeletedRows(prev => {
+      const seen = new Set(prev.map(rowDeleteKey));
+      const additions = removedRows.filter(r => !seen.has(rowDeleteKey(r)));
+      return additions.length ? [...prev, ...additions] : prev;
     });
   }, []);
+
+  const handleRestoreRows = useCallback((rowsToRestore) => {
+    if (!rowsToRestore || rowsToRestore.length === 0) return;
+    const restoreKeys = new Set(rowsToRestore.map(rowDeleteKey));
+    setDeletedRows(prev => prev.filter(r => !restoreKeys.has(rowDeleteKey(r))));
+    setResults(prev => {
+      const base = prev || [];
+      const existing = new Set(base.map(rowDeleteKey));
+      const toAdd = rowsToRestore.filter(r => !existing.has(rowDeleteKey(r)));
+      return [...base, ...toAdd];
+    });
+  }, []);
+
+  const deletedReactionNames = useMemo(
+    () => new Set(deletedRows.map(r => r.reaction)),
+    [deletedRows]
+  );
 
   // Apply cofactor filter before combined-mode dedup
   const cofactorFiltered = useMemo(() => {
@@ -513,11 +611,18 @@ function App() {
     searchPairs,
     network2dRef,
     network3dRef,
-    treeData,
-    treeStats,
-    treeSolutions,
+    treeTargets,
+    pathMode,
+    pathMaxPaths,
+    onChangePathMode: handlePathModeChange,
+    treeLoading,
     focusedPath,
     onFocusPath: handleFocusPath,
+    deletedRows,
+    deletedReactionNames,
+    onRemoveRows: handleRemoveRows,
+    onRestoreRows: handleRestoreRows,
+    hideCofactors,
   };
 
   return (
@@ -604,6 +709,27 @@ function App() {
         </div>
       )}
 
+      {/* ── Focused-pathway chip — tells users other views are filtered ── */}
+      {hasResults && focusedPath && (isSplit || activeView !== 'tree') && (
+        <div className="fixed top-[4.5rem] left-1/2 -translate-x-1/2 z-40">
+          <div className="flex items-center gap-2 rounded-full border border-brand/30 bg-surface-overlay/90 backdrop-blur-xl shadow-lg pl-3 pr-1 py-1 text-xs">
+            <Route className="w-3.5 h-3.5 text-brand" />
+            <span className="text-content-secondary">
+              Showing <b className="text-content">{focusedPath.label || 'selected pathway'}</b>
+              <span className="text-content-muted"> · {focusedPath.reactions?.length || 0} reactions</span>
+            </span>
+            {activeView !== 'tree' && (
+              <button onClick={() => handleActiveViewChange('tree')} className="px-2 py-0.5 rounded-full text-brand hover:bg-brand/10 font-medium">
+                Open in Path Finder
+              </button>
+            )}
+            <button onClick={() => setFocusedPath(null)} className="p-1 rounded-full text-content-muted hover:text-content hover:bg-surface-inset" title="Show all reactions again">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Hero / Landing — only when no results ── */}
       {!hasResults && !loading && (
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4">
@@ -664,7 +790,7 @@ function App() {
       <div ref={helpMenuRef} className="fixed bottom-4 right-4 z-40" data-tour="help-btn">
         {/* Popover menu */}
         {helpMenuOpen && (
-          <div className="absolute bottom-12 right-0 mb-1 w-48
+          <div className="absolute bottom-12 right-0 mb-1 w-60
             bg-surface-overlay/95 backdrop-blur-2xl border border-brd/50
             rounded-xl shadow-2xl shadow-black/20 overflow-hidden
             animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
@@ -684,7 +810,7 @@ function App() {
             <button
               onClick={() => {
                 setHelpMenuOpen(false);
-                setDocsOpen(true);
+                openDocsAt(hasResults ? activeView : null);
               }}
               className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[12px] font-medium
                 text-content-secondary hover:text-brand hover:bg-brand/5 transition-all"
@@ -692,6 +818,18 @@ function App() {
               <BookOpen className="w-4 h-4" />
               Documentation
             </button>
+            <button
+              onClick={() => { setHelpMenuOpen(false); setTourActive(true); }}
+              className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-[12px] font-medium
+                text-content-secondary hover:text-brand hover:bg-brand/5 transition-all"
+            >
+              <Compass className="w-4 h-4" />
+              Guided tour
+            </button>
+            <div className="flex items-center justify-between gap-2 border-t border-brd/40 px-3.5 py-2">
+              <span className="text-[12px] font-medium text-content-secondary">Text size</span>
+              <TextSizeControl label={false} />
+            </div>
           </div>
         )}
         {/* Trigger button */}
@@ -705,7 +843,7 @@ function App() {
       </div>
 
       {/* ── Documentation Viewer ── */}
-      <DocsViewer isOpen={docsOpen} onClose={() => setDocsOpen(false)} initialSlug={hasResults ? activeView : null} />
+      <DocsViewer isOpen={docsOpen} onClose={() => setDocsOpen(false)} initialSlug={docsSlug} navKey={docsNavKey} />
 
       {/* ── Guided Tour ── */}
       <GuidedTour

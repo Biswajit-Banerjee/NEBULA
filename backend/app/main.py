@@ -298,17 +298,21 @@ async def get_backtrace(target: str, source: str=''):
         )
         
 @app.get("/api/backtrace/tree")
-async def get_backtrace_tree(target: str, source: str = ''):
+async def get_backtrace_tree(target: str, source: str = '', mode: str = 'parallel', max_paths: int = 6000):
     """
-    AND-OR hypergraph backward reachability from target compound.
+    Pathway search to a target compound: forward network expansion from the
+    seed compounds (+ sources), backward pruning from the target, then
+    enumeration of minimal cycle-free hyperpaths.
 
-    Returns a nested AND-OR tree where:
-      - OR-nodes = compounds (produced by any of several reactions)
-      - AND-nodes = reactions (require all reactants)
+    Returns the pruned pathway graph (compounds + reactions), the validated
+    paths and summary stats, plus the flat reaction list for other views.
 
     Args:
         target: Target compound ID (e.g. C00258)
         source: Optional comma-separated source compound IDs (e.g. C00022,C00036)
+        mode: 'parallel' (default; includes parallel same-generation reactions)
+              or 'earliest' (strictly generation-increasing routes only)
+        max_paths: Maximum number of paths to enumerate (1-20000)
     """
     try:
         # Validate target
@@ -329,7 +333,11 @@ async def get_backtrace_tree(target: str, source: str = ''):
                         detail=f"Invalid source compound ID: {s}"
                     )
 
-        result = await viewer.get_backtrace_tree(target, sources)
+        if mode not in ("earliest", "parallel"):
+            raise HTTPException(status_code=400, detail="Invalid mode. Must be 'parallel' or 'earliest'.")
+        max_paths = max(1, min(int(max_paths), 20000))
+
+        result = await viewer.get_backtrace_tree(target, sources, mode=mode, max_paths=max_paths)
 
         if result.get('error'):
             raise HTTPException(status_code=500, detail=result['error'])
@@ -1017,6 +1025,8 @@ async def get_kegg_map_bg(variant: str):
 _docs_images_dir = DOCS_DIR / "images"
 if _docs_images_dir.exists():
     app.mount("/docs-assets", StaticFiles(directory=_docs_images_dir), name="docs-images")
+    # Same images under /api so they resolve through the API base URL (works under the /NEBULA/ prefix)
+    app.mount("/api/docs-assets", StaticFiles(directory=_docs_images_dir), name="docs-images-api")
 
 # Serve frontend static files
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

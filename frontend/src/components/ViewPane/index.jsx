@@ -5,7 +5,7 @@ import ViewTour from '../GuidedTour/ViewTour';
 const LazyNetworkViewer3D = lazy(() => import('../NetworkViewer'));
 const LazyNetworkViewer2D = lazy(() => import('../NetworkViewer2D'));
 const LazySimpleGraphViewer = lazy(() => import('../SimpleGraphViewer'));
-const LazyHypergraphTreeView = lazy(() => import('../HypergraphTreeView'));
+const LazyPathwayExplorer = lazy(() => import('../PathwayExplorer'));
 
 const LoadingFallback = ({ label }) => (
   <div className="flex items-center justify-center h-full min-h-[200px] text-content-secondary">
@@ -27,13 +27,20 @@ const ViewPane = ({
   searchPairs,
   network2dRef,
   network3dRef,
-  treeData,
-  treeStats,
-  treeSolutions,
+  treeTargets = [],
+  pathMode,
+  pathMaxPaths,
+  onChangePathMode,
+  treeLoading,
   focusedPath,
   onFocusPath,
+  deletedRows,
+  deletedReactionNames,
+  onRemoveRows,
+  onRestoreRows,
   viewTourActive,
   onViewTourClose,
+  hideCofactors,
 }) => {
   const containerRef = useRef(null);
   const [measuredHeight, setMeasuredHeight] = useState(0);
@@ -95,6 +102,9 @@ const ViewPane = ({
             selectedRows={selectedRows}
             setSelectedRows={setSelectedRows}
             searchPairs={searchPairs}
+            deletedRows={deletedRows}
+            onRemoveRows={onRemoveRows}
+            onRestoreRows={onRestoreRows}
           />
         </div>
       </div>
@@ -112,6 +122,8 @@ const ViewPane = ({
               results={safeFiltered}
               searchPairs={searchPairs}
               height={pixelHeight}
+              deletedRows={deletedRows}
+              onRestoreRows={onRestoreRows}
             />
           </Suspense>
         </div>
@@ -129,6 +141,8 @@ const ViewPane = ({
               results={safeFiltered}
               searchPairs={searchPairs}
               height={pixelHeight}
+              deletedRows={deletedRows}
+              onRestoreRows={onRestoreRows}
             />
           </Suspense>
         </div>
@@ -151,21 +165,25 @@ const ViewPane = ({
         </div>
       )}
 
-      {/* Tree — always mounted once treeData exists to avoid loading flash */}
-      {treeData && (
+      {/* Tree — always mounted once at least one target's tree exists to avoid loading flash */}
+      {treeTargets.length > 0 && (
         <div
           className="absolute inset-0"
           style={{ display: viewType === 'tree' ? 'block' : 'none' }}
           {...(viewType !== 'tree' ? { inert: '' } : {})}
         >
-          <Suspense fallback={<LoadingFallback label="Tree View" />}>
-            <LazyHypergraphTreeView
-              treeData={treeData}
+          <Suspense fallback={<LoadingFallback label="Path Finder" />}>
+            <LazyPathwayExplorer
+              treeTargets={treeTargets}
+              pathMode={pathMode}
+              pathMaxPaths={pathMaxPaths}
+              onChangePathMode={onChangePathMode}
+              treeLoading={treeLoading}
               height={pixelHeight}
-              stats={treeStats}
-              solutions={treeSolutions}
               focusedPath={focusedPath}
               onFocusPath={onFocusPath}
+              deletedReactionNames={deletedReactionNames}
+              hideCofactors={hideCofactors}
             />
           </Suspense>
         </div>

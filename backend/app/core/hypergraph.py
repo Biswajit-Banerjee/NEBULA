@@ -1,5 +1,5 @@
 """
-Directed B-Hypergraph data structure and AND-OR backward reachability algorithm
+Directed B-Hypergraph data structure and pathway (hyperpath) search
 for metabolic network pathway analysis.
 
 A metabolic network is naturally a directed B-hypergraph where:
@@ -9,6 +9,9 @@ A metabolic network is naturally a directed B-hypergraph where:
 This maps to an AND-OR graph:
   - OR-nodes = compounds (can be produced by ANY of several reactions)
   - AND-nodes = reactions (require ALL reactants simultaneously)
+
+A pathway is a minimal, cycle-free hyperpath from the available compounds
+(seeds / sources / cofactors) to the target — see ``find_pathways``.
 """
 
 from __future__ import annotations
@@ -128,456 +131,672 @@ class HyperGraph:
 
 
 # ---------------------------------------------------------------------------
-# AND-OR Tree node types
+# Pathway search
+#
+#   1. Forward pass  — network expansion from the available compounds
+#                      (seeds / sources / cofactors). A reaction can only
+#                      participate in a real pathway if ALL its substrates
+#                      are producible, so everything that never fires is
+#                      discarded, and each compound/reaction gets a layer.
+#   2. Backward pass — from the target, walk producers that fired in the
+#                      forward pass. Anything not on a route to the target
+#                      is cut off.
+#   3. Enumeration   — best-first search for minimal, cycle-free hyperpaths
+#                      in the pruned sub-hypergraph. Every compound in a
+#                      path has exactly ONE producing reaction (shared
+#                      intermediates are produced once and re-used, which is
+#                      where branches merge), and every path is re-validated
+#                      by forward simulation before it is returned.
 # ---------------------------------------------------------------------------
+
+INF = float("inf")
+
 
 @dataclass
-class CompoundNode:
-    """OR-node: a compound that can be produced by any of its `producers`."""
-    id: str
-    generation: float
-    is_leaf: bool = False
-    is_shared: bool = False          # True when this compound was already expanded elsewhere
-    leaf_reason: str = ""            # "source" | "cofactor" | "gen0" | "no_producers" | ""
-    producers: List["ReactionNode"] = field(default_factory=list)
+class Expansion:
+    """Result of the forward network-expansion pass."""
+    base: FrozenSet[str]
+    compound_level: Dict[str, int]
+    reaction_level: Dict[str, int]  # edge id -> layer at which it first fires
 
 
-@dataclass
-class ReactionNode:
-    """AND-node: a reaction that requires all of its `reactants`."""
-    id: str                          # HyperEdge.id
-    reaction: str                    # display name
-    reaction_id: str
-    equation: str
-    ec_list: List[str]
-    generation: float
-    source: str
-    coenzyme: str
-    reactants: List[CompoundNode] = field(default_factory=list)
+def forward_expansion(
+    graph: HyperGraph,
+    base: Set[str],
+    cofactors: Set[str],
+) -> Expansion:
+    """Layered network expansion (scope computation) from ``base``.
+
+    Layer 0 = base compounds. A reaction fires at layer ``1 + max(layer of
+    its non-cofactor substrates)`` and its products receive that layer if
+    they have not been reached yet.
+    """
+    level: Dict[str, int] = {c: 0 for c in base}
+    rxn_level: Dict[str, int] = {}
+    need: Dict[str, int] = {}
+    ready: List[HyperEdge] = []
+    for eid, e in graph.edges.items():
+        n = len(e.reactants - cofactors)
+        need[eid] = n
+        if n == 0:
+            ready.append(e)
+
+    frontier = [c for c in base if c not in cofactors]
+    layer = 0
+    while True:
+        for c in frontier:
+            for e in graph.consumed_by.get(c, ()):
+                need[e.id] -= 1
+                if need[e.id] == 0:
+                    ready.append(e)
+        if not ready:
+            break
+        layer += 1
+        new: List[str] = []
+        for e in ready:
+            if e.id in rxn_level:
+                continue
+            rxn_level[e.id] = layer
+            for p in e.products:
+                if p not in level:
+                    level[p] = layer
+                    new.append(p)
+        ready = []
+        frontier = new
+
+    return Expansion(frozenset(base), level, rxn_level)
 
 
-# ---------------------------------------------------------------------------
-# AND-OR Backward Reachability
-# ---------------------------------------------------------------------------
+def backward_relevance(
+    graph: HyperGraph,
+    target: str,
+    expansion: Expansion,
+    cofactors: Set[str],
+    rule: str = "monotone",
+) -> Dict[str, List[HyperEdge]]:
+    """Collect, for every compound on some route to ``target``, the fired
+    reactions that can produce it.
 
-def backward_reachability(
+    ``rule`` controls which producers are admissible for a compound ``c``:
+      - "strict":   all substrates reached strictly before ``c`` (earliest
+                    routes only)
+      - "monotone": all substrates reached no later than ``c`` — also admits
+                    parallel / lateral same-generation reactions
+      - "any":      every fired producer, including detours through
+                    later-generation compounds
+    Cycles are resolved during enumeration.
+    """
+    level = expansion.compound_level
+    rxn_level = expansion.reaction_level
+    base = expansion.base
+    producers: Dict[str, List[HyperEdge]] = {}
+    stack = [target]
+    seen = {target}
+    while stack:
+        c = stack.pop()
+        if c in base:
+            continue
+        cands: List[HyperEdge] = []
+        for e in graph.produced_by.get(c, ()):
+            if e.id not in rxn_level:
+                continue
+            inputs = e.reactants - cofactors
+            # Needs itself or the final target to be made → always circular.
+            if c in inputs or target in inputs:
+                continue
+            if rule == "strict" and rxn_level[e.id] > level[c]:
+                continue
+            if rule == "monotone" and rxn_level[e.id] > level[c] + 1:
+                continue
+            cands.append(e)
+            for r in inputs:
+                if r not in seen:
+                    seen.add(r)
+                    stack.append(r)
+        producers[c] = cands
+    return producers
+
+
+def prune_producers(
+    target: str,
+    producers: Dict[str, List[HyperEdge]],
+    base: FrozenSet[str],
+    cofactors: Set[str],
+) -> Dict[str, List[HyperEdge]]:
+    """Fixpoint pruning of the backward route graph (cf. Friedler et al.):
+    repeatedly drop reactions that cannot fire using only the remaining
+    route reactions (forward), and compounds/reactions no longer needed to
+    reach the target (backward), until nothing changes."""
+    edges = {e.id: e for es in producers.values() for e in es}
+    while True:
+        avail = set(base)
+        fired: Set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for eid, e in edges.items():
+                if eid not in fired and (e.reactants - cofactors) <= avail:
+                    fired.add(eid)
+                    avail |= e.products
+                    changed = True
+        needed = {target}
+        keep: Set[str] = set()
+        stack = [target]
+        while stack:
+            c = stack.pop()
+            for e in producers.get(c, ()):
+                if e.id in fired and e.id in edges:
+                    keep.add(e.id)
+                    for r in e.reactants - cofactors:
+                        if r not in needed and r not in base:
+                            needed.add(r)
+                            stack.append(r)
+        if keep == set(edges):
+            break
+        edges = {eid: edges[eid] for eid in keep}
+    return {
+        c: [e for e in es if e.id in edges]
+        for c, es in producers.items()
+        if c in needed
+    }
+
+
+def _hyperpath_costs(
+    producers: Dict[str, List[HyperEdge]],
+    base: FrozenSet[str],
+    cofactors: Set[str],
+    rxn_level: Dict[str, int],
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Additive (Knuth-style) cost estimate: cost(c) = min over producers of
+    1 + Σ cost(substrates). Used only to order the search so that short
+    routes are found first."""
+    edges = sorted({e.id: e for es in producers.values() for e in es}.values(),
+                   key=lambda e: (rxn_level[e.id], e.id))
+    cost: Dict[str, float] = {c: 0.0 for c in base}
+    ecost: Dict[str, float] = {}
+    for _ in range(64):
+        changed = False
+        for e in edges:
+            ec = 1.0 + sum(cost.get(r, INF) for r in e.reactants - cofactors)
+            ec = min(ec, 1e9)
+            if ec < ecost.get(e.id, INF):
+                ecost[e.id] = ec
+            for p in e.products:
+                if p in producers and ec < cost.get(p, INF):
+                    cost[p] = ec
+                    changed = True
+        if not changed:
+            break
+    return cost, ecost
+
+
+def _simulate(
+    edges: List[HyperEdge],
+    available: Set[str],
+    cofactors: Set[str],
+) -> Tuple[Set[str], Dict[str, int]]:
+    """Forward-simulate a set of reactions. Returns (reachable compounds,
+    edge id -> step at which it fires)."""
+    avail = set(available)
+    step_of: Dict[str, int] = {}
+    pending = list(edges)
+    step = 0
+    while pending:
+        step += 1
+        fired = [e for e in pending if (e.reactants - cofactors) <= avail]
+        if not fired:
+            break
+        for e in fired:
+            step_of[e.id] = step
+            avail |= e.products
+        pending = [e for e in pending if e.id not in step_of]
+    return avail, step_of
+
+
+def _cluster_solutions(
+    results: List[List[HyperEdge]],
+    edge_by_id: Dict[str, HyperEdge],
+) -> List[Dict[str, Any]]:
+    """Group minimal hyperpaths that only differ by swapping a single
+    reaction for another producing the same compound(s) ("one-node
+    alternates" — e.g. two ways to make a common precursor). Everything
+    else in the path is identical, so these combinations are the same
+    biological route and would otherwise multiply combinatorially when
+    several such swaps are independent.
+
+    Two solutions are linked when their reaction-id sets differ by exactly
+    one reaction on each side (found via a leave-one-out hash so this is
+    O(n · path length) instead of O(n²)); linked solutions are merged into
+    a cluster via union-find, which also transitively collapses whole
+    families of independent swaps into a single group.
+    """
+    n = len(results)
+    sigs: List[FrozenSet[str]] = [frozenset(e.id for e in edges) for edges in results]
+
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    by_len: Dict[int, List[int]] = defaultdict(list)
+    for i, sig in enumerate(sigs):
+        by_len[len(sig)].append(i)
+
+    swap_pairs: List[Tuple[int, int, str, str]] = []
+    for idxs in by_len.values():
+        loo: Dict[FrozenSet[str], List[Tuple[int, str]]] = defaultdict(list)
+        for i in idxs:
+            sig = sigs[i]
+            for rid in sig:
+                loo[sig - {rid}].append((i, rid))
+        for entries in loo.values():
+            if len(entries) < 2:
+                continue
+            base_i, base_rid = entries[0]
+            for i, rid in entries[1:]:
+                if rid == base_rid:
+                    continue  # identical signature, not a real swap
+                union(base_i, i)
+                swap_pairs.append((base_i, i, base_rid, rid))
+
+    groups: Dict[int, List[int]] = defaultdict(list)
+    for i in range(n):
+        groups[find(i)].append(i)
+
+    cluster_swap_reactions: Dict[int, Set[str]] = defaultdict(set)
+    for a, _b, rid_a, rid_b in swap_pairs:
+        root = find(a)
+        cluster_swap_reactions[root].add(rid_a)
+        cluster_swap_reactions[root].add(rid_b)
+
+    clusters: List[Dict[str, Any]] = []
+    for root, members in groups.items():
+        members_sorted = sorted(members, key=lambda i: (len(sigs[i]), sorted(sigs[i])))
+        rep = members_sorted[0]
+        # Group the swapped reactions by the compound(s) they produce, so
+        # the UI can say "N ways to make X" instead of listing raw ids.
+        slot_map: Dict[FrozenSet[str], Set[str]] = defaultdict(set)
+        for rid in cluster_swap_reactions.get(root, ()):
+            slot_map[frozenset(edge_by_id[rid].products)].add(rid)
+        swaps_out = [
+            {"compounds": sorted(prods), "reactions": sorted(rids)}
+            for prods, rids in slot_map.items() if len(rids) > 1
+        ]
+        clusters.append({
+            "members": members_sorted,
+            "representative": rep,
+            "swaps": swaps_out,
+        })
+
+    clusters.sort(key=lambda c: (len(sigs[c["representative"]]), c["representative"]))
+    return clusters
+
+
+def enumerate_hyperpaths(
+    target: str,
+    producers: Dict[str, List[HyperEdge]],
+    expansion: Expansion,
+    cofactors: Set[str],
+    sources: Set[str] | None = None,
+    max_solutions: int = 200,
+    max_expansions: int = 150_000,
+    time_limit: float = 6.0,
+) -> Tuple[List[List[HyperEdge]], Dict[str, Any]]:
+    """Best-first enumeration of minimal cycle-free hyperpaths to ``target``.
+
+    A search state assigns ONE producing reaction to every compound that is
+    required so far. The next open compound (closest to the target first)
+    is branched over its producers; compounds already produced by a chosen
+    reaction are re-used rather than produced again (this is what makes
+    branches merge instead of duplicating sub-trees).
+
+    If ``sources`` is given, only paths that consume at least one source
+    compound are returned.
+    """
+    import heapq
+    import itertools
+    import time
+
+    base = expansion.base
+    level = expansion.compound_level
+    sources = sources or set()
+    info: Dict[str, Any] = {"truncated": False, "expansions": 0}
+
+    if target in base:
+        return [], info
+
+    cost, _ = _hyperpath_costs(producers, base, cofactors, expansion.reaction_level)
+    inputs_of: Dict[str, Tuple[str, ...]] = {}
+    edge_by_id: Dict[str, HyperEdge] = {}
+    ordered: Dict[str, List[HyperEdge]] = {}
+    for c, es in producers.items():
+        for e in es:
+            edge_by_id[e.id] = e
+            if e.id not in inputs_of:
+                inputs_of[e.id] = tuple(sorted(e.reactants - cofactors))
+        ordered[c] = sorted(
+            es, key=lambda e: (1 + sum(cost.get(r, INF) for r in inputs_of[e.id]), e.id)
+        )
+
+    # Compounds that can be derived using at least one source (for pruning
+    # states that can no longer satisfy the source constraint).
+    tainted: Set[str] = set()
+    if sources:
+        tainted = set(sources)
+        changed = True
+        while changed:
+            changed = False
+            for c, es in producers.items():
+                if c in tainted:
+                    continue
+                if any(any(r in tainted for r in inputs_of[e.id]) for e in es):
+                    tainted.add(c)
+                    changed = True
+        if target not in tainted:
+            return [], info
+
+    def _h(open_set) -> float:
+        return sum(min(cost.get(r, 1e9), 1e6) for r in open_set)
+
+    counter = itertools.count()
+    # state = (priority, tiebreak, n_edges, chain, open, uses_source)
+    # chain is a persistent linked list ((compound, edge_id), parent)
+    heap = [(_h((target,)), next(counter), 0, None, frozenset((target,)), False)]
+    solutions: List[Tuple[FrozenSet[str], Dict[str, str]]] = []
+    seen_solutions: Set[FrozenSet[str]] = set()
+    t0 = time.monotonic()
+
+    while heap:
+        if (len(solutions) >= max_solutions or info["expansions"] >= max_expansions
+                or time.monotonic() - t0 > time_limit):
+            info["truncated"] = True
+            break
+        _, _, n_edges, chain, open_set, uses = heapq.heappop(heap)
+        info["expansions"] += 1
+
+        chosen: Dict[str, str] = {}
+        node = chain
+        while node is not None:
+            (cpd, eid), node = node
+            chosen[cpd] = eid
+
+        if not open_set:
+            sig = frozenset(chosen.values())
+            if sig not in seen_solutions and (not sources or uses):
+                seen_solutions.add(sig)
+                solutions.append((sig, chosen))
+            continue
+
+        c = max(open_set, key=lambda x: (level.get(x, 0), x))
+        rest = open_set - {c}
+        chosen_edges = set(chosen.values())
+        def _acyclic(e: HyperEdge) -> bool:
+            # Does any substrate (transitively, through the reactions
+            # already chosen) depend on c?
+            stack = list(inputs_of[e.id])
+            visited: Set[str] = set()
+            while stack:
+                x = stack.pop()
+                if x == c:
+                    return False
+                if x in visited:
+                    continue
+                visited.add(x)
+                px = chosen.get(x)
+                if px is not None:
+                    stack.extend(inputs_of[px])
+            return True
+
+        # Prefer re-using a reaction that is already in the path and also
+        # yields c (a side product) — producing it twice is never minimal.
+        cands = [edge_by_id[eid] for eid in sorted(chosen_edges)
+                 if c in edge_by_id[eid].products and _acyclic(edge_by_id[eid])]
+        if not cands:
+            cands = [e for e in ordered.get(c, []) if _acyclic(e)]
+
+        for e in cands:
+            ins = inputs_of[e.id]
+            new_open = set(rest)
+            for r in ins:
+                if r not in base and r not in chosen:
+                    new_open.add(r)
+            new_uses = uses or any(r in sources for r in ins)
+            if sources and not new_uses and not any(x in tainted for x in new_open):
+                continue
+            new_n = n_edges + (0 if e.id in chosen_edges else 1)
+            new_open_f = frozenset(new_open)
+            heapq.heappush(heap, (
+                new_n + _h(new_open_f), next(counter), new_n,
+                ((c, e.id), chain), new_open_f, new_uses,
+            ))
+
+    info["elapsed_ms"] = round((time.monotonic() - t0) * 1000)
+
+    # Validate + reduce every solution to an inclusion-minimal reaction set.
+    # A reaction can only be redundant if every compound it was chosen for is
+    # also produced by another reaction of the path; only those candidates
+    # are re-checked by forward simulation.
+    available = set(base) | set(cofactors)
+
+    def _feasible(es: List[HyperEdge]) -> bool:
+        reach, _ = _simulate(es, available, cofactors)
+        return target in reach and (not sources or any(
+            s in (x.reactants - cofactors) for x in es for s in sources))
+
+    results: List[List[HyperEdge]] = []
+    final_sigs: Set[FrozenSet[str]] = set()
+    for sig, chosen in solutions:
+        edges = sorted((edge_by_id[eid] for eid in sig), key=lambda e: e.id)
+        assigned: Dict[str, List[str]] = defaultdict(list)
+        for cpd, eid in chosen.items():
+            assigned[eid].append(cpd)
+        producers_of: Dict[str, int] = defaultdict(int)
+        for e in edges:
+            for p in e.products:
+                producers_of[p] += 1
+        candidates = [e for e in edges if all(producers_of[c] > 1 for c in assigned[e.id])]
+        if candidates:
+            if not _feasible(edges):
+                continue
+            for e in candidates:
+                trial = [x for x in edges if x.id != e.id]
+                if _feasible(trial):
+                    edges = trial
+        key = frozenset(e.id for e in edges)
+        if key in final_sigs:
+            continue
+        final_sigs.add(key)
+        results.append(edges)
+
+    results.sort(key=lambda es: (len(es), sorted(e.id for e in es)))
+    info["clusters"] = _cluster_solutions(results, edge_by_id)
+    return results, info
+
+
+def find_pathways(
     graph: HyperGraph,
     target: str,
     gen_mapper: Dict[str, float],
     cofactors: Set[str] | None = None,
     sources: Set[str] | None = None,
-    skip_cofactor: bool = True,
-) -> Tuple[Optional[CompoundNode], Dict[str, Any]]:
+    max_solutions: int = 200,
+    rule: str = "monotone",
+    **enum_kwargs: Any,
+) -> Dict[str, Any]:
+    """Full pipeline: forward expansion → backward pruning → enumeration.
+
+    Returns a JSON-ready dict with the pruned pathway graph (compounds +
+    reactions), the validated paths and summary stats.
     """
-    Build a complete AND-OR DAG rooted at `target` by backward expansion.
+    cofactors = set(cofactors or ())
+    sources = set(sources or ())
+    seeds = {c for c, g in gen_mapper.items() if g == 0}
+    base = seeds | cofactors | sources
 
-    Args:
-        graph: The HyperGraph to traverse.
-        target: Target compound ID.
-        gen_mapper: compound_id -> generation mapping.
-        cofactors: Set of cofactor compound IDs (treated as leaves).
-        sources: Optional set of source compounds. If provided, a post-pass
-                 prunes branches that don't reach any source.
-        skip_cofactor: Whether to treat cofactors as leaves.
-
-    Returns:
-        (root CompoundNode or None, stats dict)
-    """
-    if cofactors is None:
-        cofactors = set()
-    if sources is None:
-        sources = set()
-
-    cofactor_set = cofactors if skip_cofactor else set()
-
-    # Memoization: compound_id -> CompoundNode (fully expanded)
-    memo: Dict[str, CompoundNode] = {}
-    # Track which compounds are currently on the ancestor path (cycle detection)
-    # Using a set for the iterative stack-based approach won't work cleanly,
-    # so we pass ancestor_path through recursion.
-    stats = {
-        "total_compounds": 0,
-        "total_reactions": 0,
-        "shared_compounds": 0,
-        "max_depth": 0,
+    expansion = forward_expansion(graph, base, cofactors)
+    level = expansion.compound_level
+    stats: Dict[str, Any] = {
+        "seed_compounds": len(seeds),
+        "reachable_compounds": len(level),
+        "fireable_reactions": len(expansion.reaction_level),
+        "target_level": level.get(target),
+        "rule": rule,
     }
 
-    def _is_leaf(compound: str) -> Tuple[bool, str]:
-        """Determine if a compound is a leaf node and why."""
-        if compound in cofactor_set:
-            return True, "cofactor"
-        if sources and compound in sources:
-            return True, "source"
-        gen = gen_mapper.get(compound, -1)
-        if gen == 0:
-            return True, "gen0"
-        if gen == -1:
-            # Unknown compound — treat as leaf
-            return True, "unknown"
-        return False, ""
+    def _role(c: str) -> str:
+        if c == target:
+            return "target"
+        if c in sources:
+            return "source"
+        if c in cofactors:
+            return "cofactor"
+        if c in seeds:
+            return "seed"
+        return "intermediate"
 
-    def expand_compound(compound: str, ancestor_path: FrozenSet[str], depth: int) -> CompoundNode:
-        """Recursively expand a compound (OR-node) by finding all producing reactions."""
-        stats["max_depth"] = max(stats["max_depth"], depth)
-
-        gen = gen_mapper.get(compound, -1)
-
-        # Depth limit to prevent stack overflow on deeply nested networks
-        if depth > 200:
-            node = CompoundNode(
-                id=compound,
-                generation=gen,
-                is_leaf=True,
-                leaf_reason="depth_limit",
-            )
-            stats["total_compounds"] += 1
-            return node
-
-        # Check leaf conditions
-        leaf, reason = _is_leaf(compound)
-        if leaf:
-            node = CompoundNode(
-                id=compound,
-                generation=gen,
-                is_leaf=True,
-                leaf_reason=reason,
-            )
-            stats["total_compounds"] += 1
-            return node
-
-        # Memoization: if already fully expanded, return a shared reference
-        if compound in memo:
-            stats["shared_compounds"] += 1
-            shared = CompoundNode(
-                id=compound,
-                generation=gen,
-                is_leaf=False,
-                is_shared=True,
-            )
-            return shared
-
-        # Create the OR-node
-        node = CompoundNode(id=compound, generation=gen)
-        stats["total_compounds"] += 1
-
-        # Register in memo BEFORE recursion to handle cycles via memoization
-        memo[compound] = node
-
-        new_ancestor = ancestor_path | frozenset({compound})
-
-        # Find all hyperedges that produce this compound
-        producing_edges = graph.produced_by.get(compound, [])
-
-        # Deduplicate by reaction name — multiple rows for same reaction
-        # (e.g. same reaction producing multiple products) should merge
-        seen_reactions: Dict[str, List[HyperEdge]] = defaultdict(list)
-        for edge in producing_edges:
-            seen_reactions[edge.reaction].append(edge)
-
-        for reaction_name, edges in seen_reactions.items():
-            # Use the first edge as representative (they share the same reactants/equation)
-            edge = edges[0]
-
-            # Generation monotonicity: reaction generation must be <= compound generation
-            if gen >= 0 and edge.generation > gen:
-                continue
-
-            # Expand all non-cofactor reactants
-            reactant_children: List[CompoundNode] = []
-            skip_reaction = False
-
-            for reactant in edge.reactants:
-                if reactant in cofactor_set:
-                    continue  # skip cofactors as reactants
-
-                if reactant in ancestor_path:
-                    # Cycle detected — skip this entire reaction branch
-                    skip_reaction = True
-                    break
-
-                child = expand_compound(reactant, new_ancestor, depth + 1)
-                reactant_children.append(child)
-
-            if skip_reaction:
-                continue
-
-            rxn_node = ReactionNode(
-                id=edge.id,
-                reaction=edge.reaction,
-                reaction_id=edge.reaction_id,
-                equation=edge.equation,
-                ec_list=edge.ec_list,
-                generation=edge.generation,
-                source=edge.source,
-                coenzyme=edge.coenzyme,
-                reactants=reactant_children,
-            )
-            stats["total_reactions"] += 1
-            node.producers.append(rxn_node)
-
-        # If no producers were found, mark as leaf
-        if not node.producers:
-            node.is_leaf = True
-            node.leaf_reason = "no_producers"
-
-        return node
-
-    # --- Main entry ---
-    if target not in graph.all_compounds and target not in gen_mapper:
-        return None, stats
-
-    root = expand_compound(target, frozenset(), 0)
-
-    # --- Post-pass: prune branches that don't reach any source ---
-    if sources:
-        root = _prune_unreachable(root, sources)
-
-    return root, stats
-
-
-def _prune_unreachable(
-    node: CompoundNode,
-    sources: Set[str],
-) -> Optional[CompoundNode]:
-    """
-    Post-pass: remove reaction branches that cannot reach any source compound.
-    A branch "reaches" a source if any leaf in the subtree is a source.
-    Returns None if the entire subtree is unreachable.
-    """
-    if node.is_shared:
-        # Shared nodes are placeholders — keep them (they reference a reachable node)
-        return node
-
-    if node.is_leaf:
-        # Leaf reaches a source if it IS a source or is gen0/cofactor (always valid)
-        if node.leaf_reason in ("source", "gen0", "cofactor", "unknown"):
-            return node
-        return None  # "no_producers" leaf that isn't a source → prune
-
-    # For OR-node: keep only reactions where ALL reactants are reachable
-    surviving_producers: List[ReactionNode] = []
-
-    for rxn in node.producers:
-        pruned_reactants: List[CompoundNode] = []
-        all_reachable = True
-
-        for child in rxn.reactants:
-            pruned = _prune_unreachable(child, sources)
-            if pruned is None:
-                all_reachable = False
-                break
-            pruned_reactants.append(pruned)
-
-        if all_reachable:
-            rxn.reactants = pruned_reactants
-            surviving_producers.append(rxn)
-
-    if not surviving_producers:
-        return None
-
-    node.producers = surviving_producers
-    return node
-
-
-# ---------------------------------------------------------------------------
-# Serialization: AND-OR tree → JSON-ready dict
-# ---------------------------------------------------------------------------
-
-def tree_to_dict(node: CompoundNode) -> Dict[str, Any]:
-    """Convert an AND-OR tree to a JSON-serializable dictionary."""
-    result: Dict[str, Any] = {
-        "type": "compound",
-        "id": node.id,
-        "generation": node.generation,
-        "isLeaf": node.is_leaf,
-        "isShared": node.is_shared,
-        "leafReason": node.leaf_reason,
-    }
-
-    if node.is_shared:
-        result["producers"] = []
-        return result
-
-    producers = []
-    for rxn in node.producers:
-        rxn_dict: Dict[str, Any] = {
-            "type": "reaction",
-            "id": rxn.id,
-            "reaction": rxn.reaction,
-            "reactionId": rxn.reaction_id,
-            "equation": rxn.equation,
-            "ecList": rxn.ec_list,
-            "generation": rxn.generation,
-            "source": rxn.source,
-            "coenzyme": rxn.coenzyme,
-            "reactants": [tree_to_dict(child) for child in rxn.reactants],
-        }
-        producers.append(rxn_dict)
-
-    result["producers"] = producers
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Solution enumeration
-# ---------------------------------------------------------------------------
-
-def enumerate_solutions(
-    root: CompoundNode,
-    max_solutions: int = 1000,
-) -> List[List[Dict[str, Any]]]:
-    """
-    Enumerate all minimal AND-OR solutions rooted at `root`.
-
-    A *solution* is a subtree of the AND-OR DAG where:
-      - At every OR-node (compound) exactly ONE producing reaction is chosen.
-      - At every AND-node (reaction) ALL non-cofactor reactants are included.
-      - Every leaf is a valid terminal (source, gen-0, cofactor, etc.).
-
-    Each solution is returned as a list of reaction dicts (the edges used).
-
-    Args:
-        root: The CompoundNode root of the AND-OR tree.
-        max_solutions: Hard cap to avoid combinatorial explosion.
-
-    Returns:
-        List of solutions.  Each solution is a list of
-        ``{"reaction", "reaction_id", "equation", "ec_list", "generation"}``.
-    """
-    # Memo: compound_id -> list of partial solutions (each a frozenset of reaction names)
-    memo: Dict[str, List[FrozenSet[str]]] = {}
-    # Map reaction name -> detail dict (for output)
-    rxn_detail: Dict[str, Dict[str, Any]] = {}
-    hit_limit = False
-
-    def _solve_compound(node: CompoundNode) -> List[FrozenSet[str]]:
-        """Return list of possible reaction-sets that fully resolve this compound."""
-        nonlocal hit_limit
-        if hit_limit:
-            return []
-
-        # Leaf or shared → trivially resolved (no reactions needed)
-        if node.is_leaf or node.is_shared:
-            return [frozenset()]
-
-        # Memoization on compound id
-        if node.id in memo:
-            return memo[node.id]
-
-        # Guard: register empty first to break infinite loops
-        memo[node.id] = []
-
-        compound_solutions: List[FrozenSet[str]] = []
-
-        # OR-choice: pick exactly one producer
-        for rxn in node.producers:
-            if hit_limit:
-                break
-
-            # Store reaction detail for later output
-            if rxn.reaction not in rxn_detail:
-                rxn_detail[rxn.reaction] = {
-                    "reaction": rxn.reaction,
-                    "reaction_id": rxn.reaction_id,
-                    "equation": rxn.equation,
-                    "ec_list": rxn.ec_list,
-                    "generation": rxn.generation,
-                    "source": rxn.source,
-                    "coenzyme": rxn.coenzyme,
-                }
-
-            # AND-combination: need solutions for ALL reactants
-            # Start with just this reaction
-            partial: List[FrozenSet[str]] = [frozenset([rxn.reaction])]
-
-            for child in rxn.reactants:
-                if hit_limit:
-                    break
-                child_solutions = _solve_compound(child)
-                if not child_solutions:
-                    # This AND-branch is unsatisfiable
-                    partial = []
-                    break
-
-                # Guard against combinatorial explosion in intermediate results
-                if len(partial) * len(child_solutions) > 10000:
-                    partial = partial[:max(1, max_solutions // max(1, len(child_solutions)))]
-
-                # Cross-product: merge each partial with each child solution
-                new_partial: List[FrozenSet[str]] = []
-                for p in partial:
-                    for c in child_solutions:
-                        merged = p | c
-                        new_partial.append(merged)
-                        if len(new_partial) + len(compound_solutions) >= max_solutions:
-                            hit_limit = True
-                            break
-                    if hit_limit:
-                        break
-                partial = new_partial
-
-            compound_solutions.extend(partial)
-            if len(compound_solutions) >= max_solutions:
-                compound_solutions = compound_solutions[:max_solutions]
-                hit_limit = True
-                break
-
-        memo[node.id] = compound_solutions
-        return compound_solutions
-
-    raw_solutions = _solve_compound(root)
-
-    # Convert frozensets to ordered reaction lists
-    result: List[List[Dict[str, Any]]] = []
-    seen_sigs: Set[FrozenSet[str]] = set()
-
-    for sol in raw_solutions:
-        if sol in seen_sigs:
-            continue
-        seen_sigs.add(sol)
-        # Sort reactions by generation for readability
-        rxn_list = sorted(
-            [rxn_detail[name] for name in sol if name in rxn_detail],
-            key=lambda r: r.get("generation", 0),
+    empty = {"graph": {"compounds": [], "reactions": []}, "solutions": [], "clusters": [], "stats": stats}
+    if target not in level:
+        stats["unreachable"] = True
+        stats["message"] = (
+            f"{target} cannot be produced from the seed compounds"
+            + (" and the given sources" if sources else "")
+            + " with the reactions in this network."
         )
-        result.append(rxn_list)
+        return empty
+    if target in expansion.base:
+        kind = "source" if target in sources else "cofactor" if target in cofactors else "seed"
+        stats["message"] = f"{target} is itself a starting compound ({kind}); no reactions are needed."
+        return empty
 
-    return result
+    producers = backward_relevance(graph, target, expansion, cofactors, rule=rule)
+    producers = prune_producers(target, producers, expansion.base, cofactors)
+    paths, info = enumerate_hyperpaths(
+        target, producers, expansion, cofactors, sources, max_solutions=max_solutions,
+        **enum_kwargs,
+    )
+    clusters_raw = info.pop("clusters", [])
+    stats.update(info)
+    stats["relevant_compounds"] = len(producers)
+    stats["relevant_reactions"] = len({e.id for es in producers.values() for e in es})
+    stats["total_solutions"] = len(paths)
+    stats["distinct_routes"] = len(clusters_raw)
+    if sources and not paths:
+        stats["message"] = (
+            f"No pathway to {target} that uses "
+            + ", ".join(sorted(sources)) + " was found."
+        )
 
+    available = set(expansion.base)
+    rxn_count: Dict[str, int] = defaultdict(int)
+    cpd_count: Dict[str, int] = defaultdict(int)
+    # edge id -> compounds it genuinely supplies on some route: admissible
+    # production (per the rule) plus whatever it feeds in a listed path.
+    supplies: Dict[str, Set[str]] = defaultdict(set)
+    for c, es in producers.items():
+        for e in es:
+            supplies[e.id].add(c)
+    solutions_out: List[Dict[str, Any]] = []
+    for i, edges in enumerate(paths):
+        _, step_of = _simulate(edges, available, cofactors)
+        edges = sorted(edges, key=lambda e: (step_of.get(e.id, 0), e.id))
+        first_need: Dict[str, int] = {target: 10**9}
+        for e in edges:
+            for r in e.reactants - cofactors:
+                first_need[r] = min(first_need.get(r, 10**9), step_of.get(e.id, 0))
+        for e in edges:
+            for p in e.products:
+                if p in first_need and p not in expansion.base and step_of.get(e.id, 0) < first_need[p]:
+                    supplies[e.id].add(p)
+        cpds: Set[str] = {target}
+        precursors: Set[str] = set()
+        for e in edges:
+            rxn_count[e.id] += 1
+            for r in e.reactants - cofactors:
+                cpds.add(r)
+                if r in expansion.base:
+                    precursors.add(r)
+        for c in cpds:
+            cpd_count[c] += 1
+        solutions_out.append({
+            "id": i,
+            "reactionCount": len(edges),
+            "depth": max(step_of.values()) if step_of else 0,
+            "reactionIds": [e.id for e in edges],       # in firing order
+            "steps": [step_of.get(e.id, 0) for e in edges],
+            "precursorCount": len(precursors),
+        })
 
-# ---------------------------------------------------------------------------
-# Flat reaction list extraction (backward compat with existing backtrace)
-# ---------------------------------------------------------------------------
+    # Pathway graph. When enumeration was exhaustive this is exactly the
+    # union of all minimal pathways; when it was capped, every reaction of
+    # the pruned route graph is included as well, so parallel reactions are
+    # never hidden (those outside the listed paths have pathCount 0).
+    used_edges: Dict[str, HyperEdge] = {}
+    for edges in paths:
+        for e in edges:
+            used_edges[e.id] = e
+    if info.get("truncated"):
+        for es in producers.values():
+            for e in es:
+                used_edges.setdefault(e.id, e)
+    graph_cpds: Set[str] = {target}
+    for e in used_edges.values():
+        graph_cpds |= (e.reactants - cofactors)
+    reactions_out = []
+    for e in sorted(used_edges.values(), key=lambda e: (expansion.reaction_level[e.id], e.id)):
+        reactions_out.append({
+            "id": e.id,
+            "reaction": e.reaction,
+            "reactionId": e.reaction_id,
+            "direction": e.direction,
+            "equation": e.equation,
+            "ecList": e.ec_list,
+            "generation": e.generation,
+            "source": e.source,
+            "coenzyme": e.coenzyme,
+            "level": expansion.reaction_level[e.id],
+            "reactants": sorted(e.reactants - cofactors),
+            "products": sorted(p for p in e.products if p in graph_cpds and p in supplies[e.id]),
+            "sideProducts": sorted(p for p in e.products - cofactors
+                                   if not (p in graph_cpds and p in supplies[e.id])),
+            "cofactors": sorted((e.reactants | e.products) & cofactors),
+            "pathCount": rxn_count[e.id],
+        })
+    compounds_out = [{
+        "id": c,
+        "level": level.get(c, 0),
+        "generation": gen_mapper.get(c, -1),
+        "role": _role(c),
+        "pathCount": cpd_count.get(c, 0),
+        "producerCount": len(producers.get(c, [])),
+    } for c in sorted(graph_cpds, key=lambda c: (level.get(c, 0), c))]
 
-def tree_to_flat_reactions(node: CompoundNode) -> List[Dict[str, Any]]:
-    """
-    Extract a flat list of unique reactions from the AND-OR tree.
-    Each reaction is represented as a dict compatible with the existing
-    display_df format used by get_backtrace.
-    """
-    seen: Set[str] = set()
-    reactions: List[Dict[str, Any]] = []
+    stats["graph_compounds"] = len(compounds_out)
+    stats["graph_reactions"] = len(reactions_out)
+    stats["max_depth"] = max((s["depth"] for s in solutions_out), default=0)
 
-    def _walk(n: CompoundNode):
-        if n.is_shared or n.is_leaf:
-            return
-        for rxn in n.producers:
-            if rxn.reaction not in seen:
-                seen.add(rxn.reaction)
-                reactions.append({
-                    "reaction": rxn.reaction,
-                    "reaction_id": rxn.reaction_id,
-                    "equation": rxn.equation,
-                    "ec_list": rxn.ec_list,
-                    "generation": rxn.generation,
-                    "source": rxn.source,
-                    "coenzyme": rxn.coenzyme,
-                })
-            for child in rxn.reactants:
-                _walk(child)
+    # Translate cluster member indices (== solution ids) into API shape.
+    clusters_out = [{
+        "id": c["representative"],
+        "representativeId": c["representative"],
+        "size": len(c["members"]),
+        "memberIds": c["members"],
+        "swaps": c["swaps"],
+    } for c in clusters_raw]
 
-    _walk(node)
-    return reactions
+    return {
+        "graph": {"compounds": compounds_out, "reactions": reactions_out},
+        "solutions": solutions_out,
+        "clusters": clusters_out,
+        "stats": stats,
+    }
 
 
 def collect_flat_reactions(

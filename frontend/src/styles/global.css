@@ -284,3 +284,87 @@
     box-shadow: 0 0 0 3px rgb(var(--brand-primary) / 0.2), 0 1px 4px rgba(0,0,0,0.25);
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Documentation reader (DocsViewer)
+   Maps Tailwind Typography variables onto the active NEBULA theme so
+   text, tables, code and callouts stay readable in all six themes.
+   Sizes are in em: the reader sets font-size from the shared text scale.
+   ───────────────────────────────────────────────────────────── */
+@layer components {
+  .docs-prose {
+    --tw-prose-body: rgb(var(--text-primary));
+    --tw-prose-headings: rgb(var(--text-primary));
+    --tw-prose-lead: rgb(var(--text-secondary));
+    --tw-prose-links: color-mix(in srgb, rgb(var(--brand-primary)) 55%, rgb(var(--text-primary)));
+    --tw-prose-bold: rgb(var(--text-primary));
+    --tw-prose-counters: rgb(var(--text-secondary));
+    --tw-prose-bullets: rgb(var(--text-secondary));
+    --tw-prose-hr: rgb(var(--border-secondary));
+    --tw-prose-quotes: rgb(var(--text-primary));
+    --tw-prose-quote-borders: rgb(var(--brand-primary));
+    --tw-prose-captions: rgb(var(--text-secondary));
+    --tw-prose-code: rgb(var(--code-text));
+    --tw-prose-pre-code: rgb(var(--code-text));
+    --tw-prose-pre-bg: rgb(var(--code-bg));
+    --tw-prose-th-borders: rgb(var(--border-secondary));
+    --tw-prose-td-borders: rgb(var(--border-primary));
+    color: rgb(var(--text-primary));
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .docs-prose :where(h1, h2, h3, h4) { scroll-margin-top: 1.5em; }
+  .docs-prose :where(h2) { padding-bottom: 0.25em; border-bottom: 1px solid rgb(var(--border-primary)); }
+  .docs-prose :where(a):not(.docs-cite) { text-decoration: underline; text-underline-offset: 0.15em; font-weight: 500; }
+  .docs-prose :where(blockquote) { font-style: normal; quotes: none; }
+  .docs-prose :where(blockquote p)::before,
+  .docs-prose :where(blockquote p)::after { content: none; }
+  .docs-prose :where(code):not(:where(pre code)) {
+    background: rgb(var(--code-bg)); color: rgb(var(--code-text));
+    padding: 0.1em 0.4em; border-radius: 0.3em; font-weight: 500; font-size: 0.88em;
+  }
+  .docs-prose :where(code)::before, .docs-prose :where(code)::after { content: none; }
+  .docs-prose :where(pre) { border: 1px solid rgb(var(--border-primary)); }
+  .docs-prose :where(table) { display: block; overflow-x: auto; max-width: 100%; font-size: 0.92em; }
+  .docs-prose :where(thead th) { background: rgb(var(--surface-inset)); padding: 0.5em 0.75em; }
+  .docs-prose :where(tbody td) { padding: 0.5em 0.75em; vertical-align: top; }
+  .docs-prose :where(img):not(.docs-glyph) { border-radius: 0.6em; border: 1px solid rgb(var(--border-primary)); }
+  .docs-prose :where(li > p) { margin: 0.25em 0; }
+  .docs-prose :where(kbd) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82em;
+    padding: 0.1em 0.45em; border-radius: 0.35em; font-weight: 600;
+    background: rgb(var(--surface-inset)); border: 1px solid rgb(var(--border-secondary));
+    border-bottom-width: 2px; color: rgb(var(--text-primary));
+  }
+
+  .docs-callout {
+    margin: 1.25em 0; padding: 0.75em 1em; border-radius: 0.6em;
+    border: 1px solid rgb(var(--border-primary)); border-left-width: 0.3em;
+    background: rgb(var(--surface-secondary)); color: rgb(var(--text-primary));
+  }
+  .docs-callout > :first-child { margin-top: 0; }
+  .docs-callout > :last-child { margin-bottom: 0; }
+  .docs-callout[data-kind="tip"] { border-left-color: rgb(var(--success)); }
+  .docs-callout[data-kind="note"] { border-left-color: rgb(var(--info)); }
+  .docs-callout[data-kind="warning"] { border-left-color: rgb(var(--warning)); }
+  .docs-callout[data-kind="example"] { border-left-color: rgb(var(--brand-primary)); }
+
+  .docs-prose .hljs { background: transparent; color: rgb(var(--code-text)); }
+  .docs-prose .hljs-comment, .docs-prose .hljs-quote { color: rgb(var(--text-secondary)); font-style: italic; }
+  .docs-prose .hljs-keyword, .docs-prose .hljs-selector-tag, .docs-prose .hljs-literal { color: rgb(var(--brand-primary)); }
+  .docs-prose .hljs-string, .docs-prose .hljs-attr, .docs-prose .hljs-number { color: rgb(var(--success)); }
+  .docs-prose .hljs-title, .docs-prose .hljs-built_in, .docs-prose .hljs-name { color: rgb(var(--info)); }
+  .docs-prose .hljs-variable, .docs-prose .hljs-symbol { color: rgb(var(--warning)); }
+
+  .docs-cite {
+    font-size: 0.75em; font-weight: 700; line-height: 1; vertical-align: super; text-decoration: none;
+    padding: 0 0.12em; border-radius: 0.25em; color: color-mix(in srgb, rgb(var(--brand-primary)) 55%, rgb(var(--text-primary)));
+  }
+  /* Brand colour pulled toward the text colour so links reach 4.5:1 in every theme (checked by npm run check:docs-contrast). */
+  .text-link { color: color-mix(in srgb, rgb(var(--brand-primary)) 55%, rgb(var(--text-primary))); }
+  .docs-cite:hover { background: rgb(var(--brand-primary) / 0.12); }
+
+  .docs-figure { margin: 1.5em 0; }
+  .docs-figure img { cursor: zoom-in; max-width: 100%; height: auto; margin: 0 auto; display: block; }
+  .docs-figure .docs-caption { margin-top: 0.5em; text-align: center; font-size: 0.85em; color: rgb(var(--text-secondary)); }
+}

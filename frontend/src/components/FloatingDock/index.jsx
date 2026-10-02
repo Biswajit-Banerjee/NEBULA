@@ -200,7 +200,7 @@ const FloatingDock = ({
         if (m === 'compounds') return (p.compounds || []).join('+');
         return '';
       }).join(' · ')
-    : 'Search paths…';
+    : 'Search compounds, reactions, EC…';
 
   return (
     <div className="fixed top-0 inset-x-0 z-50 flex justify-center px-4 pt-3 pointer-events-none">

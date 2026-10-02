@@ -230,7 +230,7 @@ const GraphRendererCanvas = forwardRef(
     const nodeOpacityRef = useRef(new Map()); // Map<nodeId, number 0-1> per-node opacity
     const nodeOpacityGlobalRef = useRef(nodeOpacity);
     nodeOpacityGlobalRef.current = nodeOpacity;
-    const [ctxMenuColorPicker, setCtxMenuColorPicker] = useState(false); // show color picker in ctx menu
+    const [ctxMenuColorPicker, setCtxMenuColorPicker] = useState(null); // 'fill' | 'stroke' | null
     const [ctxMenuOpacity, setCtxMenuOpacity] = useState(null); // current opacity value for ctx menu slider
     const [showAlignMenu, setShowAlignMenu] = useState(false); // alignment submenu in ctx menu
     const undoStackRef = useRef([]); // undo stack
@@ -239,6 +239,7 @@ const GraphRendererCanvas = forwardRef(
     nodeAvoidanceRef.current = nodeAvoidance;
     const nodeScaleRef = useRef(nodeScale);
     nodeScaleRef.current = nodeScale;
+    const skipGridForExportRef = useRef(false); // when true the draw function skips the grid (PNG export)
     const graphLinksRef = useRef([]);    // kept in sync with graph.links
     const curvedEdgesRef = useRef(curvedEdges);
     curvedEdgesRef.current = curvedEdges;
@@ -663,7 +664,7 @@ const GraphRendererCanvas = forwardRef(
       /* ---------------------------------------------------------- */
       /* Grid overlay – batched into 2 draw calls                  */
       /* ---------------------------------------------------------- */
-      if (showGrid) {
+      if (showGrid && !skipGridForExportRef.current) {
         const gridSpacing = gridSize;
         const effectiveGridColor = gridColor
           ? gridColor + '18' // user color with ~10% opacity (hex alpha)
@@ -701,8 +702,8 @@ const GraphRendererCanvas = forwardRef(
       /* ---------------------------------------------------------- */
       if (genMapRef.current.length > 0) {
         ctx.save();
-        const colLabelColor = `rgba(${themeTextMuted},0.72)`;
-        ctx.font = `bold 9px "Inter", sans-serif`;
+        const colLabelColor = `rgba(${themeTextMuted},0.95)`;
+        ctx.font = `bold ${11 / t.k}px "Inter", sans-serif`; // constant on-screen size
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
 
@@ -714,7 +715,7 @@ const GraphRendererCanvas = forwardRef(
           const bandX = idx * bandWidth;
           ctx.fillStyle = colLabelColor;
           const label = gen === 0 ? "Seed" : `Gen ${gen}`;
-          ctx.fillText(label, bandX, viewMinY + 6);
+          ctx.fillText(label, bandX, viewMinY + CULL_MARGIN + 72 / t.k); // clear of the floating top bar
         });
         ctx.restore();
       }
@@ -1007,7 +1008,10 @@ const GraphRendererCanvas = forwardRef(
         const _colorOverride = nodeColorsRef.current.get(n.id);
         const _baseColor = nodeColor(n);
         const fill = _colorOverride?.fill || _baseColor.fill;
+        // If a stroke override is explicitly set use it; otherwise fall back to base border
         const stroke = _colorOverride?.stroke || _baseColor.stroke;
+        // strokeDash: '' = solid, '5,3' = dashed, '1.5,3' = dotted, 'none' = no border
+        const strokeDash = _colorOverride?.strokeDash ?? '';
 
         // Per-node opacity (custom per-node overrides global)
         const perNodeAlpha = nodeOpacityRef.current.get(n.id);
@@ -1041,6 +1045,11 @@ const GraphRendererCanvas = forwardRef(
         ctx.fillStyle = fill;
         ctx.strokeStyle = stroke;
 
+        // Apply border dash pattern (strokeDash: '' solid, '5,3' dashed, '1.5,3' dotted, 'none' no border)
+        const _hasBorder = strokeDash !== 'none';
+        if (_hasBorder && strokeDash) ctx.setLineDash(strokeDash.split(',').map(Number));
+        else ctx.setLineDash([]);
+
         switch (n.type) {
           case "compound":
             if (_structTex) {
@@ -1050,7 +1059,7 @@ const GraphRendererCanvas = forwardRef(
               ctx.beginPath();
               ctx.arc(n.x, n.y, R_COMPOUND, 0, Math.PI * 2);
               ctx.fill();
-              ctx.stroke();
+              if (_hasBorder) ctx.stroke();
             }
             break;
           case "ec":
@@ -1058,7 +1067,7 @@ const GraphRendererCanvas = forwardRef(
             ctx.beginPath();
             ctx.ellipse(n.x, n.y, EC_RX, EC_RY, 0, 0, Math.PI * 2);
             ctx.fill();
-            ctx.stroke();
+            if (_hasBorder) ctx.stroke();
             break;
           default: {
             ctx.lineWidth = collapsedRoots.has(n.id) ? 2.5 : 1.2;
@@ -1067,10 +1076,12 @@ const GraphRendererCanvas = forwardRef(
             ctx.beginPath();
             ctx.roundRect(rx, ry, RECT_W, RECT_H, RECT_R);
             ctx.fill();
-            ctx.stroke();
+            if (_hasBorder) ctx.stroke();
             break;
           }
         }
+        // Reset dash after each node
+        ctx.setLineDash([]);
         // Locked node indicator: amber dashed ring
         if (lockedNodesRef.current.has(n.id)) {
           ctx.save();
@@ -1436,7 +1447,7 @@ const GraphRendererCanvas = forwardRef(
       if (!ctxMenu) return;
       const handler = () => {
         setCtxMenu(null);
-        setCtxMenuColorPicker(false);
+        setCtxMenuColorPicker(null);
         setCtxMenuOpacity(null);
         setShowAlignMenu(false);
       };
@@ -1899,7 +1910,7 @@ const GraphRendererCanvas = forwardRef(
         const x = (canvas.clientWidth / 2 - t.x) / t.k;
         const y = (canvas.clientHeight / 2 - t.y) / t.k;
         takeSnapshot();
-        const item = createTextBox(x, y, { content: 'Text', draft: true, fill: darkRef.current ? '#e2e8f0' : '#374151' });
+        const item = createTextBox(x, y, { content: '', draft: true, fill: darkRef.current ? '#e2e8f0' : '#374151' });
         textItemsRef.current.push(item);
         selectText(item.id);
         drawRef.current?.(nodesRef.current);
@@ -1937,6 +1948,18 @@ const GraphRendererCanvas = forwardRef(
           offset: item.offset ? { ...item.offset } : null,
           anchor: item.anchor ? { ...item.anchor } : null,
         };
+      },
+      // Apply a style/content patch to all items matching a filter — takes undo snapshot
+      applyAllText: (patch, filterFn) => {
+        if (!patch || !Object.keys(patch).length) return;
+        takeSnapshot();
+        textItemsRef.current = textItemsRef.current.map(item => {
+          if (!filterFn(item)) return item;
+          const updated = { ...item, ...patch };
+          if (Object.prototype.hasOwnProperty.call(patch, 'content')) updated.contentEdited = true;
+          return updated;
+        });
+        drawRef.current?.(nodesRef.current);
       },
       updateTextItem: (id, patch) => {
         const item = getTextItem(id);
@@ -2008,9 +2031,13 @@ const GraphRendererCanvas = forwardRef(
         // Escape text for SVG (prevent broken markup from special chars)
         const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-        // Node size constants — scaled for print (labels need room at font-size 7)
-        const SV_RC = 16, SV_ERX = 24, SV_ERY = 14;
-        const SV_RW = 40, SV_RH = 24;
+        // Node size constants — match canvas sizes × 1.33 print-quality factor × user nodeScale
+        const SVG_PRINT = 4 / 3; // same as canvas-to-SVG ratio at nodeScale=1
+        const SV_RC  = 12 * nodeScale * SVG_PRINT;
+        const SV_ERX = 18 * nodeScale * SVG_PRINT;
+        const SV_ERY = 10 * nodeScale * SVG_PRINT;
+        const SV_RW  = 30 * nodeScale * SVG_PRINT;
+        const SV_RH  = 18 * nodeScale * SVG_PRINT;
 
         // Surface-point helper (mirrors canvas surfacePoint)
         const svgSurface = (n, dx, dy) => {
@@ -2252,17 +2279,24 @@ const GraphRendererCanvas = forwardRef(
             const structTex = (showStructures && n.type === 'compound')
               ? structTexRef.current.get(n.id) : null;
 
+            // Border style from per-node override
+            const _svgOverride = nodeColorsRef.current.get(n.id);
+            const _svgStrokeDash = _svgOverride?.strokeDash ?? '';
+            const _svgHasBorder = _svgStrokeDash !== 'none';
+            const _svgDashAttr = (_svgHasBorder && _svgStrokeDash) ? ` stroke-dasharray="${_svgStrokeDash}"` : '';
+            const _svgStrokeAttr = _svgHasBorder ? ` stroke="${stroke}" stroke-width="2"${_svgDashAttr}` : ' stroke="none"';
+
             if (structTex) {
               const sW = STRUCT_WORLD_H * (structTex._aspect || 1);
               const sH = STRUCT_WORLD_H;
               const dataUrl = structTex.toDataURL('image/png');
               svgParts.push(`<image xlink:href="${dataUrl}" x="${(n.x - sW / 2).toFixed(2)}" y="${(n.y - sH / 2).toFixed(2)}" width="${sW.toFixed(2)}" height="${sH.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`);
             } else if (n.type === 'compound') {
-              svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              svgParts.push(`<circle cx="${n.x}" cy="${n.y}" r="${SV_RC.toFixed(2)}" fill="${fill}"${_svgStrokeAttr}/>`);
             } else if (n.type === 'ec') {
-              svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX}" ry="${SV_ERY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              svgParts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${SV_ERX.toFixed(2)}" ry="${SV_ERY.toFixed(2)}" fill="${fill}"${_svgStrokeAttr}/>`);
             } else {
-              svgParts.push(`<rect x="${n.x - SV_RW / 2}" y="${n.y - SV_RH / 2}" width="${SV_RW}" height="${SV_RH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+              svgParts.push(`<rect x="${(n.x - SV_RW / 2).toFixed(2)}" y="${(n.y - SV_RH / 2).toFixed(2)}" width="${SV_RW.toFixed(2)}" height="${SV_RH.toFixed(2)}" rx="3" fill="${fill}"${_svgStrokeAttr}/>`);
             }
 
             // Keep editable node text inside its node group for Illustrator layers.
@@ -2295,6 +2329,20 @@ const GraphRendererCanvas = forwardRef(
             svgParts.push(`<line x1="${a.x1.toFixed(2)}" y1="${a.y1.toFixed(2)}" x2="${a.x2.toFixed(2)}" y2="${a.y2.toFixed(2)}" stroke="${a.stroke || '#999'}" stroke-width="${a.strokeWidth || 2}"/>`);
           });
           svgParts.push('</g>');
+        }
+
+        // ── NEBULA session metadata — hidden nodes & collapsed subtrees ──
+        // Stored in an invisible group so re-importing the SVG restores the
+        // exact same visibility state without relying on node presence alone.
+        const hiddenNodesList = [...hiddenIds].join(',');
+        const collapsedList   = [...collapsedRoots].join(',');
+        if (hiddenNodesList || collapsedList) {
+          svgParts.push(
+            `<g id="NEBULA_META" display="none"` +
+            (hiddenNodesList ? ` data-nebula-hidden="${hiddenNodesList}"` : '') +
+            (collapsedList   ? ` data-nebula-collapsed="${collapsedList}"` : '') +
+            `/>`
+          );
         }
 
         svgParts.push('</svg>');
@@ -2721,54 +2769,54 @@ const GraphRendererCanvas = forwardRef(
       downloadPNG: () => {
         const nodes = nodesRef.current;
         if (!nodes.length) return;
+        const srcCanvas = canvasRef.current;
+        if (!srcCanvas) return;
 
         const visibleNodes = nodes.filter(n => !hiddenIds.has(n.id));
         if (!visibleNodes.length) return;
 
-        // Compute tight bounds
+        // ── Compute tight world-coord bounds of all visible nodes ──
+        const ns = nodeScaleRef.current;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         visibleNodes.forEach(n => {
-          const hw = n.type === 'compound' ? 20 : n.type === 'ec' ? 24 : 20;
-          const hh = n.type === 'compound' ? 20 : n.type === 'ec' ? 16 : 14;
+          const hw = (n.type === 'compound' ? 12 : n.type === 'ec' ? 18 : 15) * ns;
+          const hh = (n.type === 'compound' ? 12 : n.type === 'ec' ? 10 : 9) * ns;
           minX = Math.min(minX, n.x - hw);
           minY = Math.min(minY, n.y - hh);
           maxX = Math.max(maxX, n.x + hw);
           maxY = Math.max(maxY, n.y + hh);
         });
-        const pad = 40;
-        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-        const gw = maxX - minX;
-        const gh = maxY - minY;
+        const PAD = 40;
+        minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+        const graphW = maxX - minX;
+        const graphH = maxY - minY;
 
-        const SCALE = 3;
-        const offscreen = document.createElement('canvas');
-        offscreen.width = gw * SCALE;
-        offscreen.height = gh * SCALE;
-        const offCtx = offscreen.getContext('2d');
-        offCtx.scale(SCALE, SCALE);
-        offCtx.translate(-minX, -minY);
+        // ── Canvas display dimensions (CSS pixels) ──
+        const cssW = srcCanvas.clientWidth || 800;
+        const cssH = srcCanvas.clientHeight || 600;
 
-        // Temporarily set transform and redraw onto offscreen canvas
+        // ── Scale to fit the entire graph in the canvas, maintaining aspect ratio ──
+        const fitScale = Math.min(cssW / graphW, cssH / graphH);
+        const fitTX = (cssW - graphW * fitScale) / 2 - minX * fitScale;
+        const fitTY = (cssH - graphH * fitScale) / 2 - minY * fitScale;
+        const fitTransform = d3.zoomIdentity.translate(fitTX, fitTY).scale(fitScale);
+
+        // ── Temporarily redirect draw: no grid, fit-all transform ──
         const savedTransform = transformRef.current;
-        transformRef.current = d3.zoomIdentity.translate(-minX, -minY);
+        skipGridForExportRef.current = true;
+        transformRef.current = fitTransform;
 
-        // Draw background
-        if (bgColor) {
-          offCtx.fillStyle = bgColor;
-          offCtx.fillRect(minX, minY, gw, gh);
-        } else {
-          offCtx.fillStyle = dark ? '#0f172a' : '#ffffff';
-          offCtx.fillRect(minX, minY, gw, gh);
-        }
+        // Synchronous redraw to the main canvas (DPR-correct because the canvas
+        // already has width = cssW * devicePixelRatio)
+        drawRef.current?.(nodesRef.current);
 
-        // We'll just capture the current canvas as-is using the main canvas toBlob
-        transformRef.current = savedTransform;
-
-        // Simpler approach: capture current canvas view at high res
-        const srcCanvas = canvasRef.current;
-        if (!srcCanvas) return;
-
+        // ── Capture and restore ──
         srcCanvas.toBlob((blob) => {
+          // Restore the original view before the async callback runs user code
+          skipGridForExportRef.current = false;
+          transformRef.current = savedTransform;
+          drawRef.current?.(nodesRef.current);
+
           if (!blob) return;
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
@@ -2783,6 +2831,11 @@ const GraphRendererCanvas = forwardRef(
       clearEdgeColors: () => {
         edgeColorsRef.current.clear();
         drawRef.current?.(nodesRef.current);
+      },
+      // Restore hidden / collapsed state from an imported SVG
+      applyHiddenState: ({ hiddenNodes = [], collapsedNodes = [] } = {}) => {
+        if (hiddenNodes.length) setHiddenIds(new Set(hiddenNodes));
+        if (collapsedNodes.length) setCollapsedRoots(new Set(collapsedNodes));
       },
       redraw: () => {
         drawRef.current?.(nodesRef.current);
@@ -2922,50 +2975,111 @@ const GraphRendererCanvas = forwardRef(
             {/* ── Styling actions (color, opacity, label) ── */}
             {ctxMenu.hitNode && (
               <>
-                {/* Change Color */}
+                {/* ── Fill color ── */}
                 <button
-                  onClick={() => setCtxMenuColorPicker(prev => !prev)}
+                  onClick={() => setCtxMenuColorPicker(prev => prev === 'fill' ? null : 'fill')}
                   className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
                 >
                   <span className="w-3 h-3 rounded-full border border-brd/50" style={{
                     backgroundColor: nodeColorsRef.current.get(ctxMenu.hitNode.id)?.fill || '#888'
                   }} />
-                  Change Color…
+                  Fill color…
                 </button>
-                {ctxMenuColorPicker && (
+                {ctxMenuColorPicker === 'fill' && (
                   <div className="px-2 pb-1">
                     <EmbeddedColorPicker
                       color={nodeColorsRef.current.get(ctxMenu.hitNode.id)?.fill || '#888888'}
                       onChange={(c) => {
                         takeSnapshot();
-                        // Apply to all selected nodes or just the one
-                        const targets = selectedNodes.length > 0
-                          ? selectedNodes.map(n => n.id)
-                          : [ctxMenu.hitNode.id];
+                        const targets = selectedNodes.length > 0 ? selectedNodes.map(n => n.id) : [ctxMenu.hitNode.id];
                         targets.forEach(id => {
-                          nodeColorsRef.current.set(id, { fill: c, stroke: c });
+                          // Only override fill — leave stroke/border unchanged so the border stays visible
+                          const existing = nodeColorsRef.current.get(id) || {};
+                          nodeColorsRef.current.set(id, { ...existing, fill: c });
                         });
                         drawRef.current?.(nodesRef.current);
                       }}
-                      onOk={() => setCtxMenuColorPicker(false)}
-                      onCancel={() => setCtxMenuColorPicker(false)}
+                      onOk={() => setCtxMenuColorPicker(null)}
+                      onCancel={() => setCtxMenuColorPicker(null)}
                     />
                   </div>
                 )}
-                {nodeColorsRef.current.has(ctxMenu.hitNode.id) && !ctxMenuColorPicker && (
+
+                {/* ── Border color ── */}
+                <button
+                  onClick={() => setCtxMenuColorPicker(prev => prev === 'stroke' ? null : 'stroke')}
+                  className="w-full text-left px-3 py-1.5 text-content hover:bg-surface-inset transition-colors flex items-center gap-2"
+                >
+                  <span className="w-3 h-3 rounded-sm border-2" style={{
+                    borderColor: nodeColorsRef.current.get(ctxMenu.hitNode.id)?.stroke || '#9CA3AF',
+                    backgroundColor: 'transparent',
+                  }} />
+                  Border color…
+                </button>
+                {ctxMenuColorPicker === 'stroke' && (
+                  <div className="px-2 pb-1">
+                    <EmbeddedColorPicker
+                      color={nodeColorsRef.current.get(ctxMenu.hitNode.id)?.stroke || '#9CA3AF'}
+                      onChange={(c) => {
+                        takeSnapshot();
+                        const targets = selectedNodes.length > 0 ? selectedNodes.map(n => n.id) : [ctxMenu.hitNode.id];
+                        targets.forEach(id => {
+                          const existing = nodeColorsRef.current.get(id) || {};
+                          nodeColorsRef.current.set(id, { ...existing, stroke: c });
+                        });
+                        drawRef.current?.(nodesRef.current);
+                      }}
+                      onOk={() => setCtxMenuColorPicker(null)}
+                      onCancel={() => setCtxMenuColorPicker(null)}
+                    />
+                  </div>
+                )}
+
+                {/* ── Border style ── */}
+                <div className="px-3 py-1.5">
+                  <p className="text-[10px] text-content-muted mb-1">Border style</p>
+                  <div className="flex gap-1">
+                    {[
+                      { key: '',        label: '—', title: 'Solid' },
+                      { key: '5,3',     label: '╌', title: 'Dashed' },
+                      { key: '1.5,3',   label: '⋯', title: 'Dotted' },
+                      { key: 'none',    label: '✕', title: 'No border' },
+                    ].map(({ key, label, title }) => {
+                      const current = nodeColorsRef.current.get(ctxMenu.hitNode.id)?.strokeDash ?? '';
+                      const active = current === key;
+                      return (
+                        <button key={key} title={title}
+                          onClick={() => {
+                            takeSnapshot();
+                            const targets = selectedNodes.length > 0 ? selectedNodes.map(n => n.id) : [ctxMenu.hitNode.id];
+                            targets.forEach(id => {
+                              const existing = nodeColorsRef.current.get(id) || {};
+                              nodeColorsRef.current.set(id, { ...existing, strokeDash: key });
+                            });
+                            drawRef.current?.(nodesRef.current);
+                          }}
+                          className={`flex-1 rounded py-0.5 text-[11px] font-mono border transition-colors ${
+                            active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset'
+                          }`}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {nodeColorsRef.current.has(ctxMenu.hitNode.id) && ctxMenuColorPicker === null && (
                   <button
                     onClick={() => {
                       takeSnapshot();
-                      const targets = selectedNodes.length > 0
-                        ? selectedNodes.map(n => n.id)
-                        : [ctxMenu.hitNode.id];
+                      const targets = selectedNodes.length > 0 ? selectedNodes.map(n => n.id) : [ctxMenu.hitNode.id];
                       targets.forEach(id => nodeColorsRef.current.delete(id));
                       drawRef.current?.(nodesRef.current);
                       setCtxMenu(null);
                     }}
                     className="w-full text-left px-3 py-1 text-content-secondary hover:bg-surface-inset transition-colors flex items-center gap-2 text-[10px]"
                   >
-                    Reset color
+                    Reset colors & border
                   </button>
                 )}
 

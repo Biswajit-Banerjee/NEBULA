@@ -1,148 +1,159 @@
 import {
-  Compass, Search, Table2, Layers, Network, MapPin, Undo2, Columns2, HelpCircle,
+  Compass, Search, Table2, Route, MapPin, Waypoints, Dna, Columns2, HelpCircle,
 } from 'lucide-react';
 
 /**
- * Each step can carry an `action` key — a string token that the GuidedTour
- * component interprets to trigger real app behaviour (search, view switch, etc.)
+ * Main guided tour (first visit, landing-page button, Help menu).
  *
- * `placement` controls where the tooltip card appears:
- *   center | top-right | bottom-right | bottom-left | top-left
+ * Each step can carry:
+ *   action        token the GuidedTour component turns into real app behaviour
+ *   placement     center | top-right | bottom-right | bottom-left | top-left | bottom (anchored to `target`)
+ *   waitForResults pause until results load
+ *   features      short bullet list
+ *   glyphs        ids from Key/keyData.js, drawn as a mini symbol key inside the card
+ *   docSlug       documentation page opened by "Learn more"
  *
- * `waitForResults` — if true, the tour pauses on this step until results load.
+ * Names follow the manuscript: Metabolome Records, Path Finder, Metabolic Map,
+ * Reaction Network, Protein Domain Viewer. Gen-0 compounds are "seed compounds".
  */
 const tourSteps = [
-  /* ── 0  Welcome ── */
   {
     id: 'welcome',
     icon: Compass,
     title: 'Welcome to NEBULA',
-    body: `Let's explore together. We'll trace the biosynthetic origins of L-Glutamate (C00025) — one of the most connected metabolites in biochemistry — and walk through each tool NEBULA offers.`,
+    body: `NEBULA links metabolism to the enzymes that run it. Every reaction keeps all of its substrates and products, every compound is placed in a generation of the network expansion, and every enzyme leads to its protein domains and 3D structure. We will trace L-Glutamate (C00025), a generation-9 compound, and visit each viewer on the way.`,
     placement: 'center',
+    docSlug: 'introduction',
   },
 
-  /* ── 1  Search dock intro ── */
   {
     id: 'search-dock',
     icon: Search,
     target: '[data-tour="dock-bar"]',
-    title: 'The Search Dock',
-    body: `This bar is your starting point. You can search by compound, reaction ID, or EC number. Type a KEGG ID or metabolite name and NEBULA traces every reaction that can produce it.`,
+    title: 'The search dock',
+    body: `Click the bar to open it. Four search modes: Cmpd (find the Paths that make a compound, with an optional Source), Rxn (a KEGG reaction), EC (an enzyme class) and Cmpds (reactions that contain a set of compounds, Any or All). Use Add query to compare several searches; each gets its own colour.`,
     placement: 'bottom',
     expandDock: true,
+    features: [
+      'Ctrl/Cmd+K opens the dock, Esc closes it',
+      'Eye icon: hide or show cofactors everywhere',
+      'Stacked-layers icon: combine all searches',
+      'Arrows: import or export a whole session',
+    ],
+    docSlug: 'feature-search',
   },
 
-  /* ── 2  Trigger the search ── */
   {
     id: 'searching',
     icon: Search,
     title: 'Searching for L-Glutamate…',
-    body: `We're now running a backward trace from C00025. NEBULA is walking the entire KEGG reaction graph to find every known reaction that produces this metabolite.`,
+    body: `NEBULA is expanding the network from the seed compounds (generation 0) and then tracing back from C00025, collecting every reaction that can contribute to making it.`,
     placement: 'center',
     action: 'search-c00025',
     waitForResults: true,
   },
 
-  /* ── 3  Table view ── */
   {
     id: 'view-table',
     icon: Table2,
-    title: 'Reaction Table',
-    body: `Each row is a reaction that produces L-Glutamate. You can sort by any column, expand a row for enzyme details, and use the filter menu to narrow results by EC class, generation depth, or specific substrates.`,
+    title: 'Metabolome Records',
+    body: `One row per reaction: its ID, whether it comes from KEGG, the equation, the generation transition (for example 3 -> 4) and its EC numbers. Click a blue EC button to see the enzyme's protein domains.`,
     placement: 'top-right',
     action: 'view-table',
     features: [
-      'Click a reaction ID to see its KEGG entry',
-      'Expand rows for enzyme & protein details',
-      'Filter by EC class, generation, or substrate',
-      'Select rows to highlight them in other views',
+      'Tick rows, then Keep or Delete the selection',
+      'Funnel icon: select by text or regular expression',
+      'Chevron: KEGG definition and reaction drawing',
     ],
+    glyphs: ['mr-stripe', 'mr-ec'],
+    docSlug: 'view-metabolome-records',
   },
 
-  /* ── 4  2D Network ── */
   {
-    id: 'view-2d',
-    icon: Layers,
-    title: '2D Network Graph',
-    body: `This is a force-directed metabolic network. Compounds are circles and reactions are smaller nodes linking them. Colour encodes generation depth — how many reaction steps from your target.`,
+    id: 'view-tree',
+    icon: Route,
+    title: 'Path Finder',
+    body: `Every minimal way to make your target from the seed compounds, laid out left to right by generation. Circles are compounds, squares are reactions, and a reaction needs ALL of its inputs. Click anything to highlight every Path through it, and pin up to four Paths to compare them.`,
     placement: 'top-right',
-    action: 'view-network2d',
+    action: 'view-tree',
     features: [
-      'Drag nodes to rearrange the layout',
-      'Scroll to zoom, use generation slider to reveal layers',
-      'Ctrl-click a reaction node to collapse/expand branches',
-      'Press R to re-run layout, F for fullscreen',
+      'Left list: Paths, shortest first',
+      'Right panel: ordered steps with equations and EC numbers',
+      'Linked: your selection filters the other views',
+      'Export SVG for publication figures',
     ],
+    glyphs: ['pf-intermediate', 'pf-target', 'pf-reaction', 'pf-reaction-unlisted', 'pf-branch', 'pf-line-width'],
+    docSlug: 'view-path-finder',
   },
 
-  /* ── 5  3D Network ── */
-  {
-    id: 'view-3d',
-    icon: Network,
-    title: '3D Network Graph',
-    body: `The same network, rendered in 3D. Rotate by dragging, zoom with the scroll wheel. This view is useful for large networks where 2D becomes crowded — the extra dimension helps separate clusters.`,
-    placement: 'top-right',
-    action: 'view-network3d',
-    features: [
-      'Click and drag to rotate the view',
-      'Scroll to zoom in and out',
-      'Hover over nodes to see compound/reaction info',
-    ],
-  },
-
-  /* ── 6  Map ── */
   {
     id: 'view-map',
     icon: MapPin,
     title: 'Metabolic Map',
-    body: `The Map view gives a simplified, publication-ready graph of your results. It uses a spring layout optimised for readability, with compound names displayed directly on the canvas.`,
+    body: `Your compounds placed on the familiar KEGG global metabolism map (ko01100), coloured by generation. Reactions are arrows between compounds. Edges start hidden: open the settings arrow on the right and set Edges to Pruned or All.`,
     placement: 'top-right',
     action: 'view-map',
     features: [
-      'Drag nodes to reposition them',
-      'Zoom with scroll wheel',
-      'Download as SVG for publications',
+      'Show all map compounds: grey dots for orientation',
+      'Find Compound jumps to any compound',
+      'SMILES backbone search highlights matching molecules',
+      'Download SVG or PNG',
     ],
+    glyphs: ['mm-compound', 'mm-ghost', 'mm-edge'],
+    docSlug: 'view-metabolic-map',
   },
 
-  /* ── 7  Backtrace tree ── */
   {
-    id: 'view-tree',
-    icon: Undo2,
-    title: 'Backtrace Tree',
-    body: `This AND-OR tree shows the biosynthetic lineage of your target. Each branch is a reaction that can produce it, and sub-branches trace further back. The "Minimal Paths" panel lists the shortest complete routes.`,
+    id: 'view-2d',
+    icon: Waypoints,
+    title: 'Reaction Network',
+    body: `The full hypergraph. Each reaction is a reactant complex (rectangle), an enzyme (ellipse) and a product complex (rectangle) between compound circles. One band per generation, from Seed on the left. Use the timeline at the bottom to play through the generations.`,
     placement: 'top-right',
-    action: 'view-tree',
+    action: 'view-network2d',
     features: [
-      'Click nodes to expand or collapse branches',
-      'Browse minimal paths in the side panel',
-      'Primordial metabolites are highlighted as leaf nodes',
+      'Scroll to zoom, drag to move, Shift+click to pin several nodes',
+      'Right-click a node for colour, hide, collapse and Protein Viewer',
+      'R re-runs the layout, F is fullscreen, H shows all shortcuts',
     ],
+    glyphs: ['rn-compound', 'rn-reaction', 'rn-ec', 'rn-edge-solid', 'rn-edge-dashed', 'rn-edge-dotted'],
+    docSlug: 'view-reaction-network',
   },
 
-  /* ── 8  Split view ── */
+  {
+    id: 'view-protein',
+    icon: Dna,
+    title: 'Protein Domain Viewer',
+    body: `Click any EC button (Metabolome Records) or right-click an EC ellipse (Reaction Network) to open it. Pick an organism's protein, see its ECOD domains along the sequence, red binding sites and amber active sites, and the AlphaFold structure in 3D.`,
+    placement: 'top-right',
+    action: 'view-table',
+    glyphs: ['pv-domain', 'pv-binding', 'pv-active'],
+    docSlug: 'view-protein-domains',
+  },
+
   {
     id: 'split-view',
     icon: Columns2,
-    title: 'Split-Screen Mode',
-    body: `Compare two views side by side — for instance, browse the reaction table while seeing its 2D network. The split button is in the view switcher at the bottom of the screen.`,
+    title: 'Split view',
+    body: `Show two viewers side by side, for example Metabolome Records and Reaction Network. The Split button is in the view switcher at the bottom of the screen.`,
     placement: 'top-right',
     action: 'split-table-2d',
     features: [
-      'Each pane has independent view controls',
-      'Click "Single" to return to full-screen',
+      'Each side has its own controls',
+      'Selections and filters stay in sync',
+      'Click Single to go back to one view',
     ],
+    docSlug: 'feature-split-view',
   },
 
-  /* ── 9  Finish ── */
   {
     id: 'finish',
     icon: HelpCircle,
     target: '[data-tour="help-btn"]',
-    title: 'You\'re All Set!',
-    body: `That's the core of NEBULA. Use the search dock to explore any metabolite, reaction, or EC number. The Help button at the bottom-right has detailed docs for every feature. Happy exploring!`,
+    title: 'You are all set',
+    body: `The Help button opens the full documentation, short Quick Help for the view you are in, this tour, and the Text size control. Every viewer also has a Key button that explains each symbol it draws.`,
     placement: 'top-left',
     action: 'unsplit',
+    docSlug: 'symbols-cheat-sheet',
   },
 ];
 

@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, CheckCircle2, Pause, Play } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, CheckCircle2, Pause, Play, BookOpen } from 'lucide-react';
 import tourSteps from './tourSteps';
+import MiniKey from '../Key/MiniKey';
+import TextSizeControl from '../TextSize/TextSizeControl';
+import { useTextScale } from '../../lib/textScale';
+import { openDocs } from '../../lib/docsBus';
 
 export const TOUR_SEEN_KEY = 'nebula-tour-seen';
 
@@ -81,7 +85,8 @@ const GuidedTour = ({
 
   const currentStep = tourSteps[step];
   const totalSteps = tourSteps.length;
-  const canPause = !!currentStep?.features; // only view steps are pausable
+  const { fontSize } = useTextScale();
+  const canPause = !!currentStep?.features && currentStep?.placement !== 'bottom'; // only view steps are pausable
 
   // Reset state when tour starts/stops
   useEffect(() => {
@@ -126,9 +131,6 @@ const GuidedTour = ({
     } else if (action === 'view-network2d') {
       onSetSplit?.(false);
       onViewChange?.('network2d');
-    } else if (action === 'view-network3d') {
-      onSetSplit?.(false);
-      onViewChange?.('network3d');
     } else if (action === 'view-map') {
       onSetSplit?.(false);
       onViewChange?.('map');
@@ -253,7 +255,7 @@ const GuidedTour = ({
 
   const StepIcon = currentStep.icon;
   const showSpotlight = targetRect && currentStep.target && !paused;
-  const isViewStep = !!currentStep.features;
+  const isViewStep = ['top-right', 'top-left', 'bottom-right', 'bottom-left'].includes(currentStep.placement);
   const isCenterStep = currentStep.placement === 'center';
 
   /* ── Paused: show only a small floating resume pill ── */
@@ -263,13 +265,14 @@ const GuidedTour = ({
         <div className="fixed bottom-20 right-5 pointer-events-auto">
           <button
             onClick={handleResume}
+            style={fontSize}
             className="flex items-center gap-2 px-4 py-2.5 rounded-full
               bg-brand hover:bg-brand-hover text-content-inverse
               shadow-lg shadow-brand/25 hover:shadow-brand-hover/30
-              text-xs font-semibold transition-all duration-200
+              font-semibold transition-all duration-200
               hover:scale-105 active:scale-95 animate-in fade-in-0 slide-in-from-right-4"
           >
-            <Play className="w-3.5 h-3.5" />
+            <Play className="w-[0.9em] h-[0.9em]" />
             Resume Tour
             <span className="text-content-inverse/70 font-normal">
               ({step + 1}/{totalSteps})
@@ -310,10 +313,12 @@ const GuidedTour = ({
       {/* Tooltip card */}
       <div
         ref={tooltipRef}
-        className={`pointer-events-auto ${isViewStep ? 'w-[340px]' : 'w-[400px]'} max-w-[calc(100vw-32px)]`}
-        style={tooltipStyle}
+        className={`pointer-events-auto ${isViewStep ? 'w-[22em]' : 'w-[26em]'} max-w-[calc(100vw-32px)] max-h-[calc(100vh-96px)] overflow-y-auto rounded-2xl`}
+        style={{ ...tooltipStyle, ...fontSize }}
+        role="dialog"
+        aria-label={currentStep.title}
       >
-        <div className="bg-surface-overlay/95 backdrop-blur-2xl border border-brd/50 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden">
+        <div className="bg-surface-overlay/95 backdrop-blur-2xl border border-brd/50 rounded-2xl shadow-2xl shadow-black/20 overflow-clip">
           {/* Progress bar */}
           <div className="h-1 bg-surface-inset">
             <div
@@ -325,42 +330,46 @@ const GuidedTour = ({
           <div className="p-4">
             {/* Icon + Title */}
             <div className="flex items-center gap-3 mb-2.5">
-              <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-brand/10 flex items-center justify-center">
+              <div className="flex-shrink-0 w-[2em] h-[2em] rounded-xl bg-brand/10 flex items-center justify-center">
                 {waiting ? (
-                  <Loader2 className="w-4 h-4 text-brand animate-spin" />
+                  <Loader2 className="w-[1em] h-[1em] text-brand animate-spin" />
                 ) : (
-                  <StepIcon className="w-4 h-4 text-brand" />
+                  <StepIcon className="w-[1em] h-[1em] text-brand" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-bold text-content leading-tight">{currentStep.title}</h3>
-                <span className="text-[10px] text-content-muted font-medium">
+                <h3 className="font-bold text-content leading-tight" style={{ fontSize: '1.0625em' }}>{currentStep.title}</h3>
+                <span className="text-content-muted font-medium" style={{ fontSize: '0.75em' }}>
                   Step {step + 1} of {totalSteps}
                 </span>
               </div>
+              <TextSizeControl label={false} className="flex-shrink-0" />
               {/* Pause button — only on view steps */}
               {canPause && !waiting && (
                 <button
                   onClick={handlePause}
                   className="flex-shrink-0 p-1.5 rounded-lg text-content-muted hover:text-brand hover:bg-brand/10 transition-all"
                   title="Pause tour to explore this view"
+                  aria-label="Pause tour"
                 >
-                  <Pause className="w-3.5 h-3.5" />
+                  <Pause className="w-[0.95em] h-[0.95em]" />
                 </button>
               )}
             </div>
 
             {/* Body */}
-            <p className="text-[13px] text-content-secondary leading-relaxed mb-3">
+            <p className="text-content-secondary leading-relaxed mb-3" style={{ fontSize: '0.9em' }}>
               {currentStep.body}
             </p>
+
+            {currentStep.glyphs && <MiniKey ids={currentStep.glyphs} />}
 
             {/* Feature list for view steps */}
             {currentStep.features && (
               <div className="mb-3 space-y-1.5">
                 {currentStep.features.map((feat, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-content-secondary">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-ok flex-shrink-0 mt-0.5" />
+                  <div key={i} className="flex items-start gap-2 text-content-secondary" style={{ fontSize: '0.82em' }}>
+                    <CheckCircle2 className="w-[1.1em] h-[1.1em] text-ok flex-shrink-0 mt-0.5" />
                     <span>{feat}</span>
                   </div>
                 ))}
@@ -369,16 +378,27 @@ const GuidedTour = ({
 
             {/* Pause hint for view steps */}
             {canPause && !waiting && (
-              <p className="text-[10px] text-content-muted mb-2 italic">
+              <p className="text-content-muted mb-2 italic" style={{ fontSize: '0.75em' }}>
                 Press Pause to explore this view freely, then Resume when ready.
               </p>
             )}
 
+            {currentStep.docSlug && !waiting && (
+              <button
+                onClick={() => { setPaused(true); openDocs(currentStep.docSlug); }}
+                className="mb-3 inline-flex items-center gap-1.5 font-semibold text-link hover:underline"
+                style={{ fontSize: '0.82em' }}
+              >
+                <BookOpen className="w-[1.1em] h-[1.1em]" /> Learn more in the documentation
+              </button>
+            )}
+
             {/* Navigation */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="sticky bottom-0 -mx-4 -mb-4 flex items-center justify-between bg-surface-overlay px-4 pb-4 pt-2">
               <button
                 onClick={finish}
-                className="text-[11px] text-content-muted hover:text-content-secondary transition-colors px-2 py-1 rounded-lg hover:bg-surface-inset/60"
+                className="text-content-muted hover:text-content-secondary transition-colors px-2 py-1 rounded-lg hover:bg-surface-inset/60"
+                style={{ fontSize: '0.78em' }}
               >
                 Skip tour
               </button>
@@ -403,7 +423,8 @@ const GuidedTour = ({
                 {step > 0 && !waiting && (
                   <button
                     onClick={prev}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-content-secondary hover:bg-surface-inset/70 transition-all"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium text-content-secondary hover:bg-surface-inset/70 transition-all"
+                    style={{ fontSize: '0.8em' }}
                   >
                     <ChevronLeft className="w-3 h-3" />
                     Back
@@ -412,14 +433,15 @@ const GuidedTour = ({
                 {!waiting && (
                   <button
                     onClick={next}
-                    className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-[11px] font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all"
+                    className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg font-semibold bg-brand hover:bg-brand-hover text-content-inverse shadow-sm transition-all"
+                    style={{ fontSize: '0.8em' }}
                   >
                     {step === totalSteps - 1 ? 'Get Started' : 'Next'}
                     {step < totalSteps - 1 && <ChevronRight className="w-3 h-3" />}
                   </button>
                 )}
                 {waiting && (
-                  <div className="flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-medium text-content-muted">
+                  <div className="flex items-center gap-1.5 px-3.5 py-1.5 font-medium text-content-muted" style={{ fontSize: '0.8em' }}>
                     <Loader2 className="w-3 h-3 animate-spin" />
                     Loading…
                   </div>

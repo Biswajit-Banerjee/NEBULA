@@ -9,6 +9,7 @@ import HelpOverlay from "./HelpOverlay";
 import { isReservedGroupId, normalizeColor } from "./utils/svgLayout";
 import { RAINBOW_PALETTE } from "./utils/colorSchemes";
 import { createTextBox } from "../CanvasText/textSystem";
+import DeletedReactionsBadge from "../DeletedReactionsBadge";
 
 const SHAPE_TAGS = new Set(['circle', 'ellipse', 'rect', 'image']);
 
@@ -32,7 +33,19 @@ const parseSVGLayout = (svgText) => {
   const byLabel = new Map();
   const edgeColors = {};
   const textItems = [];
-  if (!root) return { byId, byLabel, edgeColors, annotations: [], textItems };
+  // Hidden-state metadata written by NEBULA's own SVG exporter
+  let hiddenNodes = [];
+  let collapsedNodes = [];
+  if (!root) return { byId, byLabel, edgeColors, annotations: [], textItems, hiddenNodes, collapsedNodes };
+
+  // ── Read NEBULA_META hidden-state block ──
+  const metaEl = root.querySelector('g[id="NEBULA_META"]');
+  if (metaEl) {
+    const rawHidden    = metaEl.getAttribute('data-nebula-hidden') || '';
+    const rawCollapsed = metaEl.getAttribute('data-nebula-collapsed') || '';
+    hiddenNodes    = rawHidden    ? rawHidden.split(',').filter(Boolean)    : [];
+    collapsedNodes = rawCollapsed ? rawCollapsed.split(',').filter(Boolean) : [];
+  }
 
   // ── Resolve CSS <style> classes to inline properties ──
   // Illustrator moves all fills/strokes into CSS classes (.st0, .st1, ...)
@@ -298,10 +311,10 @@ const parseSVGLayout = (svgText) => {
     }
   }
 
-  return { byId, byLabel, edgeColors, annotations, textItems };
+  return { byId, byLabel, edgeColors, annotations, textItems, hiddenNodes, collapsedNodes };
 };
 
-const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px" }, ref) => {
+const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px", deletedRows = [], onRestoreRows }, ref) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -384,6 +397,18 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     setSelectedText(null);
     textEditOriginalRef.current = null;
   }, []);
+
+  // Bulk-apply a style patch to all items matching a scope filter
+  const SCOPE_FILTERS = {
+    all:       () => true,
+    labels:    item => item.kind === 'node-label',
+    subtitles: item => item.kind === 'node-subtitle',
+    boxes:     item => item.kind === 'text-box',
+  };
+  const handleApplyAllText = useCallback((patch, scope) => {
+    const filterFn = SCOPE_FILTERS[scope] ?? SCOPE_FILTERS.all;
+    graphRendererRef.current?.applyAllText?.(patch, filterFn);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddText = useCallback(() => {
     setBrushMode(false);
@@ -504,7 +529,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const { byId, byLabel, edgeColors, annotations, textItems } = parseSVGLayout(ev.target.result);
+      const { byId, byLabel, edgeColors, annotations, textItems, hiddenNodes, collapsedNodes } = parseSVGLayout(ev.target.result);
       if (graphRendererRef.current) {
         if (importPositionsOnly) {
           // Strip colors and labels — keep only positions
@@ -547,6 +572,10 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
         const lineAnnotations = annotations.filter(annotation => annotation.type === 'line');
         if (lineAnnotations.length > 0) {
           graphRendererRef.current.importAnnotations(lineAnnotations);
+        }
+        // Restore hidden/collapsed visibility state if the SVG was exported by NEBULA
+        if (hiddenNodes.length || collapsedNodes.length) {
+          graphRendererRef.current.applyHiddenState?.({ hiddenNodes, collapsedNodes });
         }
       }
     };
@@ -671,7 +700,13 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
         style={{ height: isFullscreen ? '100vh' : height }}
       >
         {/* Help overlay */}
-        {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+        {showHelp && <HelpOverlay view="reaction-network" onClose={() => setShowHelp(false)} />}
+
+        {deletedRows.length > 0 && (
+          <div className="absolute top-3 right-3 z-40">
+            <DeletedReactionsBadge deletedRows={deletedRows} onRestoreRows={onRestoreRows} />
+          </div>
+        )}
 
         {/* Main Visualization Area */}
         <div className="flex-1 relative">
@@ -790,6 +825,7 @@ const NetworkViewer2D = forwardRef(({ results, searchPairs = [], height = "600px
             onCancelText={handleCancelText}
             onDeleteText={handleDeleteText}
             onAddText={handleAddText}
+            onApplyAllText={handleApplyAllText}
           />
           {/* Hidden file input for SVG layout import */}
           <input

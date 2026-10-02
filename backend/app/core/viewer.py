@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.utils.helpers import create_backtrack_df, parse_ec_list, add_compound_generation
 from app.core.uniprot import get_uniprot_entries_from_mapper, integrate_ecod_data, filter_important_features, list_accessions_for_ec, get_single_uniprot_entry
-from app.core.hypergraph import HyperGraph, backward_reachability, tree_to_dict, tree_to_flat_reactions, enumerate_solutions, collect_flat_reactions
+from app.core.hypergraph import HyperGraph, find_pathways, collect_flat_reactions
 
 def get_uniprot_from_ec(ec_number, domains_df):
     """
@@ -385,54 +385,67 @@ class MetabolicViewer:
         target: str,
         sources: List[str] = None,
         skip_cofactor: bool = True,
+        mode: str = "parallel",
+        max_paths: int = 6000,
     ) -> Dict:
         """
-        AND-OR hypergraph backward reachability from target.
-
-        Returns a nested AND-OR tree JSON where:
-          - OR-nodes = compounds (produced by any of several reactions)
-          - AND-nodes = reactions (require all reactants)
+        Pathway search from the seed compounds (and optional sources) to
+        ``target``: forward network expansion → backward pruning → minimal
+        cycle-free hyperpath enumeration (see ``hypergraph.find_pathways``).
 
         Args:
             target: Target compound ID.
-            sources: Optional list of source compound IDs. If provided,
-                     prune branches that don't reach any source.
-            skip_cofactor: Whether to treat cofactors as leaves.
+            sources: Optional source compound IDs. When given, they are
+                     added to the starting compounds and every returned
+                     path must consume at least one of them.
+            skip_cofactor: Whether cofactors are treated as always available.
+            mode: "parallel" (default) — all routes whose substrates appear no
+                  later than their products, including parallel / lateral
+                  same-generation reactions;
+                  "earliest" — only strictly generation-increasing routes.
+            max_paths: Cap on the number of enumerated paths.
         """
         try:
             cofactors = set(self.cofactors) if skip_cofactor else set()
             source_set = set(sources) if sources else set()
+            rule = "strict" if mode == "earliest" else "monotone"
 
-            root, stats = backward_reachability(
+            result = find_pathways(
                 self.hypergraph,
                 target,
                 self.gen_mapper,
                 cofactors,
                 source_set,
-                skip_cofactor,
+                max_solutions=max_paths,
+                rule=rule,
+                max_expansions=3_000_000,
+                time_limit=12.0 if max_paths <= 2000 else (30.0 if max_paths <= 6000 else 45.0),
             )
-
-            if root is None:
-                return {"target": target, "sources": sources or [], "tree": None, "stats": stats, "solutions": [], "data": []}
-
-            tree_dict = tree_to_dict(root)
-
-            # Enumerate minimal solutions
-            solutions = enumerate_solutions(root, max_solutions=500)
-            solution_summaries = []
-            for i, sol in enumerate(solutions):
-                solution_summaries.append({
-                    "id": i,
-                    "reactionCount": len(sol),
-                    "reactions": sol,
-                })
-
-            stats["total_solutions"] = len(solution_summaries)
+            result["stats"]["mode"] = mode
 
             # Flat reaction list (powers table / 2D / 3D views)
             flat_rows = collect_flat_reactions(
                 self.hypergraph, target, self.gen_mapper, cofactors
             )
+            # Every reaction of every listed path must also exist in the
+            # other viewers, otherwise focusing a path there shows gaps.
+            present = {row["reaction"] for row in flat_rows}
+            for rxn in result["graph"]["reactions"]:
+                if rxn["reaction"] in present:
+                    continue
+                present.add(rxn["reaction"])
+                edge = self.hypergraph.edges[rxn["id"]]
+                flat_rows.append({
+                    "reaction": edge.reaction,
+                    "source": edge.source or "",
+                    "coenzyme": edge.coenzyme or "",
+                    "equation": edge.equation or "",
+                    "transition": f"{int(edge.reactant_gen)} -> {int(edge.product_gen)}",
+                    "target": ", ".join(rxn["products"]) or target,
+                    "ec_list": edge.ec_list or [],
+                    "reactant_gen": edge.reactant_gen,
+                    "product_gen": edge.product_gen,
+                })
             # Add compound_generation + max_generation (table view needs these)
             for row in flat_rows:
                 cpd_gen = add_compound_generation(row["equation"], self.gen_mapper)
@@ -442,13 +455,14 @@ class MetabolicViewer:
             return {
                 "target": target,
                 "sources": sources or [],
-                "tree": tree_dict,
-                "stats": stats,
-                "solutions": solution_summaries,
+                "graph": result["graph"],
+                "stats": result["stats"],
+                "solutions": result["solutions"],
+                "clusters": result.get("clusters", []),
                 "data": flat_rows,
             }
         except Exception as e:
-            return {"target": target, "sources": sources or [], "tree": None, "stats": {}, "solutions": [], "data": [], "error": str(e)}
+            return {"target": target, "sources": sources or [], "graph": None, "stats": {}, "solutions": [], "clusters": [], "data": [], "error": str(e)}
 
     async def download_csv(self, background_tasks: BackgroundTasks) -> FileResponse:
         """Generate and return a CSV file of the current dataframe"""

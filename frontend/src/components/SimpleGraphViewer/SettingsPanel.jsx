@@ -8,6 +8,7 @@ import {
 import { RAINBOW_PALETTE } from '../NetworkViewer2D/utils/colorSchemes';
 import AutocompleteInput from '../SearchPanel/AutocompleteInput';
 import EmbeddedColorPicker from '../NetworkViewer2D/utils/EmbeddedColorPicker';
+import KeyButton from '../Key/KeyButton';
 import compoundDataJson from '../SearchPanel/compound_map.json';
 
 /* ── Reusable primitives (same as NetworkViewer2D) ── */
@@ -436,6 +437,7 @@ const SettingsPanel = ({
               icon={isFullscreen ? Minimize : Maximize}
             />
             <ActionButton label="Help & shortcuts" onClick={toggleHelp} icon={HelpCircle} />
+            <div className="pt-1"><KeyButton view="metabolic-map" className="w-full justify-center" /></div>
           </div>
         </div>
       </div>

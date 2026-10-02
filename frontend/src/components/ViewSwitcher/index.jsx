@@ -1,14 +1,14 @@
 import React from 'react';
 import {
-  Table2, Layers, Network, Columns2, Square, Undo2, MapPin,
+  Table2, Waypoints, Network, Columns2, Square, Route, MapPin,
 } from 'lucide-react';
 
 const VIEW_OPTIONS = [
-  { id: 'table', label: 'Table', icon: Table2 },
-  { id: 'network2d', label: '2D', icon: Layers },
-  { id: 'network3d', label: '3D', icon: Network },
-  { id: 'map', label: 'Map', icon: MapPin },
-  { id: 'tree', label: 'Backtrace', icon: Undo2 },
+  { id: 'table', label: 'Metabolome Records', icon: Table2 },
+  { id: 'tree', label: 'Path Finder', icon: Route },
+  { id: 'map', label: 'Metabolic Map', icon: MapPin },
+  { id: 'network2d', label: 'Reaction Network', icon: Waypoints },
+  // { id: 'network3d', label: '3D', icon: Network },
 ];
 
 const ViewSwitcher = ({

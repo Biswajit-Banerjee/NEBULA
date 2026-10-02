@@ -14,6 +14,8 @@ import CompoundTooltip from "../CompoundTooltip";
 import ReactionTooltip from "../ReactionTooltip";
 import ECDetails from "../ECDetails";
 import FilterMenu from "../FilterMenu";
+import DeletedReactionsBadge from "../DeletedReactionsBadge";
+import KeyButton from "../Key/KeyButton";
 
 const ResultTable = ({
   results,
@@ -24,6 +26,9 @@ const ResultTable = ({
   setSelectedRows: setExternalSelectedRows = null,
   combinedMode = false,
   searchPairs = [],
+  deletedRows = [],
+  onRemoveRows,
+  onRestoreRows,
 }) => {
   // Use internal state if no external state is provided
   const [internalSelectedRows, setInternalSelectedRows] = useState(new Set());
@@ -88,12 +93,14 @@ const ResultTable = ({
   };
 
   const handleRemoveSelected = () => {
+    const removedRows = filteredResults.filter((_, index) => selectedRows.has(index));
     const newResults = filteredResults.filter(
       (_, index) => !selectedRows.has(index)
     );
     setResults(newResults);
     setFilteredResults(newResults);
     setSelectedRows(new Set());
+    onRemoveRows && onRemoveRows(removedRows);
   };
 
   // Clear accumulated detail state when results change
@@ -292,6 +299,8 @@ const ResultTable = ({
       <div className="p-4 border-b border-brd/40 flex justify-between items-center bg-surface-inset/60">
         <SelectionActions />
         <div className="flex items-center gap-2">
+          <DeletedReactionsBadge deletedRows={deletedRows} onRestoreRows={onRestoreRows} />
+          <KeyButton view="records" variant="icon" className="!h-9 !w-9" />
           {/* Filter Button & Dropdown */}
           <div className="relative">
             <button

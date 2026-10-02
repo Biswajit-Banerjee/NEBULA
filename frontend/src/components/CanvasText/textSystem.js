@@ -151,13 +151,17 @@ export const drawCanvasText = (ctx, items, nodeMap, options) => {
   layoutCache.clear();
 
   items.forEach(item => {
-    if (!item.visible || !item.content) return;
+    if (!item.visible) return;
     if (item.kind === NODE_LABEL && (!showLabels || zoom < 0.45)) return;
     if (item.kind === NODE_SUBTITLE && (!showSubtitles || zoom < 0.45)) return;
 
+    // Empty items are only rendered when selected (shows a placeholder hint)
+    const isEmpty = !item.content;
+    if (isEmpty && selectedId !== item.id) return;
+
     const pos = resolveTextPosition(item, nodeMap);
     const { css, size } = font(item, fontScale);
-    const lines = item.content.split('\n');
+    const lines = isEmpty ? [] : item.content.split('\n');
     const lineHeight = size * 1.28;
 
     ctx.save();
@@ -168,24 +172,33 @@ export const drawCanvasText = (ctx, items, nodeMap, options) => {
     ctx.globalAlpha = item.opacity;
 
     let widest = 0;
-    lines.forEach((line, index) => {
-      const y = item.kind === NODE_LABEL ? pos.y + index * lineHeight : pos.y + index * lineHeight;
-      const width = ctx.measureText(line || ' ').width;
-      widest = Math.max(widest, width);
-      ctx.fillText(line || ' ', pos.x, y);
-      if (item.underline) {
-        const startX = item.textAlign === 'center' ? pos.x - width / 2 : item.textAlign === 'right' ? pos.x - width : pos.x;
-        ctx.beginPath();
-        ctx.moveTo(startX, y + size * 0.16);
-        ctx.lineTo(startX + width, y + size * 0.16);
-        ctx.lineWidth = Math.max(0.5, size * 0.065);
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.stroke();
-      }
-    });
+
+    if (!isEmpty) {
+      lines.forEach((line, index) => {
+        const y = pos.y + index * lineHeight;
+        const w = ctx.measureText(line || ' ').width;
+        widest = Math.max(widest, w);
+        ctx.fillText(line || ' ', pos.x, y);
+        if (item.underline) {
+          const startX = item.textAlign === 'center' ? pos.x - w / 2 : item.textAlign === 'right' ? pos.x - w : pos.x;
+          ctx.beginPath();
+          ctx.moveTo(startX, y + size * 0.16);
+          ctx.lineTo(startX + w, y + size * 0.16);
+          ctx.lineWidth = Math.max(0.5, size * 0.065);
+          ctx.strokeStyle = ctx.fillStyle;
+          ctx.stroke();
+        }
+      });
+    } else {
+      // Placeholder hint for the empty-but-selected text box
+      const placeholder = 'Type your text…';
+      ctx.globalAlpha = 0.32;
+      ctx.fillText(placeholder, pos.x, pos.y);
+      widest = ctx.measureText(placeholder).width;
+    }
 
     const width = Math.max(22, widest + 12);
-    const height = Math.max(size, lines.length * lineHeight) + 8;
+    const height = Math.max(size, (lines.length || 1) * lineHeight) + 8;
     const left = item.textAlign === 'center' ? pos.x - width / 2 : item.textAlign === 'right' ? pos.x - width : pos.x - 6;
     const top = item.kind === NODE_LABEL ? pos.y - size / 2 - 4 : item.kind === NODE_SUBTITLE ? pos.y - 4 : pos.y - size - 5;
     const box = { x: left, y: top, width, height, position: pos };
@@ -208,9 +221,10 @@ export const drawCanvasText = (ctx, items, nodeMap, options) => {
 export const hitTestCanvasText = (items, layoutCache, x, y, { showLabels, showSubtitles }) => {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (!item.visible || !item.content) continue;
+    if (!item.visible) continue;
     if (item.kind === NODE_LABEL && !showLabels) continue;
     if (item.kind === NODE_SUBTITLE && !showSubtitles) continue;
+    // Bbox is only in layoutCache if the item was rendered; empty non-selected items won't have one
     const box = layoutCache.get(item.id);
     if (box && x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height) return item;
   }

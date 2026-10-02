@@ -9,6 +9,7 @@ import {
 import { RAINBOW_PALETTE, adjustHsv } from './utils/colorSchemes';
 import { ThemeContext } from '../ThemeProvider/ThemeProvider';
 import EmbeddedColorPicker from './utils/EmbeddedColorPicker';
+import KeyButton from '../Key/KeyButton';
 
 /* ─────────────────────────────────────────
    Reusable primitives
@@ -92,6 +93,80 @@ const SubLabel = ({ label }) => (
     <div className="h-px flex-1 bg-brd/25" />
     {label && <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-widest text-content-muted/60">{label}</span>}
     <div className="h-px flex-1 bg-brd/25" />
+  </div>
+);
+
+/* B I U ‖ L C R row — used in the single-item editor */
+const StyleAlignRow = ({ fontWeight, fontStyle, underline, textAlign, onChange }) => (
+  <div className="flex gap-1">
+    <div className="flex flex-1 gap-0.5">
+      {[
+        { key: 'bold',   Icon: Bold,      active: fontWeight === '700' || fontWeight === 'bold', patch: { fontWeight: (fontWeight === '700' || fontWeight === 'bold') ? '400' : '700' }, title: 'Bold' },
+        { key: 'italic', Icon: Italic,    active: fontStyle === 'italic',  patch: { fontStyle: fontStyle === 'italic' ? 'normal' : 'italic' }, title: 'Italic' },
+        { key: 'under',  Icon: Underline, active: !!underline,             patch: { underline: !underline },                                   title: 'Underline' },
+      ].map(({ key, Icon, active, patch, title }) => (
+        <button key={key} onClick={() => onChange(patch)} title={title}
+          className={`flex h-7 flex-1 items-center justify-center rounded-md border text-[11px] transition-colors ${
+            active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
+          }`}>
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
+    <div className="my-1 w-px bg-brd/35" />
+    <div className="flex flex-1 gap-0.5">
+      {[
+        { key: 'left',   Icon: AlignLeft,   active: textAlign === 'left',   patch: { textAlign: 'left' },   title: 'Align left' },
+        { key: 'center', Icon: AlignCenter, active: textAlign === 'center', patch: { textAlign: 'center' }, title: 'Align centre' },
+        { key: 'right',  Icon: AlignRight,  active: textAlign === 'right',  patch: { textAlign: 'right' },  title: 'Align right' },
+      ].map(({ key, Icon, active, patch, title }) => (
+        <button key={key} onClick={() => onChange(patch)} title={title}
+          className={`flex h-7 flex-1 items-center justify-center rounded-md border text-[11px] transition-colors ${
+            active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
+          }`}>
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+/* B I U ‖ L C R row for the bulk editor — activates individual fields on click */
+const BulkStyleAlignRow = ({ fontWeight, fontStyle, underline, textAlign, activeFields, onChange }) => (
+  <div className="flex gap-1">
+    <div className={`flex flex-1 gap-0.5 transition-opacity ${
+      activeFields.has('bold') || activeFields.has('italic') || activeFields.has('underline') ? 'opacity-100' : 'opacity-60'
+    }`}>
+      {[
+        { key: 'bold',   fieldKey: 'bold',      Icon: Bold,      active: fontWeight === '700' || fontWeight === 'bold', patch: { fontWeight: (fontWeight === '700' || fontWeight === 'bold') ? '400' : '700' }, title: 'Bold' },
+        { key: 'italic', fieldKey: 'italic',    Icon: Italic,    active: fontStyle === 'italic',  patch: { fontStyle: fontStyle === 'italic' ? 'normal' : 'italic' }, title: 'Italic' },
+        { key: 'under',  fieldKey: 'underline', Icon: Underline, active: !!underline,             patch: { underline: !underline },                                   title: 'Underline' },
+      ].map(({ key, fieldKey, Icon, active, patch, title }) => (
+        <button key={key}
+          onClick={() => onChange(patch, [fieldKey])} title={title}
+          className={`flex h-7 flex-1 items-center justify-center rounded-md border text-[11px] transition-colors ${
+            activeFields.has(fieldKey) && active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
+          }`}>
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
+    <div className="my-1 w-px bg-brd/35" />
+    <div className={`flex flex-1 gap-0.5 transition-opacity ${activeFields.has('textAlign') ? 'opacity-100' : 'opacity-60'}`}>
+      {[
+        { key: 'left',   Icon: AlignLeft,   patch: { textAlign: 'left' },   title: 'Left' },
+        { key: 'center', Icon: AlignCenter, patch: { textAlign: 'center' }, title: 'Centre' },
+        { key: 'right',  Icon: AlignRight,  patch: { textAlign: 'right' },  title: 'Right' },
+      ].map(({ key, Icon, patch, title }) => (
+        <button key={key}
+          onClick={() => onChange(patch, ['textAlign'])} title={title}
+          className={`flex h-7 flex-1 items-center justify-center rounded-md border text-[11px] transition-colors ${
+            activeFields.has('textAlign') && textAlign === patch.textAlign ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
+          }`}>
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
   </div>
 );
 
@@ -250,10 +325,11 @@ const SettingsPanel = ({
   showNodeLabels, setShowNodeLabels,
   selectedText,
   onUpdateText, onPreviewText, onSaveText, onCancelText, onDeleteText, onAddText,
+  onApplyAllText,
 }) => {
   const [open, setOpen] = useState(false);
 
-  /* Text editor draft — resets when a new element is selected (id changes) */
+  /* ── Single-item editor draft ── */
   const [draft, setDraft] = useState(null);
   useEffect(() => {
     setDraft(selectedText ? { ...selectedText } : null);
@@ -264,6 +340,50 @@ const SettingsPanel = ({
     onPreviewText?.(draft.id, patch);
     setDraft(prev => prev ? { ...prev, ...patch } : null);
   }, [draft, onPreviewText]);
+
+  /* ── Bulk editor state ── */
+  // Scope: which items the Apply button targets
+  const [bulkScope, setBulkScope] = useState('all');
+  // Values for each control (sensible display defaults)
+  const [bulkValues, setBulkValues] = useState({
+    fontFamily: 'Inter, Arial, sans-serif',
+    fontSize: 14,
+    fontWeight: '400',
+    fontStyle: 'normal',
+    underline: false,
+    textAlign: 'left',
+    fill: null,
+    opacity: 1,
+  });
+  // Which fields the user has explicitly touched — only these are sent on Apply
+  const [activeFields, setActiveFields] = useState(new Set());
+
+  const activateBulkField = (...fields) =>
+    setActiveFields(prev => new Set([...prev, ...fields]));
+
+  const updateBulk = useCallback((patch, fieldKeys) => {
+    setBulkValues(prev => ({ ...prev, ...patch }));
+    setActiveFields(prev => new Set([...prev, ...fieldKeys]));
+  }, []);
+
+  const handleBulkApply = useCallback(() => {
+    if (!activeFields.size) return;
+    const patch = {};
+    if (activeFields.has('fontFamily')) patch.fontFamily = bulkValues.fontFamily;
+    if (activeFields.has('fontSize'))   patch.fontSize   = bulkValues.fontSize;
+    if (activeFields.has('bold'))       patch.fontWeight = bulkValues.fontWeight;
+    if (activeFields.has('italic'))     patch.fontStyle  = bulkValues.fontStyle;
+    if (activeFields.has('underline'))  patch.underline  = bulkValues.underline;
+    if (activeFields.has('textAlign'))  patch.textAlign  = bulkValues.textAlign;
+    if (activeFields.has('fill'))       patch.fill       = bulkValues.fill;
+    if (activeFields.has('opacity'))    patch.opacity    = bulkValues.opacity;
+    if (Object.keys(patch).length > 0) {
+      onApplyAllText?.(patch, bulkScope);
+      setActiveFields(new Set()); // reset after applying
+    }
+  }, [activeFields, bulkValues, bulkScope, onApplyAllText]);
+
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   /* Brush color picker state */
   const [showBrushPicker, setShowBrushPicker] = useState(false);
@@ -342,6 +462,7 @@ const SettingsPanel = ({
                   <Icon className="h-3.5 w-3.5" />
                 </button>
               ))}
+              <KeyButton view="reaction-network" variant="icon" />
             </div>
           </div>
 
@@ -489,42 +610,38 @@ const SettingsPanel = ({
           ════════════════════════════════ */}
           <Section title="Text" icon={Type}>
 
-            {/* Mode toggle + Add button */}
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => { const next = !textMode; setTextMode(next); if (next) setBrushMode(false); }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${
-                  textMode
-                    ? 'bg-brand text-white shadow-sm shadow-brand/20'
-                    : 'border border-brd/50 text-content-secondary hover:bg-surface-inset hover:text-content'
-                }`}>
-                <Type className="h-3.5 w-3.5" />
-                Text mode
-              </button>
-              <button
-                onClick={() => { setBrushMode(false); setTextMode(true); onAddText?.(); }}
-                className="flex items-center gap-1 rounded-lg border border-brd/50 px-2.5 py-1.5 text-[11px] font-medium text-content-secondary transition-all hover:bg-surface-inset hover:text-content"
-                title="Place a new free text box at the centre of the view">
-                <PlusCircle className="h-3.5 w-3.5" />
-                Add
-              </button>
-            </div>
+            {/* ── Mode toggle (full-width) ── */}
+            <Toggle
+              label={textMode ? 'Text mode  ON' : 'Text mode  OFF'}
+              value={textMode}
+              onChange={next => { setTextMode(next); if (next) setBrushMode(false); }}
+              icon={Type}
+            />
 
-            {/* Visibility toggles */}
+            {/* ── Add text box (prominent, separate from mode toggle) ── */}
+            <button
+              onClick={() => { setBrushMode(false); setTextMode(true); onAddText?.(); }}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-brd/50 py-2.5 text-[11px] font-medium text-content-secondary transition-all hover:border-brand/50 hover:bg-brand/5 hover:text-brand"
+              title="Click to place a new text box at the centre of the view">
+              <PlusCircle className="h-4 w-4" />
+              Add text box
+            </button>
+
+            {/* ── Visibility ── */}
             <div className="grid grid-cols-2 gap-1">
               <Toggle label="Labels"    value={showNodeLabels} onChange={setShowNodeLabels} icon={Tag} />
               <Toggle label="Subtitles" value={showNodeNames}  onChange={setShowNodeNames}  icon={Type} />
             </div>
 
-            {/* ── Inline editor (only when text is selected) ── */}
-            {draft ? (
+            {/* ── Selected item editor ── */}
+            {draft && (
               <>
                 <SubLabel />
 
-                {/* Kind badge + anchor pill */}
+                {/* Kind + anchor badge */}
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-brand">
-                    {draft.kind === 'node-label' ? 'Node label' : draft.kind === 'node-subtitle' ? 'Node subtitle' : 'Text box'}
+                    {draft.kind === 'node-label' ? 'Node label' : draft.kind === 'node-subtitle' ? 'Subtitle' : 'Text box'}
                   </span>
                   {draft.anchor && (
                     <span className="rounded-full bg-surface-inset px-2 py-0.5 text-[9px] font-medium text-content-muted">
@@ -533,16 +650,18 @@ const SettingsPanel = ({
                   )}
                 </div>
 
-                {/* Content — textarea mirrors selected text alignment */}
+                {/* Content textarea — textAlign mirrors current alignment setting */}
                 <textarea
                   value={draft.content ?? ''}
                   onChange={e => updateDraft({ content: e.target.value })}
-                  rows={Math.max(2, Math.min(5, (draft.content ?? '').split('\n').length))}
+                  rows={Math.max(1, Math.min(4, ((draft.content ?? '').match(/\n/g) || []).length + 1))}
                   style={{ textAlign: draft.textAlign || 'left' }}
-                  className="w-full resize-none rounded-lg border border-brd/50 bg-surface-secondary px-2.5 py-1.5 text-[11px] leading-relaxed text-content outline-none transition-colors placeholder:text-content-muted focus:border-brand focus:ring-1 focus:ring-brand/20"
-                  placeholder="Text content…" />
+                  className="w-full resize-none rounded-lg border border-brd/50 bg-surface-secondary px-2.5 py-1.5 text-[12px] leading-snug text-content outline-none transition-colors placeholder:text-content-muted/60 focus:border-brand focus:ring-1 focus:ring-brand/20"
+                  placeholder="Type your text…"
+                  autoFocus={!draft.content}
+                />
 
-                {/* Font family (full width) */}
+                {/* Font family — full width */}
                 <select
                   value={draft.fontFamily ?? 'Inter, Arial, sans-serif'}
                   onChange={e => updateDraft({ fontFamily: e.target.value })}
@@ -554,52 +673,19 @@ const SettingsPanel = ({
                   <option value="Courier New, monospace">Courier New</option>
                 </select>
 
-                {/* Font size stepper (full width) */}
-                <Stepper
-                  label="Font size"
+                {/* Font size */}
+                <Stepper label="Font size"
                   value={draft.fontSize ?? 12} min={4} step={1}
                   onChange={fs => updateDraft({ fontSize: fs })}
                   displayValue={draft.fontSize ?? 12} unit="px" />
 
-                {/* Style (B I U) ‖ Alignment (L C R) — visually separated */}
-                <div className="flex gap-1">
-                  {/* Style group */}
-                  <div className="flex flex-1 gap-0.5">
-                    {[
-                      { key: 'bold',    Icon: Bold,      active: draft.fontWeight === '700' || draft.fontWeight === 'bold', patch: { fontWeight: (draft.fontWeight === '700' || draft.fontWeight === 'bold') ? '400' : '700' }, title: 'Bold (B)' },
-                      { key: 'italic',  Icon: Italic,    active: draft.fontStyle === 'italic',  patch: { fontStyle: draft.fontStyle === 'italic' ? 'normal' : 'italic' }, title: 'Italic (I)' },
-                      { key: 'under',   Icon: Underline, active: !!draft.underline,             patch: { underline: !draft.underline },                                   title: 'Underline (U)' },
-                    ].map(({ key, Icon, active, patch, title }) => (
-                      <button key={key} onClick={() => updateDraft(patch)} title={title}
-                        className={`flex flex-1 h-7 items-center justify-center rounded-md border text-[11px] transition-colors ${
-                          active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
-                        }`}>
-                        <Icon className="h-3.5 w-3.5" />
-                      </button>
-                    ))}
-                  </div>
+                {/* Style B I U  ‖  Alignment L C R */}
+                <StyleAlignRow
+                  fontWeight={draft.fontWeight} fontStyle={draft.fontStyle}
+                  underline={draft.underline} textAlign={draft.textAlign}
+                  onChange={updateDraft} />
 
-                  {/* Separator */}
-                  <div className="my-1 w-px bg-brd/35" />
-
-                  {/* Alignment group */}
-                  <div className="flex flex-1 gap-0.5">
-                    {[
-                      { key: 'left',   Icon: AlignLeft,   active: draft.textAlign === 'left',   patch: { textAlign: 'left' },   title: 'Align left' },
-                      { key: 'center', Icon: AlignCenter, active: draft.textAlign === 'center', patch: { textAlign: 'center' }, title: 'Align centre' },
-                      { key: 'right',  Icon: AlignRight,  active: draft.textAlign === 'right',  patch: { textAlign: 'right' },  title: 'Align right' },
-                    ].map(({ key, Icon, active, patch, title }) => (
-                      <button key={key} onClick={() => updateDraft(patch)} title={title}
-                        className={`flex flex-1 h-7 items-center justify-center rounded-md border text-[11px] transition-colors ${
-                          active ? 'border-brand/50 bg-brand/10 text-brand' : 'border-brd/40 text-content-secondary hover:bg-surface-inset hover:text-content'
-                        }`}>
-                        <Icon className="h-3.5 w-3.5" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Color + Opacity */}
+                {/* Colour + Opacity */}
                 <ColorInput label="Colour"
                   value={draft.fill ?? ''} onChange={fill => updateDraft({ fill: fill || null })}
                   defaultColor="#374151" />
@@ -620,18 +706,133 @@ const SettingsPanel = ({
                   </button>
                   <button onClick={() => onDeleteText?.(draft.id)}
                     className="flex items-center justify-center rounded-lg border border-err/30 px-2.5 py-1.5 text-err transition-all hover:bg-err/10"
-                    title="Delete text">
+                    title="Delete">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </>
-            ) : (
-              <p className="py-1.5 text-center text-[10px] italic text-content-muted">
-                {textMode
-                  ? 'Click any label or text box to select it.'
-                  : 'Enable text mode to select and edit text.'}
+            )}
+
+            {!draft && textMode && (
+              <p className="py-1 text-center text-[10px] italic text-content-muted">
+                Click any label or text box to select it.
               </p>
             )}
+
+            {/* ═══════════════════════════════════════
+                Bulk format — collapsible sub-section
+            ═══════════════════════════════════════ */}
+            <div className="overflow-hidden rounded-lg border border-brd/30">
+              <button
+                onClick={() => setBulkOpen(v => !v)}
+                className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-content-muted transition-colors hover:bg-surface-inset/40">
+                <span>Bulk format</span>
+                <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${bulkOpen ? '' : '-rotate-90'}`} />
+              </button>
+
+              {bulkOpen && (
+                <div className="space-y-2.5 border-t border-brd/25 px-3 pb-3 pt-2.5">
+
+                  {/* Scope tabs */}
+                  <div>
+                    <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-content-muted">
+                      Apply to
+                    </p>
+                    <div className="grid grid-cols-4 overflow-hidden rounded-lg border border-brd/50 text-[10px]">
+                      {[
+                        { v: 'all',       l: 'All' },
+                        { v: 'labels',    l: 'Labels' },
+                        { v: 'subtitles', l: 'Subs' },
+                        { v: 'boxes',     l: 'Boxes' },
+                      ].map(({ v, l }) => (
+                        <button key={v} onClick={() => setBulkScope(v)}
+                          className={`border-l border-brd/50 py-1 font-semibold transition-colors first:border-l-0 ${
+                            bulkScope === v ? 'bg-brand text-white' : 'text-content-secondary hover:bg-surface-inset'
+                          }`}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Font family — activates on change */}
+                  <div className={`transition-opacity ${activeFields.has('fontFamily') ? 'opacity-100' : 'opacity-60'}`}>
+                    <select
+                      value={bulkValues.fontFamily}
+                      onChange={e => updateBulk({ fontFamily: e.target.value }, ['fontFamily'])}
+                      className="w-full rounded-lg border border-brd/50 bg-surface-secondary px-2.5 py-1.5 text-[11px] text-content outline-none transition-all focus:border-brand focus:opacity-100">
+                      <option value="Inter, Arial, sans-serif">Inter</option>
+                      <option value="Arial, sans-serif">Arial</option>
+                      <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="Courier New, monospace">Courier New</option>
+                    </select>
+                  </div>
+
+                  {/* Font size */}
+                  <div className={`transition-opacity ${activeFields.has('fontSize') ? 'opacity-100' : 'opacity-60'}`}>
+                    <Stepper label="Font size"
+                      value={bulkValues.fontSize} min={4} step={1}
+                      onChange={fs => updateBulk({ fontSize: fs }, ['fontSize'])}
+                      displayValue={bulkValues.fontSize} unit="px" />
+                  </div>
+
+                  {/* Style B I U  ‖  Alignment L C R */}
+                  <BulkStyleAlignRow
+                    fontWeight={bulkValues.fontWeight} fontStyle={bulkValues.fontStyle}
+                    underline={bulkValues.underline} textAlign={bulkValues.textAlign}
+                    activeFields={activeFields}
+                    onChange={(patch, fields) => updateBulk(patch, fields)} />
+
+                  {/* Colour */}
+                  <div className={`transition-opacity ${activeFields.has('fill') ? 'opacity-100' : 'opacity-60'}`}>
+                    <ColorInput label="Colour"
+                      value={bulkValues.fill ?? ''}
+                      onChange={fill => updateBulk({ fill: fill || null }, ['fill'])}
+                      defaultColor="#374151" />
+                  </div>
+
+                  {/* Opacity */}
+                  <div className={`transition-opacity ${activeFields.has('opacity') ? 'opacity-100' : 'opacity-60'}`}>
+                    <Slider label="Opacity"
+                      value={bulkValues.opacity} min={0.1} max={1} step={0.05}
+                      onChange={opacity => updateBulk({ opacity }, ['opacity'])}
+                      displayValue={Math.round(bulkValues.opacity * 100)} unit="%" />
+                  </div>
+
+                  {/* Active field badges */}
+                  {activeFields.size > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {[...activeFields].map(f => (
+                        <span key={f}
+                          className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-1.5 py-0.5 text-[9px] font-semibold text-brand">
+                          {f}
+                          <button onClick={() => setActiveFields(prev => { const n = new Set(prev); n.delete(f); return n; })}
+                            className="opacity-60 hover:opacity-100">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Apply button */}
+                  <button
+                    onClick={handleBulkApply}
+                    disabled={!activeFields.size}
+                    className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-[11px] font-semibold transition-all ${
+                      activeFields.size
+                        ? 'bg-brand text-white shadow-sm hover:bg-brand-hover active:scale-[0.97]'
+                        : 'cursor-not-allowed bg-surface-inset text-content-muted'
+                    }`}>
+                    Apply to {bulkScope === 'all' ? 'all text' : bulkScope}
+                    {activeFields.size > 0 && ` (${activeFields.size} ${activeFields.size === 1 ? 'property' : 'properties'})`}
+                  </button>
+
+                  <p className="text-[9px] leading-relaxed text-content-muted">
+                    Touch any control above to mark it for bulk apply. Highlighted controls will be applied; unmarked ones are left unchanged. This action is undoable.
+                  </p>
+                </div>
+              )}
+            </div>
           </Section>
 
           {/* ════════════════════════════════
