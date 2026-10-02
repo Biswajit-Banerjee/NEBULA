@@ -1,50 +1,58 @@
-# Multi-Search 
+# Multi-search and query colours
 
-NEBULA lets you run multiple searches and overlay them in every view. Each search is represented as a **query** with its own color, making it easy to compare results visually and highlight shared regions.
-
----
-
-## Adding to Search
-
-1. After your first search, click the **+** button in the search panel to add a new query.
-2. Each query can use a different search mode (Compound, Reaction, or EC).
-3. Enter your query and hit **Search** — results are added alongside existing ones.
+NEBULA can run several searches at once and show them together. Each search is a **query** (one row in the search dock) with its own colour.
 
 ---
 
-## query Colors
+## Adding queries
 
-Every query gets a unique color from NEBULA's palette. This color is used consistently across all views:
+1. Open the dock and press **Add query**.
+2. Choose a mode for the new row and fill it in ([Search modes](feature-search)).
+3. Press **Explore**. All rows run, and their results are shown together.
 
-- **Table** — a colored dot next to each row indicates which query produced it.
-- **2D / 3D Network** — nodes can be highlighted by their membership in a query.
-- **Map** — dots on the map are highlighted by query.
-- **Backtrace** — tree data corresponds to the first compound query.
-
----
-
-## Toggling Visibility
-
-Click the **eye icon** on a query to show or hide its results. Hidden queries are temporarily excluded from all views without deleting the data and can be restored at any point.
+Remove a row with the **×** that appears when you hover it (only when there is more than one row).
 
 ---
 
-## Combined Mode
+## Query colours
 
-Enable **Combined mode** (the stacked cards icon) to merge results from all queries into a single unified view where each reaction is only represented once. This is useful when you want to see how reuse or overlap present in the metabolic network.
+Every query gets a colour from the active theme's palette. Click the **coloured dot** at the start of the row to choose another one.
 
-When combined mode is off, only the active query's results are shown.
+The same colour is used everywhere:
+
+| Viewer | How the colour appears |
+|---|---|
+| [Metabolome Records](view-metabolome-records) | A coloured stripe and light tint on the row. |
+| [Path Finder](view-path-finder) | The target's circle, its own lines, and its chip. With several targets: each target's steps use its colour; shared steps are dark. |
+| [Reaction Network](view-reaction-network) | With **Overlay** on, coloured outlines on nodes and lines. |
+| [Metabolic Map](view-metabolic-map) | With **Path overlay** on, coloured outlines on compounds and edges. |
 
 ---
 
-## Removing Queries
+## Showing and hiding a query
 
-Click the **×** on a query to remove it and its results. The remaining queries re-render automatically.
+The **eye** on a row (after a search) hides or shows just that query's results in all viewers, without deleting them.
+
+This is different from the eye in the *top bar*, which hides **cofactors**. See [Cofactor filtering](feature-cofactors).
+
+---
+
+## Combined view
+
+The **stacked-layers** icon in the top bar merges all visible queries so each reaction appears **once**, even if several queries found it. In Metabolome Records, a reaction found by several queries shows several small colour bars.
+
+Use it to see how much the routes to different compounds *overlap*; turn it off to see each query separately.
+
+---
+
+## Several targets in Path Finder
+
+If two or more rows are **Cmpd** searches, Path Finder offers an **All targets** overlay and a **Shared** tab that shows where routes **diverge** and **merge**. See [Path Finder](view-path-finder#several-targets).
 
 ---
 
 ## Tips
 
-- Compare biosynthetic origins of related metabolites (e.g. `C00025` vs `C00064`) by running both as compound searches.
-- Use combined mode + cofactor filtering for the cleanest merged view.
-- Each query's color persists across all views — easy to track which results came from where.
+- Compare the biosynthetic origins of related metabolites, for example `C00025` (L-Glutamate) and `C00041` (L-Alanine).
+- Combined view plus [cofactor hiding](feature-cofactors) gives the cleanest overlap picture.
+- Colours persist across viewers, so you can always tell which query a thing came from.

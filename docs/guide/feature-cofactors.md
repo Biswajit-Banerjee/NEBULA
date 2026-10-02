@@ -1,64 +1,70 @@
-# Cofactor Filtering
+# Cofactor filtering
 
-Metabolic networks include many **cofactors/metal ions** — molecules like ATP, NAD+, Fe, and CoA that participate in a huge number of reactions. While biologically important, they can visually overwhelm network graphs and tables. The cofactors are defined as **Z**-compounds while kegg based compounds starts with **C**.
-
-NEBULA's cofactor filtering lets you toggle these common metabolites on or off.
+Many reactions need a metal ion, an iron-sulfur cluster or a coenzyme in addition to their main substrates. They matter chemically, but they appear in so many reactions that they can bury the picture. The **eye icon** in the top bar hides them.
 
 ---
 
-## How to Use
+## Where it is
 
-Click the **flask icon** in the top dock bar to toggle cofactor filtering:
+The **eye** in the top bar (it appears once you have results):
 
-- **On** — common cofactors are hidden from all views.
-- **Off** — all compounds are shown, including cofactors.
+| Icon | State | Click to |
+|---|---|---|
+| Open eye | Cofactors are **shown** (default). | Hide them. |
+| Closed eye | Cofactors are **hidden**. | Show them. |
 
-The filter applies globally across Table, 2D, 3D, Map, and Backtrace views.
-
----
-
-## What Gets Filtered
-
-The filter removes compounds commonly classified as currency metabolites, including:
-
-| ID | Compound ID | Name |
-|-----|-------------|------|
-| 1 | Z00001 | Iron sulfur (2Fe2S) |
-| 2 | Z00002 | Iron sulfur (4Fe4S) |
-| 3 | Z00006 | Cobalt |
-| 4 | Z00015 | Iron |
-| 5 | Z00016 | Iron sulfur (ferredoxin) |
-| 6 | Z00020 | Iron sulfur (generic) |
-| 7 | Z00029 | Magnesium |
-| 8 | Z00030 | Manganese |
-| 9 | Z00033 | Sodium |
-| 10 | Z00034 | Nickel |
-| 11 | Z00053 | Tungsten |
-| 12 | Z00054 | Zinc |
-| 13 | Z00055 | Calcium |
-| 14 | Z00060 | Monovalent Metal |
-| 15 | Z00062 | Vanadium |
-| 16 | Z00063 | Iron sulfur (generic) |
-| 17 | Z00064 | Molybdenum |
-| 18 | Z00067 | Iron sulfur (3Fe4S) |
-| 19 | Z00069 | Divalent Metal |
-| 20 | Z00070 | Copper |
-
-The exact list is maintained in the application's cofactor configuration.
+> **Note:** The eye on a *query row* is different: it hides one search, not cofactors. See [Multi-search](feature-multi-search).
 
 ---
 
-## Impact on Views
+## What counts as a cofactor?
 
-- **Table** — rows involving only cofactors as distinctive compounds may appear simplified.
-- **2D / 3D Network** — the graph becomes dramatically sparser and easier to read.
-- **KEGG Map** — cofactor dots are hidden, decluttering the map.
-- **Backtrace** — the tree structure remains complete; cofactor filtering primarily affects network views.
+NEBULA writes cofactors as **`Z` compounds** ("Z" for the cofactor *role*), as opposed to `C` compounds from KEGG. There are 69 in the current data:
+
+| Group | Examples | When they enter the network |
+|---|---|---|
+| **Metals** | Copper, Iron, Zinc, Magnesium, Calcium, Cobalt, Molybdenum, Tungsten, Divalent Metal, Monovalent Metal | Generation 0 (seed). |
+| **Iron-sulfur clusters** | 2Fe2S, 3Fe4S, 4Fe4S, Generic FeS | Generation 0 (seed). |
+| **Coenzymes and prosthetic groups** | NAD/NADP, CoA, FAD, FMN, PLP, SAM, Heme, Biotin, Glutathione, Ubiquinone … | At the generation where their own synthesis is complete. |
+
+Metal centres are part of the seed set. For most other cofactors NEBULA includes a synthesis route in the network; when it is complete, a single *renaming reaction* (`RZ_…`) assigns the product to its conserved cofactor role [[9]](references#ref-9). That is why some coenzymes have a generation of their own.
+
+### Two different "cofactor" ideas
+
+| Where | Meaning |
+|---|---|
+| **The eye icon** (display) | Hides **every** `Z` compound from the views. |
+| **Searches** (Path Finder) | NEBULA treats the **20 metals and iron-sulfur clusters** in its cofactor list as *always available*. They are not drawn as nodes and never limit a Path. Coenzymes such as NAD/NADP are *not* in that list; a route that needs them must first reach them. They appear in the Inspector under *Cofactors (assumed available)* when relevant. |
 
 ---
 
-## Tips
+## What hiding does
 
-- Toggling cofactors is instant — experiment freely.
-- In split view, both panels respect the same filter state.
-- Large networks (500+ nodes) benefit enormously from cofactor filtering.
+When cofactors are hidden:
+
+1. `Z` compounds are **removed from every equation** (for example `C00036 + Z00030 => C00022 + C00011 + Z00030` becomes `C00036 => C00022 + C00011`), and from generation lists.
+2. A reaction that is **left with nothing on one side** is dropped.
+3. **Variants are merged.** Reactions with the same base ID (for example `R00470` and `R00470_v1`) and the same remaining compounds and stoichiometry become **one** reaction, with their EC numbers combined.
+
+Variants exist only because cofactors are written out explicitly, so with cofactors hidden you see each real transformation once ([Identifiers](concept-identifiers)).
+
+The filter is **global**: it applies to every viewer, and to both sides of a [split view](feature-split-view).
+
+---
+
+## Effect on each viewer
+
+| Viewer | Effect |
+|---|---|
+| Metabolome Records | Fewer rows (variants merged), cleaner equations. |
+| Path Finder | Reaction variants that differ only in cofactors are merged into one square. |
+| Reaction Network | Far fewer nodes and lines; easier to read. |
+| Metabolic Map | Cofactor dots disappear. |
+
+---
+
+## When to use it
+
+- **Hide** to see the core chemistry: the carbon skeleton transformations.
+- **Show** when cofactors are the point, for example when you want to see which metal or coenzyme a step needs.
+- Large networks (hundreds of nodes) benefit most from hiding.

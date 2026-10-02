@@ -1,78 +1,53 @@
 {
   "sections": [
     {
-      "category": "Introduction",
+      "category": "Getting started",
       "pages": [
-        {
-          "slug": "introduction",
-          "title": "What is NEBULA?",
-          "description": "Overview of the platform, interface layout, and quick workflow"
-        }
+        { "slug": "introduction", "title": "What is NEBULA?", "description": "What NEBULA does, the four viewers and the screen layout" },
+        { "slug": "quick-start", "title": "Quick start", "description": "Five-minute walk-through with L-Glutamate" },
+        { "slug": "interface-overview", "title": "Interface overview", "description": "Top bar, view switcher, Help button and messages" },
+        { "slug": "symbols-cheat-sheet", "title": "Symbol cheat sheet", "description": "Every shape, line and colour in every viewer" }
       ]
     },
     {
-      "category": "Views",
+      "category": "Concepts",
       "pages": [
-        {
-          "slug": "view-table",
-          "title": "Table View",
-          "description": "Sortable data table of reactions, compounds, and metadata",
-          "viewId": "table"
-        },
-        {
-          "slug": "view-network-2d",
-          "title": "2D Network",
-          "description": "Interactive 2D force-directed metabolic graph",
-          "viewId": "network2d"
-        },
-        {
-          "slug": "view-network-3d",
-          "title": "3D Network",
-          "description": "Rotatable three-dimensional network visualization",
-          "viewId": "network3d"
-        },
-        {
-          "slug": "view-map",
-          "title": "KEGG Map",
-          "description": "Results overlaid on the KEGG global metabolism map",
-          "viewId": "map"
-        },
-        {
-          "slug": "view-backtrace",
-          "title": "Backtrace",
-          "description": "AND-OR backward reachability tree and minimal paths",
-          "viewId": "tree"
-        }
+        { "slug": "concept-hypergraph", "title": "Hypergraphs and stoichiometry", "description": "Why reactions are drawn as complexes joined by a dashed line" },
+        { "slug": "concept-generations", "title": "Generations and seeds", "description": "Network expansion, seed compounds, sources and cofactors" },
+        { "slug": "concept-and-or-paths", "title": "AND-OR logic and Paths", "description": "What a Path is, branch points, route modes and Path counts" },
+        { "slug": "concept-identifiers", "title": "Identifiers and data sources", "description": "C, Z, R and RZ codes, variants, EC, KO, UniProt and ECOD" }
+      ]
+    },
+    {
+      "category": "Viewers",
+      "pages": [
+        { "slug": "view-metabolome-records", "title": "Metabolome Records", "description": "Row-by-row reactions, filters, selection and enzymes" },
+        { "slug": "view-path-finder", "title": "Path Finder", "description": "Every minimal Path to a compound, with a full symbol key" },
+        { "slug": "view-metabolic-map", "title": "Metabolic Map", "description": "Results on the KEGG global metabolism map" },
+        { "slug": "view-reaction-network", "title": "Reaction Network", "description": "The hypergraph by generation: complexes, enzymes, timeline" },
+        { "slug": "view-protein-domains", "title": "Protein Domain Viewer", "description": "Proteins, ECOD domains, active and binding sites, 3D structure" }
       ]
     },
     {
       "category": "Features",
       "pages": [
-        {
-          "slug": "feature-search",
-          "title": "Search Modes",
-          "description": "Compound, reaction, and EC number searches"
-        },
-        {
-          "slug": "feature-multi-search",
-          "title": "Multi-Search & Chips",
-          "description": "Running multiple queries and comparing results"
-        },
-        {
-          "slug": "feature-split-view",
-          "title": "Split View",
-          "description": "Side-by-side view comparison"
-        },
-        {
-          "slug": "feature-cofactors",
-          "title": "Cofactor Filtering",
-          "description": "Hiding common cofactors to simplify views"
-        },
-        {
-          "slug": "feature-sessions",
-          "title": "Session Management",
-          "description": "Exporting, importing, and restoring sessions"
-        }
+        { "slug": "feature-search", "title": "Search modes", "description": "Cmpd, Rxn, EC and Cmpds searches, with Source and Any/All" },
+        { "slug": "feature-multi-search", "title": "Multi-search and colours", "description": "Several queries, colours, eye and Combined view" },
+        { "slug": "feature-split-view", "title": "Split view", "description": "Two viewers side by side" },
+        { "slug": "feature-cofactors", "title": "Cofactor filtering", "description": "What the eye icon hides and why" },
+        { "slug": "feature-linked-selection", "title": "Linked selection", "description": "Path Finder selections filter the other viewers" },
+        { "slug": "feature-sessions", "title": "Sessions", "description": "Export and import your searches and results" },
+        { "slug": "feature-export-import", "title": "Export and import", "description": "SVG, PNG and layout import for figures" },
+        { "slug": "feature-themes-accessibility", "title": "Themes and accessibility", "description": "Themes, text size and keyboard shortcuts" }
+      ]
+    },
+    {
+      "category": "Reference",
+      "pages": [
+        { "slug": "reference-data-sources", "title": "Data sources", "description": "What is bundled, what is fetched live, and from where" },
+        { "slug": "reference-limitations-faq", "title": "FAQ and limitations", "description": "Common questions and what NEBULA cannot tell you" },
+        { "slug": "reference-api", "title": "API", "description": "Endpoints behind the viewers" },
+        { "slug": "references", "title": "References and citing", "description": "Numbered citations and how to cite NEBULA" }
       ]
     }
   ]

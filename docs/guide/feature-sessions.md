@@ -1,43 +1,51 @@
-# Session Management
+# Sessions
 
-NEBULA lets you **export** and **import** your entire session, including search queries, results, and view state. This makes it easy to save your work, share it with colleagues, or pick up where you left off.
-
----
-
-## Exporting a Session
-
-1. Run one or more searches so you have results loaded.
-2. Click the **download icon** in the top dock bar.
-3. A `.json` file is saved to your downloads folder containing your full session state.
-
-The export includes:
-
-- All search queries (modes, queries, colors)
-- All result data (reactions, compounds, tree data)
-- View preferences and selections
+A **session** is a snapshot of your searches and results saved to a file, so you can come back to it, share it, or attach it to a paper or notebook.
 
 ---
 
-## Importing a Session
+## Exporting a session
 
-1. Click the **upload icon** in the top dock bar.
-2. Select a previously exported `.json` session file.
-3. NEBULA restores the session — queries, results, and view state load automatically.
+1. Run one or more searches.
+2. Click the **download arrow** in the top bar.
+3. A file named `nebula-session-YYYY-MM-DD.json` is saved.
 
-> **Note:** Importing replaces your current session. Export first if you want to keep your current work.
+### What is saved
+
+| Saved | Not saved |
+|---|---|
+| Your queries (modes, IDs, colours) | The viewer you were on, and Split view |
+| All result rows (reactions with equations, EC, generations) | **Path Finder data** (see below) |
+| **Combined view** on or off | Cofactor hiding |
+| **Reaction Network** node positions | Selections, filters and **deleted reactions** |
+| | Viewer settings (colours, text, sizes) and your theme |
 
 ---
 
-## Use Cases
+## Importing a session
 
-- **Save progress** — export at the end of a session, import next time.
-- **Share with colleagues** — send the JSON file; they import it and see exactly what you saw.
-- **Reproducibility** — attach session files to publications or lab notebooks as supplementary data.
+1. Click the **upload arrow** in the top bar.
+2. Choose a session `.json` file.
+3. NEBULA restores the queries, the results and the Reaction Network layout. **It does not run the searches again**, so it works offline.
+
+> **Note:** Importing **replaces** your current session. Export first if you want to keep it.
+
+### Getting Path Finder back
+
+Sessions do not carry the Path Finder route graphs. After importing, Path Finder is empty until you press **Explore** again on the Cmpd queries. The other viewers work straight away.
+
+---
+
+## Good uses
+
+- **Save progress.** Export at the end of a work session; import next time.
+- **Share.** Send the file to a colleague; they see the same results and layout.
+- **Reproducibility.** Attach the file to a paper or lab notebook as supplementary data. Results come from NEBULA's fixed local data, so the same query on the same release gives the same answer.
 
 ---
 
 ## Tips
 
-- Session files are plain JSON — they can be version-controlled, manually edited, and stored alongside your research data.
-- The file size depends on the number and complexity of your searches (typically a few hundred KB).
-- After importing, all views are immediately available — switch between Table, Network, Map, and Backtrace as usual.
+- Session files are plain JSON. They can be kept in version control.
+- Size depends on how many results you have; a few hundred kilobytes is typical.
+- To save a **figure** rather than a session, use [Export and import](feature-export-import).

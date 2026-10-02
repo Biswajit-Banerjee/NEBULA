@@ -1,40 +1,45 @@
-# Split View
+# Split view
 
-NEBULA supports a **split view** mode that displays two views side by side. This is the most effective way to cross-reference different representations of the same data.
-
----
-
-## Activating Split View
-
-1. Click the **Split** button in the view switcher bar at the bottom.
-2. A secondary view selector appears — choose any view different from the primary.
-3. Click **Single** to return to a single-view layout.
+**Split view** shows two viewers side by side, so you can look at the same results in two different ways at once, for example the equation of a reaction on the left and its place in the network on the right.
 
 ---
 
-## Recommended Combinations
+## Turning it on
 
-| Primary       | Secondary      | Use Case                                                        |
-| ------------- | -------------- | --------------------------------------------------------------- |
-| **Table**     | **2D Network** | Browse tabular data while seeing the graph structure             |
-| **2D**        | **3D Network** | Compare 2D and 3D layouts of the same network                   |
-| **Table**     | **Backtrace**  | Review reactions alongside the biosynthetic tree                 |
-| **Map**       | **2D Network** | See KEGG positions next to the force-directed layout             |
+1. Click **Split** at the right end of the view switcher (bottom centre).
+2. A second pill appears. Choose the viewer for the second pane; it must be different from the first.
+3. Click **Single** to return to one viewer.
+
+The first pill chooses the left pane (highlighted in the brand colour), the second pill the right pane (highlighted in green). If you pick the same viewer for both, NEBULA switches the other pane for you.
 
 ---
 
-## Synced State
+## Good combinations
 
-Both views share the same underlying data and state:
+| Left | Right | Use |
+|---|---|---|
+| **Metabolome Records** | **Reaction Network** | Read exact reactions while seeing the graph. |
+| **Metabolome Records** | **Path Finder** | Check a Path's reactions against the full list. |
+| **Path Finder** | **Metabolic Map** | See a Path and where it sits on the KEGG map (turn on [Linked](feature-linked-selection)). |
+| **Metabolic Map** | **Reaction Network** | Compare the KEGG layout with the generation layout. |
 
-- **Row selection** — selecting a reaction in one view highlights it in the other.
-- **Cofactor filtering** — toggling cofactors applies to both views.
-- **Search chips** — both views show results from all active chips.
+---
+
+## What stays in sync
+
+Both panes use the **same data and state**:
+
+- **Search queries** and their colours.
+- **Cofactor hiding** and **Combined view**.
+- **Row selection** from Metabolome Records.
+- **Linked selection** from Path Finder: with *Linked* on, selecting a Path filters the other pane to exactly its reactions.
+- **Deleted reactions.**
+
+Each pane keeps its **own** view controls (zoom, settings, timeline).
 
 ---
 
 ## Tips
 
-- Split view works best on screens 1440px or wider. On smaller screens, views may feel cramped.
-- The view switcher prevents selecting the same view for both panels.
-- You can change either panel independently without losing selections.
+- Split view works best on wide screens (about 1440 px or more). On narrower screens, use one viewer at a time.
+- Text-size changes ([Aa − +](feature-themes-accessibility)) apply to help text, not to the viewers' canvases; use each viewer's own font controls for those.

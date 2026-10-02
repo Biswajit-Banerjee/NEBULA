@@ -1,47 +1,65 @@
 # What is NEBULA?
 
-**NEBULA** (**N**etwork of **E**nzymatic **B**iochemical **U**nits, **L**inks, and **A**ssociations) is an interactive metabolic network explorer built for anyone studying metabolism.
+**NEBULA** stands for **N**etwork of **E**nzymatic **B**iochemical **U**nits, **L**inks, and **A**ssociations. It is a web server for exploring metabolism and the enzymes that run it, in one place and with one consistent picture.
 
-Given a compound, reaction, or enzyme, NEBULA traces the full metabolic context — every reaction that can produce it, every substrate it needs, and every enzyme that catalyzes it — then lets you explore the results through multiple synchronized views.
+Pick a compound, a reaction or an enzyme. NEBULA shows you every reaction involved, the routes that make a compound from simple starting materials, and, for each reaction, the enzymes, protein domains and 3D structures behind it [[1]](references#ref-1)[[2]](references#ref-2)[[4]](references#ref-4)[[5]](references#ref-5).
 
----
-
-## Interface Layout
-
-The interface is organized into three areas:
-
-- **Top Bar** — The search dock where you enter queries, manage search chips, toggle cofactor filtering, and import/export sessions.
-- **View Area** — The main canvas that displays your results in whichever view mode is active.
-- **View Switcher** — The bottom pill bar that lets you switch between Table, 2D, 3D, Map, and Backtrace views.
+> **Preprint note:** NEBULA is described in a preprint that has not yet been peer reviewed. See [How to cite](references#how-to-cite).
 
 ---
 
-## Quick Workflow
+## Why another metabolism viewer?
 
-1. **Pick a search mode** — Compound, Reaction, or EC number.
-2. **Enter your query** — type a KEGG ID (e.g. `C00025` for L-Glutamate) and select from autocomplete.
-3. **Hit Search** — results load into the active view.
-4. **Switch views** — use the bottom bar to see the same data as a table, network graph, metabolic map, or reachability tree.
-5. **Compare** — add more search chips with the **+** button to overlay multiple queries.
+Pathway maps such as KEGG show *which* reactions are connected, but not how many molecules each reaction needs, which substrates must be present together, or which enzyme fold does the chemistry [[1]](references#ref-1). Stoichiometric models capture the chemistry but rarely connect to enzyme structure [[7]](references#ref-7)[[8]](references#ref-8).
 
-> **Tip:** Click the **?** help button from any view to jump straight to that view's documentation.
+NEBULA joins the two:
 
----
+- **Every reaction is kept whole.** All substrates and all products stay together, with their stoichiometry, as one hyperedge ([Hypergraphs and stoichiometry](concept-hypergraph)).
+- **Every compound has a generation.** Starting from a fixed set of seed compounds, the network is expanded step by step, and each compound is labelled with the step at which it first becomes reachable ([Generations](concept-generations)) [[9]](references#ref-9).
+- **Every Path is complete.** A route to your target is only drawn if every reaction in it can actually run ([AND-OR logic and Paths](concept-and-or-paths)).
+- **Every reaction leads to an enzyme.** From an EC number you can go to proteins, ECOD domains, active and binding sites, and the AlphaFold structure ([Protein Domain Viewer](view-protein-domains)).
 
-## What Can You Do?
+### How NEBULA relates to other tools
 
-- **Trace biosynthetic origins** — find every route from seed/source compounds to your target compound including all intermidates and enzymes.
-- **Look up reactions** — see substrates, products, enzymes, and generation data for any KEGG reaction.
-- **Search by enzyme** — find all reactions catalyzed by a given EC number.
-- **Visualize** — explore results as interactive 2D/3D networks, KEGG metabolic maps, or AND-OR reachability trees.
-- **Compare** — run multiple searches and overlay them with color-coded queries.
-- **Filter** — hide common cofactors to focus on core metabolic transformations.
-- **Export** — save and restore your entire session for later.
+- **Pathway databases and viewers** such as MetaCyc, Reactome, iPath, Escher and Pathway Tools organise reactions into curated, named maps and draw them well [[19]](references#ref-19)[[20]](references#ref-20)[[21]](references#ref-21)[[22]](references#ref-22)[[23]](references#ref-23). NEBULA keeps the familiar KEGG map as one viewer ([Metabolic Map](view-metabolic-map)) but rebuilds the data underneath as a stoichiometrically valid hypergraph.
+- **Network expansion** work shows what a seed set can reach [[24]](references#ref-24)[[25]](references#ref-25), and MANET placed protein fold ages on KEGG maps [[26]](references#ref-26). NEBULA adds the *inverse* operation, tracing back from a compound through every minimal route, and links each reaction to domain-resolved enzymes.
 
 ---
 
-## Next Steps
+## The four viewers
 
-- [Table View](view-table) — The default results display
-- [Search Modes](feature-search) — Compound, reaction, and EC searches explained
-- [Multi-Search & Queries](feature-multi-search) — Running and comparing multiple queries
+NEBULA shows one search in several **viewers**. They are different projections of the same data, and they stay in sync.
+
+| Viewer | What it answers | Page |
+|---|---|---|
+| **Metabolome Records** | What exactly are the reactions, with their equations, generations and enzymes? | [Metabolome Records](view-metabolome-records) |
+| **Path Finder** | How many different ways can this compound be made, and what does each look like? | [Path Finder](view-path-finder) |
+| **Metabolic Map** | Where do these compounds sit on the familiar KEGG global map? | [Metabolic Map](view-metabolic-map) |
+| **Reaction Network** | How do reactants, enzymes and products connect, generation by generation? | [Reaction Network](view-reaction-network) |
+
+A fifth tool, the **Protein Domain Viewer**, opens from any EC number: see [Protein Domain Viewer](view-protein-domains).
+
+---
+
+## The screen at a glance
+
+- **Top bar (search dock):** where you search, add queries, hide cofactors, import or export a session, and change theme.
+- **Canvas:** the viewer you are in.
+- **View switcher (bottom centre):** switch viewer, or split the screen in two.
+- **Help button (bottom right):** documentation, Quick Help for the current viewer, the guided tour, and the **Text size** control.
+- **Key button (inside each viewer):** a pop-up that explains every symbol the viewer draws.
+
+![The NEBULA start screen](images/ui-landing.png "The start screen. Numbered items are explained in the list below.")
+
+1. The search dock. Click it or press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>Cmd</kbd>+<kbd>K</kbd> on a Mac).
+2. **Take a quick tour** starts the guided tour.
+3. The Help button.
+
+---
+
+## Where to go next
+
+- New here? Follow the [5-minute quick start](quick-start).
+- Not sure what a shape or colour means? Open the [symbol cheat sheet](symbols-cheat-sheet) or press the **Key** button in any viewer.
+- Want the science behind it? Start with [Generations](concept-generations).
+- Need to cite NEBULA? See [References](references).
