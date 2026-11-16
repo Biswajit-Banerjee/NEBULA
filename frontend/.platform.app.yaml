@@ -1,0 +1,25 @@
+name: frontend
+type: "nodejs:22"
+
+source:
+  root: "frontend"
+
+hooks:
+  build: |
+    set -e
+    npm ci
+    npm run build
+
+web:
+  commands:
+    start: "sleep infinity"
+  locations:
+    "/":
+      root: "dist"
+      index:
+        - "index.html"
+      scripts: false
+      allow: true
+      passthru: "/index.html"
+
+disk: 512
