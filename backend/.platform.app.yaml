@@ -15,6 +15,6 @@ hooks:
 
 web:
   commands:
-    start: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    start: "PYTHONPATH=/app uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
 disk: 512
