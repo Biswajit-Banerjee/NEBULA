@@ -1,12 +1,5 @@
-// Environment-aware API configuration
-const isDevelopment = import.meta.env.DEV;
-const isProduction = import.meta.env.PROD;
-
-// Dev: proxied by Vite to localhost:8000
-// Production: direct calls to production server
-export const API_BASE_URL = isDevelopment
-  ? '/api'
-  : 'https://apollo2.chemistry.gatech.edu/NEBULA/api';
+// Vite proxies this path during development, and Upsun routes it to the backend.
+export const API_BASE_URL = '/api';
 
 // Helper to build full API URLs
 export function getApiUrl(endpoint) {
