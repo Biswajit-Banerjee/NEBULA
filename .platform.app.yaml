@@ -1,9 +1,6 @@
 name: backend
 type: "python:3.12"
 
-source:
-  root: "/"
-
 dependencies:
   python3:
     pip: "*"
@@ -15,6 +12,6 @@ hooks:
 
 web:
   commands:
-    start: "PYTHONPATH=/app uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    start: "cd /app/backend && PYTHONPATH=/app/backend python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
 disk: 512
