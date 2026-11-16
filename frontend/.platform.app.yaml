@@ -1,24 +1,17 @@
-name: frontend
-type: "nodejs:22"
+name: backend
+type: "python:3.12"
 
-source:
-  root: "frontend"
+dependencies:
+  python3:
+    pip: "*"
 
 hooks:
   build: |
     set -e
-    npx vite build --outDir dist --base=/
+    pip install -r requirements.txt
 
 web:
   commands:
-    start: "sleep infinity"
-  locations:
-    "/":
-      root: "dist"
-      index:
-        - "index.html"
-      scripts: false
-      allow: true
-      passthru: "/index.html"
+    start: "cd /app/backend && PYTHONPATH=/app/backend python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
 disk: 512
