@@ -1,0 +1,45 @@
+applications:
+  # 1. FastAPI Backend (Uvicorn running app.main:app from backend/)
+  backend:
+    source:
+      root: "."
+    type: "python:3.12"
+    hooks:
+      build: |
+        set -e
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    web:
+      commands:
+        # Mirrors run.ps1: runs inside backend/ with dynamic Upsun $PORT
+        start: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+  # 2. Vite/React Frontend (Static build served from dist/)
+  frontend:
+    source:
+      root: "frontend"
+    type: "nodejs:22"
+    hooks:
+      build: |
+        set -e
+        npm ci
+        npm run build
+    web:
+      commands:
+        start: "sleep infinity"
+      locations:
+        "/":
+          root: "dist"
+          index:
+            - "index.html"
+          scripts: false
+          allow: true
+          passthru: "/index.html"
+
+routes:
+  "https://{default}/":
+    type: "upstream"
+    upstream: "frontend:http"
+  "https://{default}/api":
+    type: "upstream"
+    upstream: "backend:http"
