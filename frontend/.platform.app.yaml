@@ -7,7 +7,7 @@ source:
 hooks:
   build: |
     set -e
-    npx vite build --outDir dist
+    npx vite build --outDir dist --base=/
 
 web:
   commands:
